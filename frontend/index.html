@@ -1,0 +1,1270 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>App LTI - Portal de Seguimiento para Líderes TI</title>
+  <meta name="description" content="Plataforma de seguimiento y control de proyectos, Solots de backlog, Tickets de Incidentes y RFCs para Líderes TI">
+  
+  <!-- Google Fonts: Roboto & Plus Jakarta Sans -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Roboto:ital,wght@0,300;0,400;0,500;0,700;0,900;1,400;1,700&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="/css/styles.css?v=5.0">
+</head>
+<body>
+
+  <!-- ========================================================================
+       VISTA DE AUTENTICACIÓN (LOGIN)
+       ======================================================================== -->
+  <div id="auth-view" class="auth-wrapper" style="display: none;">
+    <div class="auth-card">
+      <div class="auth-header">
+        <div style="display: flex; justify-content: center; margin-bottom: 0.75rem;">
+          <div class="brand-logo" style="width: 52px; height: 52px; font-size: 1.5rem;">LTI</div>
+        </div>
+        <h1>App Líderes TI</h1>
+        <p>Ingresa tus credenciales para acceder a tus proyectos asignados</p>
+      </div>
+
+      <form id="login-form">
+        <div class="form-group">
+          <label class="form-label" for="login-username">Usuario</label>
+          <input type="text" id="login-username" class="form-input" placeholder="Ej: esandoval o admin" required autocomplete="username">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="login-password">Contraseña</label>
+          <input type="password" id="login-password" class="form-input" placeholder="••••••••" required autocomplete="current-password">
+        </div>
+
+        <div id="login-error" style="color: var(--status-danger-text); font-size: 0.85rem; margin-bottom: 1rem; text-align: center;"></div>
+
+        <button type="submit" id="login-submit-btn" class="btn btn-primary btn-block">
+          Iniciar Sesión
+        </button>
+      </form>
+
+      <div class="auth-help">
+        <strong>Acceso Rápido / Cuentas:</strong>
+        <p style="margin-top: 0.3rem;">• Líderes TI: usuario con inicial y apellido (ej: <code>esandoval</code>, <code>aaguilar</code>, <code>jbarrera</code>)</p>
+        <p>• Admin: <code>admin</code></p>
+        <p>• Contraseña inicial por defecto: <code>Lti2026!</code></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       VISTA PRINCIPAL DE LA APLICACIÓN
+       ======================================================================== -->
+  <div id="app-view" style="display: none;">
+    <!-- Top Navigation Header -->
+    <header class="app-header">
+      <div class="brand-section">
+        <div class="brand-logo">LTI</div>
+        <div class="brand-title">
+          App Líderes TI
+          <span class="brand-badge">Seguimiento 360°</span>
+        </div>
+
+        <!-- Module Navigation Switcher -->
+        <nav class="nav-modules" style="margin-left: 1.5rem;">
+          <button id="nav-btn-projects" class="nav-module-btn active" title="Seguimiento de Proyectos y Drill Down">
+            📊 Seguimiento Proyectos
+          </button>
+          <button id="nav-btn-direct-search" class="nav-module-btn" title="Búsqueda directa en tablas completas">
+            🔎 Búsqueda Directa en Tablas
+          </button>
+          <button id="nav-btn-tickets" class="nav-module-btn" title="Generador Automatizado de Tickets en Service Manager">
+            🤖 Generador de Tickets
+          </button>
+          <button id="nav-btn-solicitud-lti" class="nav-module-btn" title="Ingreso de Nueva Solicitud LTI">
+            📝 Solicitud LTI
+          </button>
+        </nav>
+      </div>
+
+      <div class="header-actions">
+        <div class="user-badge">
+          <div class="user-avatar">LT</div>
+          <span id="user-display-name" style="font-weight: 600;">Líder TI</span>
+          <span id="user-role-badge" class="badge badge-info">Líder</span>
+        </div>
+
+        <!-- Light / Dark Mode Toggle Button -->
+        <button id="theme-toggle-btn" class="btn-icon" title="Cambiar Modo Claro / Oscuro" aria-label="Cambiar tema">
+          <span id="theme-icon">🌙</span>
+        </button>
+
+        <button id="logout-btn" class="btn btn-secondary btn-sm" title="Cerrar Sesión">
+          Cerrar Sesión
+        </button>
+      </div>
+    </header>
+
+    <main class="main-container">
+      
+      <!-- ====================================================================
+           MÓDULO 1: SEGUIMIENTO DE PROYECTOS (LISTADO PRINCIPAL)
+           ==================================================================== -->
+      <div id="module-projects-container" class="module-container active">
+        <section id="projects-list-section">
+          <!-- KPI Metrics Grid (6 Tarjetas) -->
+          <div class="kpi-grid">
+            <div class="kpi-card kpi-proyectos">
+              <div class="kpi-icon">📁</div>
+              <div>
+                <div class="kpi-value" id="kpi-val-proyectos">0</div>
+                <div class="kpi-title">PROYECTOS ASIGNADOS</div>
+              </div>
+            </div>
+
+            <div class="kpi-card kpi-en-curso">
+              <div class="kpi-icon">🚀</div>
+              <div>
+                <div class="kpi-value" id="kpi-val-en-curso">0</div>
+                <div class="kpi-title">PROYECTOS EN CURSO</div>
+              </div>
+            </div>
+
+            <div class="kpi-card kpi-pendientes kpi-card-clickable" id="kpi-card-pendientes" title="Hacer clic para filtrar proyectos sin Líder TI asignado" tabindex="0" role="button" aria-label="Filtrar proyectos pendientes de asignación" aria-pressed="false">
+              <div class="kpi-icon">⏳</div>
+              <div>
+                <div class="kpi-value" id="kpi-val-pendientes-asignar">0</div>
+                <div class="kpi-title">PENDIENTES DE ASIGNAR</div>
+              </div>
+              <span class="kpi-clickable-badge">Filtrar ⚡</span>
+            </div>
+
+            <div class="kpi-card kpi-efectividad">
+              <div class="kpi-icon">📈</div>
+              <div>
+                <div class="kpi-value" id="kpi-val-efectividad">0%</div>
+                <div class="kpi-title">EFECTIVIDAD</div>
+              </div>
+            </div>
+
+            <div class="kpi-card kpi-tickets">
+              <div class="kpi-icon">🎫</div>
+              <div>
+                <div class="kpi-value" id="kpi-val-tickets">0</div>
+                <div class="kpi-title">Tickets SD (HPSM)</div>
+              </div>
+            </div>
+
+            <div class="kpi-card kpi-rfcs">
+              <div class="kpi-icon">🔄</div>
+              <div>
+                <div class="kpi-value" id="kpi-val-rfcs">0</div>
+                <div class="kpi-title">RFCs Asociadas</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Filter and Search Bar -->
+          <div class="filter-bar">
+            <div class="filter-group">
+              <div class="search-box">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="filter-search" class="form-input" placeholder="Buscar por Cliente, N° Proyecto o Detalle...">
+              </div>
+
+              <!-- Filtro Estado Sharepoint -->
+              <div style="min-width: 200px;">
+                <select id="filter-estado-sp" class="form-select" title="Estado en Sharepoint (dbo.Proyectos)">
+                  <option value="">— Estado Sharepoint (Todos) —</option>
+                </select>
+              </div>
+
+              <!-- Selector de Líder TI -->
+              <div style="min-width: 220px;">
+                <select id="filter-lt" class="form-select">
+                  <option value="">Cargando líderes...</option>
+                </select>
+              </div>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 0.6rem;">
+              <button id="export-btn" class="btn btn-secondary btn-sm" title="Descargar vista en Excel/CSV">
+                📥 Exportar CSV
+              </button>
+              <span id="projects-count-badge" class="count-circle-badge" title="Cantidad de proyectos filtrados">0</span>
+            </div>
+          </div>
+
+          <!-- Projects Table -->
+          <div class="card-table-wrapper">
+            <div class="table-responsive">
+              <table class="data-table" id="projects-table">
+                <thead>
+                  <tr>
+                    <th>Cliente</th>
+                    <th>N° Proyecto</th>
+                    <th>LT Asignado</th>
+                    <th>Solicitante</th>
+                    <th>Estado</th>
+                    <th>Fecha Solicitud LTI</th>
+                    <th>Detalle</th>
+                    <th class="col-action-header">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="projects-table-body">
+                  <!-- Dynamically populated -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- DRILL DOWN (DETALLE DE PROYECTO, LINEA DE TIEMPO, SOLOTS, TICKETS Y RFCS) -->
+        <section id="project-drilldown-section" style="display: none;">
+          <!-- Header & Breadcrumb -->
+          <div class="drilldown-header">
+            <div class="breadcrumb-nav">
+              <span class="breadcrumb-link" id="back-to-projects-btn">← Volver al Listado de Proyectos</span>
+              <span>/</span>
+              <span>Detalle de Proyecto</span>
+            </div>
+
+            <div class="drilldown-title-row">
+              <div>
+                <h2 class="drilldown-title" id="dd-client-title">Nombre del Cliente</h2>
+                <div style="display: flex; gap: 1rem; align-items: center; margin-top: 0.4rem; font-size: 0.9rem; color: var(--text-secondary);">
+                  <span>N° Proyecto: <strong style="font-family: var(--font-mono); color: var(--primary);" id="dd-proj-num">00000</strong></span>
+                  <span>•</span>
+                  <span>Líder TI: <strong id="dd-lt-assigned">-</strong></span>
+                </div>
+              </div>
+
+              <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+                <div id="dd-status">
+                  <span class="badge badge-success">Atendido</span>
+                </div>
+                <div class="drilldown-action-toolbar">
+                  <button type="button" id="btn-dd-edit-project" class="btn btn-secondary btn-sm" title="Editar este proyecto">
+                    ✏️ Editar
+                  </button>
+                  <button type="button" id="btn-dd-delete-project" class="btn btn-danger-outline btn-sm" title="Eliminar este proyecto">
+                    🗑️ Eliminar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Componente Línea de Tiempo Cronológica -->
+          <div class="timeline-card" id="project-timeline-container">
+            <div class="timeline-header">
+              <span>⏱️ Línea de Tiempo de Hitos del Proyecto</span>
+            </div>
+            <div class="timeline-track" id="timeline-track-steps">
+              <!-- Dynamically populated and ordered chronologically -->
+            </div>
+          </div>
+
+          <!-- Navigation Tabs -->
+          <div class="tabs-header">
+            <button class="tab-btn active" data-tab="summary">
+              📋 Resumen del Proyecto
+            </button>
+            <button class="tab-btn" data-tab="solots">
+              ⚡ Solot (Backlog Operaciones) <span class="tab-badge" id="tab-count-solots">0</span>
+            </button>
+            <button class="tab-btn" data-tab="tickets">
+              🎫 Tickets SD <span class="tab-badge" id="tab-count-tickets">0</span>
+            </button>
+            <button class="tab-btn" data-tab="rfcs">
+              🔄 RFCs <span class="tab-badge" id="tab-count-rfcs">0</span>
+            </button>
+          </div>
+
+          <!-- Tab 1: Resumen -->
+          <div id="tab-pane-summary" class="tab-pane">
+            <div id="summary-content"></div>
+          </div>
+
+          <!-- Tab 2: Solots (CT_BACKLOG_OPERACIONES2) -->
+          <div id="tab-pane-solots" class="tab-pane" style="display: none;">
+            <div class="card-table-wrapper">
+              <div class="table-responsive">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>N° Cliente</th>
+                      <th>N° Proyecto</th>
+                      <th>Solot</th>
+                      <th>Descripcion</th>
+                      <th>Estado</th>
+                      <th>Fecha compromiso</th>
+                      <th>Fecha creacion</th>
+                      <th>Contrato</th>
+                      <th>Producto</th>
+                      <th>Servicio</th>
+                      <th>N° Servicio</th>
+                    </tr>
+                  </thead>
+                  <tbody id="solots-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab 3: Tickets SD (registrosRF_SD_SM) -->
+          <div id="tab-pane-tickets" class="tab-pane" style="display: none;">
+            <div class="card-table-wrapper">
+              <div class="table-responsive">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Solicitante</th>
+                      <th>Estado</th>
+                      <th>Fecha creacion</th>
+                      <th>Fecha cierre</th>
+                      <th>Titulo</th>
+                      <th>Categoria</th>
+                      <th>Servicio</th>
+                      <th>Grupo de Asignacion</th>
+                      <th>Asignado</th>
+                      <th>RF</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tickets-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab 4: RFCs (registrosSM_RFC) -->
+          <div id="tab-pane-rfcs" class="tab-pane" style="display: none;">
+            <div class="card-table-wrapper">
+              <div class="table-responsive">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Titulo</th>
+                      <th>Descripción</th>
+                      <th>Solicitante</th>
+                      <th>Fecha cierre</th>
+                      <th>N° Proyecto</th>
+                      <th>Servicio Padre</th>
+                      <th>Grupo de Asignación</th>
+                      <th>Asignado</th>
+                    </tr>
+                  </thead>
+                  <tbody id="rfcs-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- ====================================================================
+           MÓDULO 2: BÚSQUEDA DIRECTA EN TABLAS COMPLETAS (CON MULTI-TAGS)
+           ==================================================================== -->
+      <div id="module-direct-search-container" class="module-container" style="display: none;">
+        <div class="drilldown-header" style="margin-bottom: 1.5rem;">
+          <h2 style="font-size: 1.35rem; font-weight: 700; margin-bottom: 0.35rem;">
+            🔎 Explorador y Búsqueda Multi-Parámetro (Tags)
+          </h2>
+          <p style="color: var(--text-secondary); font-size: 0.88rem;">
+            Escribe un parámetro y presiona <strong>Enter</strong> para fijarlo como tag en amarillo. Puedes encadenar múltiples tags (ej: <code>Alejandro Aguilar</code> + <code>Generado</code>) para consultar simultáneamente en cualquier tabla.
+          </p>
+
+          <div style="margin-top: 1.25rem; display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: stretch;">
+            <!-- Interactive Tag Input Container -->
+            <div class="tag-input-wrapper" id="tag-input-box" onclick="document.getElementById('direct-search-input-field').focus();">
+              <div id="tags-rendered-list" style="display: inline-flex; flex-wrap: wrap; gap: 0.4rem;"></div>
+              <input type="text" id="direct-search-input-field" class="tag-real-input" placeholder="Escribe un valor y presiona Enter para agregar tag...">
+            </div>
+
+            <div style="min-width: 220px;">
+              <select id="direct-search-table-select" class="form-select" style="height: 100%;">
+                <option value="all">🌐 Todas las 4 Tablas</option>
+                <option value="proyectos">📁 dbo.Proyectos</option>
+                <option value="solots">⚡ dbo.CT_BACKLOG_OPERACIONES2</option>
+                <option value="tickets">🎫 dbo.registrosRF_SD_SM (Tickets SD)</option>
+                <option value="rfcs">🔄 dbo.registrosSM_RFC (RFCs)</option>
+              </select>
+            </div>
+
+            <button type="button" id="direct-search-submit-btn" class="btn btn-primary" style="align-self: center;">
+              Buscar en BD
+            </button>
+            <button type="button" id="direct-search-clear-btn" class="btn btn-secondary" style="align-self: center;" title="Limpiar tags">
+              Limpiar
+            </button>
+          </div>
+
+          <!-- Sugerencias rápidas de tags según tabla -->
+          <div class="quick-tags-container" id="quick-tags-box">
+            <span style="font-weight: 600;">Sugerencias rápidas:</span>
+            <span class="quick-tag-chip" onclick="App.addSearchTag('Alejandro Aguilar')">+ Alejandro Aguilar</span>
+            <span class="quick-tag-chip" onclick="App.addSearchTag('Generado')">+ Generado</span>
+            <span class="quick-tag-chip" onclick="App.addSearchTag('Atendido')">+ Atendido</span>
+            <span class="quick-tag-chip" onclick="App.addSearchTag('2- En ejecucion')">+ 2- En ejecución</span>
+            <span class="quick-tag-chip" onclick="App.addSearchTag('Erwin Sandoval')">+ Erwin Sandoval</span>
+            <span class="quick-tag-chip" onclick="App.addSearchTag('Juan Barrera')">+ Juan Barrera</span>
+          </div>
+        </div>
+
+        <!-- Result Tabs -->
+        <div id="direct-search-results-area" style="display: none;">
+          <div class="tabs-header">
+            <button class="tab-btn active" data-search-tab="proyectos">
+              📁 Proyectos <span class="tab-badge" id="badge-count-direct-proyectos">0</span>
+            </button>
+            <button class="tab-btn" data-search-tab="solots">
+              ⚡ Backlog SGA (Solots) <span class="tab-badge" id="badge-count-direct-solots">0</span>
+            </button>
+            <button class="tab-btn" data-search-tab="tickets">
+              🎫 Tickets SD <span class="tab-badge" id="badge-count-direct-tickets">0</span>
+            </button>
+            <button class="tab-btn" data-search-tab="rfcs">
+              🔄 RFCs <span class="tab-badge" id="badge-count-direct-rfcs">0</span>
+            </button>
+          </div>
+
+          <!-- Direct Tab 1: Proyectos -->
+          <div id="direct-tab-pane-proyectos" class="direct-tab-pane">
+            <div class="card-table-wrapper">
+              <div class="table-responsive">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Cliente</th>
+                      <th>N° Proyecto</th>
+                      <th>LT Asignado</th>
+                      <th>Estado</th>
+                      <th>Fecha Solicitud LTI</th>
+                      <th>Tipo Servicio</th>
+                      <th>Detalle</th>
+                    </tr>
+                  </thead>
+                  <tbody id="direct-proyectos-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Direct Tab 2: Solots -->
+          <div id="direct-tab-pane-solots" class="direct-tab-pane" style="display: none;">
+            <div class="card-table-wrapper">
+              <div class="table-responsive">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Solot (ID_OTP)</th>
+                      <th>N° Proyecto</th>
+                      <th>Cliente SGA</th>
+                      <th>N° Cliente</th>
+                      <th>RUT</th>
+                      <th>Estado OTP</th>
+                      <th>Descripcion</th>
+                      <th>Fecha Creación</th>
+                      <th>Fecha Compromiso</th>
+                      <th>Producto</th>
+                      <th>Servicio</th>
+                      <th>Asignado</th>
+                    </tr>
+                  </thead>
+                  <tbody id="direct-solots-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Direct Tab 3: Tickets SD -->
+          <div id="direct-tab-pane-tickets" class="direct-tab-pane" style="display: none;">
+            <div class="card-table-wrapper">
+              <div class="table-responsive">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>ID Incidente (CC_INCIDENT_ID)</th>
+                      <th>RF</th>
+                      <th>Solicitante</th>
+                      <th>Estado</th>
+                      <th>Fecha Creación</th>
+                      <th>Fecha Cierre</th>
+                      <th>Título / Descripción</th>
+                      <th>Categoría</th>
+                      <th>Servicio</th>
+                      <th>Grupo Asignado</th>
+                      <th>Asignado</th>
+                    </tr>
+                  </thead>
+                  <tbody id="direct-tickets-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Direct Tab 4: RFCs -->
+          <div id="direct-tab-pane-rfcs" class="direct-tab-pane" style="display: none;">
+            <div class="card-table-wrapper">
+              <div class="table-responsive">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Código RFC (NUMBER)</th>
+                      <th>N° Proyecto</th>
+                      <th>Título</th>
+                      <th>Descripción</th>
+                      <th>Solicitante</th>
+                      <th>Servicio Padre</th>
+                      <th>Departamento Asignado</th>
+                      <th>Asignado</th>
+                      <th>Fecha Creación</th>
+                      <th>Fecha Cierre</th>
+                    </tr>
+                  </thead>
+                  <tbody id="direct-rfcs-table-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div id="direct-search-empty-state" class="card-table-wrapper" style="padding: 3rem; text-align: center;">
+          <div style="font-size: 2.5rem; margin-bottom: 0.75rem;">🏷️</div>
+          <h3>Explorador de Búsqueda por Tags</h3>
+          <p style="color: var(--text-secondary); margin-top: 0.3rem;">
+            Agrega uno o varios tags en la barra superior (ej: <code>Alejandro Aguilar</code>, <code>Generado</code>) y presiona <strong>Buscar en BD</strong> para filtrar registros en las tablas completas.
+          </p>
+        </div>
+      </div>
+
+      <!-- ====================================================================
+           MÓDULO 3: GENERADOR AUTOMATIZADO DE TICKETS (SERVICE MANAGER)
+           ==================================================================== -->
+      <div id="module-tickets-container" class="module-container" style="display: none;">
+        <section id="module-tickets" class="ticket-creator-section">
+          <!-- Header Banner -->
+          <div class="drilldown-header" style="margin-bottom: 1.5rem;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+              <div>
+                <h2 style="font-size: 1.35rem; font-weight: 700; margin-bottom: 0.35rem; display: flex; align-items: center; gap: 0.5rem;">
+                  🤖 Generador Automatizado de Tickets (Service Manager)
+                  <span class="badge badge-info" style="font-size: 0.72rem; vertical-align: middle;">Playwright SSE Live</span>
+                </h2>
+                <p style="color: var(--text-secondary); font-size: 0.88rem;">
+                  Automatización desatendida para la creación de interacciones y tickets en Micro Focus Service Manager con streaming de eventos y logs en tiempo real.
+                </p>
+              </div>
+              <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <span class="badge badge-success" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;">
+                  🟢 Portal TI Conectado
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Dual-Column Layout: Formulario + Consola en Vivo -->
+          <div class="ticket-module-grid">
+            
+            <!-- Panel a) Formulario de Parámetros -->
+            <div class="ticket-form-card">
+              <div class="ticket-card-header">
+                <div class="ticket-card-title">
+                  <span>⚙️ Parámetros de la Interacción</span>
+                </div>
+                <span class="badge badge-neutral" style="font-size: 0.75rem;">Modo Desatendido</span>
+              </div>
+
+              <form id="ticket-automation-form" onsubmit="event.preventDefault();">
+                <!-- Contacto -->
+                <div class="form-group">
+                  <label class="form-label" for="ticket-contacto">
+                    Contacto <span class="form-required">*</span>
+                  </label>
+                  <select id="ticket-contacto" class="form-select" required>
+                    <option value="ALEJANDRO JAVIER AGUILAR MORALES" selected>ALEJANDRO JAVIER AGUILAR MORALES</option>
+                  </select>
+                  <span class="form-help-text">Usuario solicitante registrado en la plataforma Service Manager.</span>
+                </div>
+
+                <!-- Título -->
+                <div class="form-group">
+                  <label class="form-label" for="ticket-titulo">
+                    Título de la Interacción <span class="form-required">*</span>
+                  </label>
+                  <input type="text" id="ticket-titulo" class="form-input" value="Creacion test automatizacion" placeholder="Ingresa el título del ticket" required>
+                </div>
+
+                <!-- Descripción -->
+                <div class="form-group">
+                  <label class="form-label" for="ticket-descripcion">
+                    Descripción <span class="form-required">*</span>
+                  </label>
+                  <textarea id="ticket-descripcion" class="form-textarea" rows="3" placeholder="Ingresa la descripción detallada del requerimiento" required>Prueba test automatización</textarea>
+                </div>
+
+                <!-- Grid de Clasificación: Área y Subárea -->
+                <div class="form-row-2col">
+                  <div class="form-group">
+                    <label class="form-label" for="ticket-area">
+                      Área <span class="form-required">*</span>
+                    </label>
+                    <select id="ticket-area" class="form-select" required>
+                      <option value="Proyectos" selected>Proyectos</option>
+                    </select>
+                  </div>
+
+                  <div class="form-group">
+                    <label class="form-label" for="ticket-subarea">
+                      Subárea <span class="form-required">*</span>
+                    </label>
+                    <select id="ticket-subarea" class="form-select" required>
+                      <option value="Apoyo habilitacion cliente" selected>Apoyo habilitacion cliente</option>
+                    </select>
+                  </div>
+                </div>
+
+                <!-- Grid de Detalle y Grupo de Asignación -->
+                <div class="form-row-2col">
+                  <div class="form-group">
+                    <label class="form-label" for="ticket-detalle">
+                      Detalle <span class="form-required">*</span>
+                    </label>
+                    <select id="ticket-detalle" class="form-select" required>
+                      <option value="Apoyo habilitacion cliente" selected>Apoyo habilitacion cliente</option>
+                    </select>
+                  </div>
+
+                  <div class="form-group">
+                    <label class="form-label" for="ticket-grupo">
+                      Grupo de Asignación <span class="form-required">*</span>
+                    </label>
+                    <select id="ticket-grupo" class="form-select" required>
+                      <option value="Lideres Tecnicos" selected>Lideres Tecnicos</option>
+                    </select>
+                  </div>
+                </div>
+
+                <!-- Opciones complementarias: Impacto y Urgencia -->
+                <div class="form-row-2col">
+                  <div class="form-group">
+                    <label class="form-label" for="ticket-impacto">Impacto</label>
+                    <select id="ticket-impacto" class="form-select">
+                      <option value="3 - Menor (Existen WorkAround)" selected>3 - Menor (Existen WorkAround)</option>
+                      <option value="2 - Medio">2 - Medio</option>
+                      <option value="1 - Alto">1 - Alto</option>
+                    </select>
+                  </div>
+
+                  <div class="form-group">
+                    <label class="form-label" for="ticket-urgencia">Urgencia</label>
+                    <select id="ticket-urgencia" class="form-select">
+                      <option value="3 - Media (Resolución a mediano plazo)" selected>3 - Media (Resolución a mediano plazo)</option>
+                      <option value="2 - Alta">2 - Alta</option>
+                      <option value="1 - Crítica">1 - Crítica</option>
+                    </select>
+                  </div>
+                </div>
+
+                <!-- Botones de Acción del Formulario -->
+                <div class="ticket-form-actions">
+                  <button type="button" id="btn-execute-ticket" class="btn btn-primary btn-execute">
+                    <span id="ticket-spinner" class="spinner-inline" style="display: none;"></span>
+                    <span id="ticket-btn-icon">🚀</span>
+                    <span id="ticket-btn-text">Ejecutar</span>
+                  </button>
+                  <button type="button" id="btn-clear-logs" class="btn btn-secondary">
+                    <span>🧹 Limpiar Logs</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <!-- Panel b) Consola de Logs en Tiempo Real -->
+            <div class="ticket-console-card">
+              <div class="ticket-card-header console-header">
+                <div class="console-header-left">
+                  <div class="ticket-card-title">
+                    <span>🖥️ Consola de Ejecución en Vivo</span>
+                  </div>
+                  <span id="ticket-status-badge" class="badge badge-neutral">Inactivo</span>
+                </div>
+                <div class="console-header-actions">
+                  <span id="ticket-elapsed-time" class="console-timer">⏱️ 00:00</span>
+                  <button type="button" id="btn-copy-console" class="btn btn-secondary btn-sm" title="Copiar logs al portapapeles">
+                    📋 Copiar Logs
+                  </button>
+                  <button type="button" id="btn-toggle-autoscroll" class="btn btn-secondary btn-sm active" title="Alternar auto-scroll">
+                    📜 Auto-scroll: ON
+                  </button>
+                </div>
+              </div>
+
+              <!-- Barra de Progreso de Etapas -->
+              <div class="terminal-progress-container">
+                <div id="ticket-progress-bar" class="terminal-progress-bar" style="width: 0%;"></div>
+              </div>
+
+              <!-- Contenedor Terminal de Logs con Scroll Automático -->
+              <div id="ticket-logs-console" class="terminal-console" tabindex="0" role="region" aria-label="Consola de eventos de automatización">
+                <div class="terminal-welcome-msg">
+                  <div class="terminal-line terminal-prompt">$ service-manager-bot --ready</div>
+                  <div class="terminal-line terminal-hint">Presiona <strong>"🚀 Ejecutar"</strong> para iniciar el flujo automatizado de creación de interacción en Service Manager.</div>
+                  <div class="terminal-line terminal-hint-sub">Los eventos, diagnósticos y capturas de ID se mostrarán aquí en tiempo real vía Server-Sent Events (SSE).</div>
+                </div>
+              </div>
+
+              <!-- Pie de la Consola -->
+              <div class="terminal-footer">
+                <div class="terminal-footer-status">
+                  <span class="status-indicator-dot" id="ticket-status-dot"></span>
+                  <span id="ticket-current-step">Listo para iniciar</span>
+                </div>
+                <div class="terminal-footer-info">
+                  <span id="ticket-log-counter">0 eventos</span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </section>
+      </div>
+
+      <!-- ====================================================================
+           MÓDULO 4: SOLICITUD LTI
+           ==================================================================== -->
+      <div id="module-solicitud-lti-container" class="module-container" style="display: none;">
+        <section class="solicitud-lti-section">
+          <!-- Header Banner -->
+          <div class="drilldown-header" style="margin-bottom: 1.5rem;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+              <div>
+                <h2 style="font-size: 1.35rem; font-weight: 700; margin-bottom: 0.35rem; display: flex; align-items: center; gap: 0.5rem;">
+                  📝 Nueva Solicitud LTI
+                  <span class="badge badge-info" style="font-size: 0.72rem; vertical-align: middle;">dbo.Proyectos</span>
+                </h2>
+                <p style="color: var(--text-secondary); font-size: 0.88rem;">
+                  Registra una nueva asignación o solicitud de proyecto técnico. Escribe el N° de proyecto para autocompletar desde el Backlog SGA o ingresa los datos de forma manual.
+                </p>
+              </div>
+              <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <span class="badge badge-success" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;">
+                  🟢 Base de Datos Conectada
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Banner de Alerta / Duplicados (Oculto por defecto) -->
+          <div id="solicitud-duplicate-alert" class="solicitud-alert-banner alert-warning" style="display: none;">
+            <div class="alert-icon">⚠️</div>
+            <div class="alert-content">
+              <div class="alert-title" id="duplicate-alert-title">El N° de proyecto ya existe en el sistema</div>
+              <div class="alert-description" id="duplicate-alert-desc">
+                Este proyecto ya fue ingresado previamente. Puedes complementar el campo "Detalle" o agregar nuevos servicios en el proyecto original.
+              </div>
+              <div class="alert-actions" style="margin-top: 0.6rem;">
+                <button type="button" id="btn-view-duplicate-project" class="btn btn-secondary btn-sm">
+                  🔍 Ver Proyecto en Seguimiento
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Banner de Error General (Oculto por defecto) -->
+          <div id="solicitud-error-alert" class="solicitud-alert-banner alert-danger" style="display: none;">
+            <div class="alert-icon">❌</div>
+            <div class="alert-content">
+              <div class="alert-title">No se pudo guardar la solicitud</div>
+              <div class="alert-description" id="solicitud-error-desc">Verifica que todos los campos requeridos estén completos.</div>
+            </div>
+          </div>
+
+          <!-- Tarjeta Principal del Formulario -->
+          <div class="solicitud-card">
+            <div class="solicitud-card-header">
+              <div class="ticket-card-title">
+                <span>📋 Formulario de Registro de Solicitud</span>
+              </div>
+              <span class="badge badge-neutral" style="font-size: 0.75rem;">Todos los campos con (*) son obligatorios</span>
+            </div>
+
+            <form id="solicitud-lti-form" onsubmit="event.preventDefault();">
+              <!-- Campo Oculto y Fijo: Tipo de Servicio -->
+              <input type="hidden" id="solicitud-tipo-servicio" value="Otros">
+
+              <div class="solicitud-form-grid">
+                
+                <!-- Fila 1: N° Proyecto (con autocomplete) y Cliente -->
+                <div class="form-group autocomplete-container">
+                  <label class="form-label" for="solicitud-nro-proyecto">
+                    N° de Proyecto <span class="form-required">*</span>
+                  </label>
+                  <div class="input-with-icon">
+                    <span class="input-icon">🔢</span>
+                    <input 
+                      type="text" 
+                      id="solicitud-nro-proyecto" 
+                      class="form-input" 
+                      placeholder="Ej: 0001614653 o 1614653" 
+                      required 
+                      autocomplete="off"
+                    >
+                    <span id="autocomplete-spinner" class="spinner-inline" style="display: none; position: absolute; right: 12px; top: 12px;"></span>
+                  </div>
+                  <!-- Dropdown flotante de sugerencias -->
+                  <div id="solicitud-autocomplete-dropdown" class="autocomplete-dropdown" style="display: none;">
+                    <!-- Elementos sugeridos inyectados dinámicamente -->
+                  </div>
+                  <span class="form-help-text">Escribe para autocompletar cliente y solots Liray desde SGA.</span>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label" for="solicitud-cliente">
+                    Cliente <span class="form-required">*</span>
+                  </label>
+                  <div class="input-with-icon">
+                    <span class="input-icon">🏢</span>
+                    <input 
+                      type="text" 
+                      id="solicitud-cliente" 
+                      class="form-input" 
+                      placeholder="Razón Social o Nombre del Cliente" 
+                      required
+                    >
+                  </div>
+                  <span class="form-help-text">Nombre de la empresa o cliente asociado.</span>
+                </div>
+
+                <!-- Fila 2: Fecha de Solicitud y Estado Bloqueado -->
+                <div class="form-group">
+                  <label class="form-label" for="solicitud-fecha">
+                    Fecha de Solicitud <span class="form-required">*</span>
+                  </label>
+                  <div class="input-with-icon">
+                    <span class="input-icon">📅</span>
+                    <input 
+                      type="date" 
+                      id="solicitud-fecha" 
+                      class="form-input" 
+                      required
+                    >
+                  </div>
+                  <span class="form-help-text">Fecha en que se recibe o registra la solicitud.</span>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label" for="solicitud-estado">
+                    Estado <span class="form-required">*</span>
+                    <span class="badge-locked">🔒 Fijo</span>
+                  </label>
+                  <div class="input-with-icon">
+                    <span class="input-icon">📊</span>
+                    <select id="solicitud-estado" class="form-select" disabled title="El estado inicial de toda solicitud queda fijado automáticamente en 'Generado'">
+                      <option value="Generado" selected>Generado</option>
+                    </select>
+                  </div>
+                  <span class="form-help-text input-help-text">Estado inicial fijo: 'Generado' (no modificable en la creación).</span>
+                </div>
+
+                <!-- Fila 4: Detalle (Ancho Completo) con soporte Liray -->
+                <div class="form-group full-width">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                    <label class="form-label" for="solicitud-detalle" style="margin-bottom: 0;">
+                      Detalle del Requerimiento / Proyecto <span class="form-required">*</span>
+                    </label>
+                    <span id="detalle-solots-badge" class="badge badge-info badge-solots" style="display: none; font-size: 0.72rem;">
+                      ⚡ Solots Liray detectados
+                    </span>
+                  </div>
+                  <textarea 
+                    id="solicitud-detalle" 
+                    class="form-textarea" 
+                    rows="6" 
+                    placeholder="Se autocompletará con los Solots Liray si existen en SGA. También puedes redactar o complementar los requerimientos técnicos..." 
+                    required
+                  ></textarea>
+                  <span class="form-help-text">Descripción técnica del proyecto. Puedes editar y agregar notas libremente.</span>
+                </div>
+
+              </div>
+
+              <!-- Botones de Acción -->
+              <div class="solicitud-form-actions">
+                <button type="button" id="btn-submit-solicitud" class="btn btn-primary btn-execute">
+                  <span id="solicitud-spinner" class="spinner-inline" style="display: none;"></span>
+                  <span id="solicitud-btn-icon">🚀</span>
+                  <span id="solicitud-btn-text">Solicitar</span>
+                </button>
+                <button type="button" id="btn-reset-solicitud" class="btn btn-secondary">
+                  <span>🧹 Limpiar Formulario</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </section>
+      </div>
+
+    </main>
+
+    <!-- ====================================================================
+         c) MODAL / POPUP DE ÉXITO: TICKET CREADO
+         ==================================================================== -->
+    <div id="ticket-success-modal" class="modal-backdrop" style="display: none;">
+      <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modal-success-title">
+        <div class="modal-header">
+          <div class="modal-header-brand">
+            <div class="modal-icon-success">🎉</div>
+            <div>
+              <h3 id="modal-success-title" class="modal-title">¡Ticket Creado con Éxito!</h3>
+              <p class="modal-subtitle">Interacción registrada en Micro Focus Service Manager</p>
+            </div>
+          </div>
+          <button type="button" class="modal-close-btn" id="btn-close-modal-icon" aria-label="Cerrar modal">&times;</button>
+        </div>
+
+        <div class="modal-body">
+          <p class="modal-description">
+            La automatización completó todos los pasos satisfactoriamente y generó el siguiente identificador oficial:
+          </p>
+
+          <!-- Ticket ID Highlight Display Card -->
+          <div class="ticket-id-display-box">
+            <span class="ticket-id-label">N° de Interacción Generado</span>
+            <div class="ticket-id-value-container">
+              <span id="ticket-success-id" class="ticket-id-value">SD0000000</span>
+              <button type="button" id="btn-copy-ticket-id" class="btn btn-primary btn-sm" title="Copiar ID del Ticket al portapapeles">
+                <span id="copy-ticket-btn-text">📋 Copiar Ticket</span>
+              </button>
+            </div>
+            <div id="ticket-copy-feedback" class="copy-feedback-msg" style="display: none;">
+              ✓ ¡Copiado al portapapeles!
+            </div>
+          </div>
+
+          <!-- Resumen de Datos Enviados -->
+          <div class="modal-summary-box">
+            <div class="modal-summary-row">
+              <span class="modal-summary-label">Contacto:</span>
+              <span id="modal-summary-contacto" class="modal-summary-val">ALEJANDRO JAVIER AGUILAR MORALES</span>
+            </div>
+            <div class="modal-summary-row">
+              <span class="modal-summary-label">Título:</span>
+              <span id="modal-summary-titulo" class="modal-summary-val">Creacion test automatizacion</span>
+            </div>
+            <div class="modal-summary-row">
+              <span class="modal-summary-label">Grupo:</span>
+              <span id="modal-summary-grupo" class="modal-summary-val">Lideres Tecnicos</span>
+            </div>
+            <div class="modal-summary-row">
+              <span class="modal-summary-label">Área / Subárea:</span>
+              <span id="modal-summary-area" class="modal-summary-val">Proyectos / Apoyo habilitacion cliente</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" id="btn-close-success-modal" class="btn btn-secondary">
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====================================================================
+         d) MODAL / POPUP DE ÉXITO: SOLICITUD LTI CREADA
+         ==================================================================== -->
+    <div id="solicitud-success-modal" class="modal-backdrop" style="display: none;">
+      <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modal-solicitud-success-title">
+        <div class="modal-header">
+          <div class="modal-header-brand">
+            <div class="modal-icon-success">🎉</div>
+            <div>
+              <h3 id="modal-solicitud-success-title" class="modal-title">¡Solicitud LTI Creada con Éxito!</h3>
+              <p class="modal-subtitle">Registro insertado correctamente en dbo.Proyectos</p>
+            </div>
+          </div>
+          <button type="button" class="modal-close-btn" id="btn-close-solicitud-modal-icon" aria-label="Cerrar">&times;</button>
+        </div>
+
+        <div class="modal-body">
+          <p class="modal-description">
+            La solicitud de Líder TI ha sido guardada en la base de datos con el siguiente identificador:
+          </p>
+
+          <div class="ticket-id-display-box">
+            <span class="ticket-id-label">ID de Proyecto Generado</span>
+            <div class="ticket-id-value-container">
+              <span id="solicitud-success-id" class="ticket-id-value">0</span>
+            </div>
+          </div>
+
+          <div class="modal-summary-box">
+            <div class="modal-summary-row">
+              <span class="modal-summary-label">Cliente:</span>
+              <span id="modal-solicitud-cliente" class="modal-summary-val">-</span>
+            </div>
+            <div class="modal-summary-row">
+              <span class="modal-summary-label">N° Proyecto:</span>
+              <span id="modal-solicitud-nro" class="modal-summary-val" style="font-family: var(--font-mono); font-weight: 700; color: var(--primary);">-</span>
+            </div>
+            <div class="modal-summary-row">
+              <span class="modal-summary-label">LT Asignado:</span>
+              <span id="modal-solicitud-lt" class="modal-summary-val">-</span>
+            </div>
+            <div class="modal-summary-row">
+              <span class="modal-summary-label">Estado:</span>
+              <span id="modal-solicitud-estado" class="modal-summary-val">-</span>
+            </div>
+            <div class="modal-summary-row">
+              <span class="modal-summary-label">Fecha:</span>
+              <span id="modal-solicitud-fecha" class="modal-summary-val">-</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer" style="display: flex; justify-content: space-between; gap: 0.75rem;">
+          <button type="button" id="btn-solicitud-create-another" class="btn btn-secondary">
+            ➕ Crear Otra Solicitud
+          </button>
+          <button type="button" id="btn-solicitud-go-to-projects" class="btn btn-primary">
+            📊 Ver en Seguimiento
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====================================================================
+         e) MODAL DE EDICIÓN DE PROYECTO
+         ==================================================================== -->
+    <div id="edit-project-modal" class="modal-backdrop" style="display: none;">
+      <div class="modal-dialog modal-dialog-lg" role="dialog" aria-modal="true" aria-labelledby="modal-edit-project-title">
+        
+        <!-- Encabezado del Modal -->
+        <div class="modal-header">
+          <div class="modal-header-brand">
+            <div class="modal-icon-edit">✏️</div>
+            <div>
+              <h3 id="modal-edit-project-title" class="modal-title">Editar Proyecto</h3>
+              <p class="modal-subtitle">Modificación de datos operativos y estado en dbo.Proyectos</p>
+            </div>
+          </div>
+          <button type="button" class="modal-close-btn" id="btn-close-edit-modal-icon" aria-label="Cerrar modal">&times;</button>
+        </div>
+
+        <!-- Banner de Alerta de Error en Edición (Oculto por defecto) -->
+        <div id="edit-project-error-alert" class="solicitud-alert-banner alert-danger" style="display: none; margin: 1rem 1.5rem 0 1.5rem;">
+          <div class="alert-icon">❌</div>
+          <div class="alert-content">
+            <div class="alert-title">No se pudo guardar la modificación</div>
+            <div class="alert-description" id="edit-project-error-desc">Verifica que los campos requeridos no estén vacíos.</div>
+          </div>
+        </div>
+
+        <!-- Cuerpo del Modal -->
+        <div class="modal-body">
+          <form id="edit-project-form" onsubmit="event.preventDefault();">
+            <input type="hidden" id="edit-project-id">
+
+            <div class="solicitud-form-grid">
+              
+              <!-- Fila 1: N° Proyecto (Protegido) y Fecha Solicitud (Protegida) -->
+              <div class="form-group">
+                <label class="form-label" for="edit-project-nro">
+                  N° de Proyecto
+                  <span class="badge-protected">🔒 Protegido</span>
+                </label>
+                <div class="input-with-icon">
+                  <span class="input-icon">🔢</span>
+                  <input type="text" id="edit-project-nro" class="form-input input-readonly" disabled readonly>
+                </div>
+                <span class="form-help-text">Identificador inmutable para preservar vínculos con Backlog SGA.</span>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="edit-project-fecha">
+                  Fecha de Solicitud LTI
+                  <span class="badge-protected">🔒 Protegido</span>
+                </label>
+                <div class="input-with-icon">
+                  <span class="input-icon">📅</span>
+                  <input type="text" id="edit-project-fecha" class="form-input input-readonly" disabled readonly>
+                </div>
+                <span class="form-help-text">Fecha original de ingreso del requerimiento.</span>
+              </div>
+
+              <!-- Fila 2: Cliente (Editable) y LT Asignado (Editable) -->
+              <div class="form-group">
+                <label class="form-label" for="edit-project-cliente">
+                  Cliente <span class="form-required">*</span>
+                </label>
+                <div class="input-with-icon">
+                  <span class="input-icon">🏢</span>
+                  <input type="text" id="edit-project-cliente" class="form-input" placeholder="Razón Social o Nombre del Cliente" required>
+                </div>
+                <span class="form-help-text">Nombre de la empresa o cliente asociado.</span>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="edit-project-lt-asignado">
+                  LT Asignado
+                </label>
+                <div class="input-with-icon">
+                  <span class="input-icon">👤</span>
+                  <select id="edit-project-lt-asignado" class="form-select">
+                    <option value="">— Sin Asignar —</option>
+                    <!-- Opciones pobladas dinámicamente con App.lideresList -->
+                  </select>
+                </div>
+                <span class="form-help-text">Líder Técnico responsable de la atención.</span>
+              </div>
+
+              <!-- Fila 3: Estado (Editable) y Tipo de Servicio (Editable) -->
+              <div class="form-group">
+                <label class="form-label" for="edit-project-estado">
+                  Estado del Proyecto <span class="form-required">*</span>
+                </label>
+                <div class="input-with-icon">
+                  <span class="input-icon">📊</span>
+                  <select id="edit-project-estado" class="form-select" required>
+                    <option value="Generado">Generado (En Curso / Asignado)</option>
+                    <option value="En revision">En revision (Evaluación Técnica)</option>
+                    <option value="Atendido">Atendido (Completado / Finalizado)</option>
+                  </select>
+                </div>
+                <span class="form-help-text">Etapa actual en el ciclo de vida del proyecto.</span>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="edit-project-tipo-servicio">
+                  Tipo de Servicio
+                </label>
+                <div class="input-with-icon">
+                  <span class="input-icon">⚙️</span>
+                  <select id="edit-project-tipo-servicio" class="form-select">
+                    <option value="Otros">Otros</option>
+                    <option value="Cloud Empresarial">Cloud Empresarial</option>
+                    <option value="Cloud Regional (O365/Google))">Cloud Regional (O365/Google)</option>
+                    <option value="Colabora (3C-2R-100D)">Colabora (3C-2R-100D)</option>
+                    <option value="Hosting Virtual">Hosting Virtual</option>
+                    <option value="Virtual Datacenter (VDC)">Virtual Datacenter (VDC)</option>
+                  </select>
+                </div>
+                <span class="form-help-text">Clasificación técnica del servicio.</span>
+              </div>
+
+              <!-- Fila 4: Detalle del Proyecto (Ancho Completo) -->
+              <div class="form-group full-width">
+                <label class="form-label" for="edit-project-detalle">
+                  Detalle del Requerimiento / Proyecto <span class="form-required">*</span>
+                </label>
+                <textarea id="edit-project-detalle" class="form-textarea" rows="4" placeholder="Descripción detallada de tareas, topología, requerimientos y alcance..." required></textarea>
+              </div>
+
+              <!-- Fila 5: Comentarios de Cierre / Seguimiento (Ancho Completo) -->
+              <div class="form-group full-width">
+                <label class="form-label" for="edit-project-comentario">
+                  Comentarios de Cierre / Observaciones
+                </label>
+                <textarea id="edit-project-comentario" class="form-textarea" rows="3" placeholder="Ingresa notas de cierre, resolución técnica, números de ticket o detalles para entrega..."></textarea>
+                <span class="form-help-text">Recomendado al cambiar el estado a 'Atendido'.</span>
+              </div>
+
+            </div>
+          </form>
+        </div>
+
+        <!-- Pie del Modal -->
+        <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+          <button type="button" id="btn-cancel-edit-modal" class="btn btn-secondary">
+            Cancelar
+          </button>
+          <button type="button" id="btn-save-edit-modal" class="btn btn-primary btn-execute">
+            <span id="edit-modal-spinner" class="spinner-inline" style="display: none;"></span>
+            <span id="edit-modal-btn-icon">💾</span>
+            <span id="edit-modal-btn-text">Guardar Cambios</span>
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ====================================================================
+         f) MODAL DE CONFIRMACIÓN DE ELIMINACIÓN
+         ==================================================================== -->
+    <div id="delete-project-modal" class="modal-backdrop" style="display: none;">
+      <div class="modal-dialog modal-dialog-sm" role="dialog" aria-modal="true" aria-labelledby="modal-delete-project-title">
+        
+        <!-- Encabezado Destructivo -->
+        <div class="modal-header">
+          <div class="modal-header-brand">
+            <div class="modal-icon-danger">🗑️</div>
+            <div>
+              <h3 id="modal-delete-project-title" class="modal-title" style="color: var(--status-danger-text);">¿Eliminar Proyecto?</h3>
+              <p class="modal-subtitle">Esta acción es irreversible</p>
+            </div>
+          </div>
+          <button type="button" class="modal-close-btn" id="btn-close-delete-modal-icon" aria-label="Cerrar">&times;</button>
+        </div>
+
+        <!-- Cuerpo del Modal -->
+        <div class="modal-body">
+          <p class="modal-description" style="font-size: 0.95rem; margin-bottom: 1rem;">
+            ¿Estás seguro de que deseas eliminar permanentemente este proyecto de la base de datos?
+          </p>
+
+          <!-- Tarjeta Resumen del Proyecto a Eliminar -->
+          <div class="modal-summary-box" style="border-left: 4px solid var(--status-danger-text); background-color: var(--bg-surface-secondary);">
+            <input type="hidden" id="delete-project-id">
+            <div class="modal-summary-row">
+              <span class="modal-summary-label">N° Proyecto:</span>
+              <span id="modal-delete-nro" class="modal-summary-val" style="font-family: var(--font-mono); font-weight: 700; color: var(--primary);">-</span>
+            </div>
+            <div class="modal-summary-row">
+              <span class="modal-summary-label">Cliente:</span>
+              <span id="modal-delete-cliente" class="modal-summary-val" style="font-weight: 600;">-</span>
+            </div>
+            <div class="modal-summary-row">
+              <span class="modal-summary-label">LT Asignado:</span>
+              <span id="modal-delete-lt" class="modal-summary-val">-</span>
+            </div>
+            <div class="modal-summary-row">
+              <span class="modal-summary-label">Estado:</span>
+              <span id="modal-delete-estado" class="modal-summary-val">-</span>
+            </div>
+          </div>
+
+          <div class="solicitud-alert-banner alert-warning" style="margin-top: 1rem; padding: 0.75rem;">
+            <div class="alert-icon" style="font-size: 1.2rem;">⚠️</div>
+            <div class="alert-content" style="font-size: 0.85rem;">
+              El registro será eliminado de <code>dbo.Proyectos</code>. Esta operación no se puede deshacer.
+            </div>
+          </div>
+        </div>
+
+        <!-- Pie del Modal -->
+        <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+          <button type="button" id="btn-cancel-delete-modal" class="btn btn-secondary">
+            Cancelar
+          </button>
+          <button type="button" id="btn-confirm-delete-modal" class="btn btn-danger btn-execute">
+            <span id="delete-modal-spinner" class="spinner-inline" style="display: none;"></span>
+            <span id="delete-modal-btn-icon">🗑️</span>
+            <span id="delete-modal-btn-text">Sí, Eliminar Proyecto</span>
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Scripts -->
+  <script src="/js/auth.js?v=5.0"></script>
+  <script src="/js/app.js?v=5.0"></script>
+</body>
+</html>
