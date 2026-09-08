@@ -49,10 +49,33 @@ const Auth = {
 
   async fetchWithAuth(url, options = {}) {
     const token = this.getToken();
-    const headers = {
-      'Content-Type': 'application/json',
-      ...(options.headers || {})
-    };
+    const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+
+    let headers = {};
+    if (typeof Headers !== 'undefined' && options.headers instanceof Headers) {
+      options.headers.forEach((val, key) => {
+        headers[key] = val;
+      });
+    } else if (options.headers) {
+      headers = { ...options.headers };
+    }
+
+    if (!isFormData && !Object.keys(headers).some(k => k.toLowerCase() === 'content-type')) {
+      headers['Content-Type'] = 'application/json';
+    }
+
+    // Si es FormData, eliminar cualquier variante de Content-Type (Content-Type, content-type)
+    // para permitir que el navegador genere automáticamente 'multipart/form-data; boundary=...'
+    if (isFormData) {
+      delete headers['Content-Type'];
+      Object.keys(headers).forEach(k => {
+        if (k.toLowerCase() === 'content-type') {
+          if (!headers[k] || !String(headers[k]).includes('boundary=')) {
+            delete headers[k];
+          }
+        }
+      });
+    }
 
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;

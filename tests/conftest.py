@@ -18,7 +18,7 @@ def auth_token():
         "sub": "aaguilar",
         "nombre_completo": "Alejandro Aguilar",
         "lt_asignado": "Alejandro Aguilar",
-        "rol": "LIDER_TI"
+        "rol": "ADMIN"
     }
     return create_access_token(token_data)
 
@@ -33,6 +33,7 @@ def clean_test_data():
                     DELETE FROM dbo.Proyectos 
                     WHERE Numero_Proyecto LIKE '%QA%' 
                        OR Numero_Proyecto LIKE '%TEST%'
+                       OR Numero_Proyecto LIKE '%DUP%'
                        OR Cliente LIKE '%PRUEBA QA%' 
                        OR Cliente LIKE '%INMUTABILIDAD%'
                        OR Cliente LIKE '%MODIFICADO%' 
@@ -40,6 +41,13 @@ def clean_test_data():
                        OR Detalle LIKE '%Prueba E2E Automatizada%'
                        OR Detalle LIKE '%QA%'
                        OR Detalle LIKE '%inmutabilidad%'
+                       OR Detalle LIKE '%anti-duplicado%'
+                """)
+                cursor.execute("""
+                    DELETE FROM dbo.App_Usuarios 
+                    WHERE username LIKE 'e2euser%' 
+                       OR username LIKE 'testuser%'
+                       OR username LIKE 'testdbg%'
                 """)
                 conn.commit()
         except Exception as e:

@@ -82,6 +82,9 @@
           <button id="nav-btn-solicitud-lti" class="nav-module-btn" title="Ingreso de Nueva Solicitud LTI">
             📝 Solicitud LTI
           </button>
+          <button id="nav-btn-usuarios" class="nav-module-btn" title="Gestión y Mantenedor de Usuarios del Sistema" style="display: none;">
+            👥 Usuarios
+          </button>
         </nav>
       </div>
 
@@ -174,13 +177,16 @@
               <div style="min-width: 200px;">
                 <select id="filter-estado-sp" class="form-select" title="Estado en Sharepoint (dbo.Proyectos)">
                   <option value="">— Estado Sharepoint (Todos) —</option>
+                  <option value="Generado">Generado</option>
+                  <option value="En revision">En revision</option>
+                  <option value="Atendido">Atendido</option>
                 </select>
               </div>
 
               <!-- Selector de Líder TI -->
               <div style="min-width: 220px;">
                 <select id="filter-lt" class="form-select">
-                  <option value="">Cargando líderes...</option>
+                  <option value="__ALL__">— Todos los Líderes TI —</option>
                 </select>
               </div>
             </div>
@@ -585,6 +591,10 @@
                   </label>
                   <select id="ticket-contacto" class="form-select" required>
                     <option value="ALEJANDRO JAVIER AGUILAR MORALES" selected>ALEJANDRO JAVIER AGUILAR MORALES</option>
+                    <option value="JUAN BARRERA RAMOS">JUAN BARRERA RAMOS</option>
+                    <option value="SAMUEL PAREDES SAEZ">SAMUEL PAREDES SAEZ</option>
+                    <option value="SOLANGE ANGELICA ORTIZ VIROLDE">SOLANGE ANGELICA ORTIZ VIROLDE</option>
+                    <option value="Erwin Patricio Sandoval Cadiz">Erwin Patricio Sandoval Cadiz</option>
                   </select>
                   <span class="form-help-text">Usuario solicitante registrado en la plataforma Service Manager.</span>
                 </div>
@@ -594,7 +604,7 @@
                   <label class="form-label" for="ticket-titulo">
                     Título de la Interacción <span class="form-required">*</span>
                   </label>
-                  <input type="text" id="ticket-titulo" class="form-input" value="Creacion test automatizacion" placeholder="Ingresa el título del ticket" required>
+                  <input type="text" id="ticket-titulo" class="form-input" placeholder="Ingresa el título o resumen del requerimiento (ej: Habilitación enlace MPLS Cliente X)" required>
                 </div>
 
                 <!-- Descripción -->
@@ -602,7 +612,7 @@
                   <label class="form-label" for="ticket-descripcion">
                     Descripción <span class="form-required">*</span>
                   </label>
-                  <textarea id="ticket-descripcion" class="form-textarea" rows="3" placeholder="Ingresa la descripción detallada del requerimiento" required>Prueba test automatización</textarea>
+                  <textarea id="ticket-descripcion" class="form-textarea" rows="3" placeholder="Detalla el alcance, requerimiento técnico, justificación y antecedentes necesarios..." required></textarea>
                 </div>
 
                 <!-- Grid de Clasificación: Área y Subárea -->
@@ -643,6 +653,16 @@
                     </label>
                     <select id="ticket-grupo" class="form-select" required>
                       <option value="Lideres Tecnicos" selected>Lideres Tecnicos</option>
+                      <option value="ProvisionConectividadTI">ProvisionConectividadTI</option>
+                      <option value="ProvisionVirtualizacionTI">ProvisionVirtualizacionTI</option>
+                      <option value="Plataforma T3 / Soporte Especializado">Plataforma T3 / Soporte Especializado</option>
+                      <option value="Torre Linux">Torre Linux</option>
+                      <option value="Torre Microsoft">Torre Microsoft</option>
+                      <option value="Torre Monitoreo">Torre Monitoreo</option>
+                      <option value="Torre Plataformas Internas">Torre Plataformas Internas</option>
+                      <option value="Torre Respaldos">Torre Respaldos</option>
+                      <option value="Torre SAP">Torre SAP</option>
+                      <option value="Torre Virtualizacion">Torre Virtualizacion</option>
                     </select>
                   </div>
                 </div>
@@ -650,20 +670,25 @@
                 <!-- Opciones complementarias: Impacto y Urgencia -->
                 <div class="form-row-2col">
                   <div class="form-group">
-                    <label class="form-label" for="ticket-impacto">Impacto</label>
-                    <select id="ticket-impacto" class="form-select">
+                    <label class="form-label" for="ticket-impacto">
+                      Impacto <span class="form-required">*</span>
+                    </label>
+                    <select id="ticket-impacto" class="form-select" required>
+                      <option value="1 - Alto (Perdida Total)">1 - Alto (Perdida Total)</option>
+                      <option value="2 - Moderada (Perdida Parcial)">2 - Moderada (Perdida Parcial)</option>
                       <option value="3 - Menor (Existen WorkAround)" selected>3 - Menor (Existen WorkAround)</option>
-                      <option value="2 - Medio">2 - Medio</option>
-                      <option value="1 - Alto">1 - Alto</option>
                     </select>
                   </div>
 
                   <div class="form-group">
-                    <label class="form-label" for="ticket-urgencia">Urgencia</label>
-                    <select id="ticket-urgencia" class="form-select">
+                    <label class="form-label" for="ticket-urgencia">
+                      Urgencia <span class="form-required">*</span>
+                    </label>
+                    <select id="ticket-urgencia" class="form-select" required>
+                      <option value="1 - Crítica (Atención Inmediata)">1 - Crítica (Atención Inmediata)</option>
+                      <option value="2 - Alta (Resolución a corto plazo)">2 - Alta (Resolución a corto plazo)</option>
                       <option value="3 - Media (Resolución a mediano plazo)" selected>3 - Media (Resolución a mediano plazo)</option>
-                      <option value="2 - Alta">2 - Alta</option>
-                      <option value="1 - Crítica">1 - Crítica</option>
+                      <option value="4 - Baja (No requiere urgencia)">4 - Baja (No requiere urgencia)</option>
                     </select>
                   </div>
                 </div>
@@ -907,19 +932,123 @@
         </section>
       </div>
 
+      <!-- ====================================================================
+           MÓDULO 5: MANTENEDOR DE USUARIOS Y ROLES (ADMIN)
+           ==================================================================== -->
+      <div id="module-usuarios-container" class="module-container" style="display: none;">
+        <section class="usuarios-section">
+          
+          <!-- Encabezado del Módulo -->
+          <div class="usuarios-header-card">
+            <div class="usuarios-header-info">
+              <div class="usuarios-header-icon">👥</div>
+              <div>
+                <h2 class="usuarios-title">Mantenedor de Usuarios y Permisos</h2>
+                <p class="usuarios-subtitle">Gestión centralizada de cuentas, roles (PM, LTI, ADMIN), contraseñas y accesos al sistema</p>
+              </div>
+            </div>
+            <div class="usuarios-header-actions">
+              <button type="button" id="btn-create-user-open" class="btn btn-primary">
+                ➕ Nuevo Usuario
+              </button>
+            </div>
+          </div>
+
+          <!-- Barra de Filtros y Búsqueda -->
+          <div class="usuarios-filter-card">
+            <div class="usuarios-filter-grid">
+              
+              <!-- Búsqueda en Vivo -->
+              <div class="filter-group-item search-grow">
+                <label class="form-label" for="usuarios-search-input">Buscar Usuario</label>
+                <div class="input-with-icon">
+                  <span class="input-icon">🔍</span>
+                  <input type="text" id="usuarios-search-input" class="form-input" placeholder="Buscar por nombre, username o líder asignado...">
+                </div>
+              </div>
+
+              <!-- Filtro por Rol -->
+              <div class="filter-group-item">
+                <label class="form-label" for="usuarios-filter-rol">Filtrar por Rol</label>
+                <div class="input-with-icon">
+                  <span class="input-icon">🛡️</span>
+                  <select id="usuarios-filter-rol" class="form-select">
+                    <option value="">— Todos los Roles —</option>
+                    <option value="PM">PM (Project Manager)</option>
+                    <option value="LTI">LTI (Líder Técnico)</option>
+                    <option value="ADMIN">ADMIN (Administrador)</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Filtro por Estado -->
+              <div class="filter-group-item">
+                <label class="form-label" for="usuarios-filter-estado">Filtrar por Estado</label>
+                <div class="input-with-icon">
+                  <span class="input-icon">🚦</span>
+                  <select id="usuarios-filter-estado" class="form-select">
+                    <option value="">— Todos los Estados —</option>
+                    <option value="1">Activo</option>
+                    <option value="0">Bloqueado / Inactivo</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Botón Limpiar Filtros -->
+              <div class="filter-group-item align-end">
+                <button type="button" id="btn-usuarios-reset-filters" class="btn btn-secondary" title="Restablecer Filtros">
+                  🔄 Limpiar
+                </button>
+              </div>
+
+            </div>
+
+            <!-- Barra de Estado y Conteo -->
+            <div class="usuarios-summary-bar">
+              <span class="text-muted">Total de usuarios:</span>
+              <span id="usuarios-count-badge" class="badge badge-info">0</span>
+            </div>
+          </div>
+
+          <!-- Tabla Principal de Usuarios -->
+          <div class="table-card">
+            <div class="table-responsive">
+              <table class="data-table" id="usuarios-table">
+                <thead>
+                  <tr>
+                    <th style="width: 60px;">ID</th>
+                    <th>Usuario</th>
+                    <th>Nombre Completo</th>
+                    <th style="width: 120px;">Rol</th>
+                    <th>LT Asignado</th>
+                    <th style="width: 110px;">Estado</th>
+                    <th style="width: 130px;">Creado</th>
+                    <th style="width: 170px; text-align: center;">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="usuarios-table-body">
+                  <!-- Filas renderizadas dinámicamente por JavaScript -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </section>
+      </div>
+
     </main>
 
     <!-- ====================================================================
-         c) MODAL / POPUP DE ÉXITO: TICKET CREADO
+         c) MODAL / POPUP DE ÉXITO: INTERACCIÓN Y PETICIÓN CREADAS
          ==================================================================== -->
-    <div id="ticket-success-modal" class="modal-backdrop" style="display: none;">
-      <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modal-success-title">
+    <div id="ticket-success-modal" class="modal-backdrop" style="display: none;" tabindex="-1">
+      <div class="modal-dialog modal-dialog-lg" role="dialog" aria-modal="true" aria-labelledby="modal-success-title" tabindex="-1">
         <div class="modal-header">
           <div class="modal-header-brand">
             <div class="modal-icon-success">🎉</div>
             <div>
-              <h3 id="modal-success-title" class="modal-title">¡Ticket Creado con Éxito!</h3>
-              <p class="modal-subtitle">Interacción registrada en Micro Focus Service Manager</p>
+              <h3 id="modal-success-title" class="modal-title">¡Ticket y Petición Creados con Éxito!</h3>
+              <p class="modal-subtitle">Registros generados en Micro Focus Service Manager</p>
             </div>
           </div>
           <button type="button" class="modal-close-btn" id="btn-close-modal-icon" aria-label="Cerrar modal">&times;</button>
@@ -927,27 +1056,44 @@
 
         <div class="modal-body">
           <p class="modal-description">
-            La automatización completó todos los pasos satisfactoriamente y generó el siguiente identificador oficial:
+            La automatización completó satisfactoriamente el ciclo completo de creación en Service Manager, vinculando la petición relacionada y cerrando la sesión de forma segura:
           </p>
 
-          <!-- Ticket ID Highlight Display Card -->
-          <div class="ticket-id-display-box">
-            <span class="ticket-id-label">N° de Interacción Generado</span>
-            <div class="ticket-id-value-container">
-              <span id="ticket-success-id" class="ticket-id-value">SD0000000</span>
-              <button type="button" id="btn-copy-ticket-id" class="btn btn-primary btn-sm" title="Copiar ID del Ticket al portapapeles">
-                <span id="copy-ticket-btn-text">📋 Copiar Ticket</span>
-              </button>
+          <!-- Grid de Identificadores Generados (SD + Petición) -->
+          <div class="ticket-dual-id-grid">
+            <!-- Tarjeta ID Interacción (SD) -->
+            <div class="ticket-id-display-box">
+              <span class="ticket-id-label">N° Interacción (SD)</span>
+              <div class="ticket-id-value-container">
+                <span id="ticket-success-id" class="ticket-id-value">SD0000000</span>
+                <button type="button" id="btn-copy-ticket-id" class="btn btn-primary btn-sm" title="Copiar ID de la Interacción al portapapeles">
+                  <span id="copy-ticket-btn-text">📋 Copiar SD</span>
+                </button>
+              </div>
+              <div id="ticket-copy-feedback" class="copy-feedback-msg" style="display: none;">
+                ✓ ¡Interacción copiada!
+              </div>
             </div>
-            <div id="ticket-copy-feedback" class="copy-feedback-msg" style="display: none;">
-              ✓ ¡Copiado al portapapeles!
+
+            <!-- Tarjeta ID Petición Relacionada -->
+            <div class="ticket-id-display-box ticket-id-box-peticion">
+              <span class="ticket-id-label">N° Petición Relacionada</span>
+              <div class="ticket-id-value-container">
+                <span id="peticion-success-id" class="ticket-id-value peticion-value">PET0000000</span>
+                <button type="button" id="btn-copy-peticion-id" class="btn btn-accent btn-sm" title="Copiar ID de la Petición al portapapeles">
+                  <span id="copy-peticion-btn-text">📋 Copiar Petición</span>
+                </button>
+              </div>
+              <div id="peticion-copy-feedback" class="copy-feedback-msg" style="display: none;">
+                ✓ ¡Petición copiada!
+              </div>
             </div>
           </div>
 
-          <!-- Resumen de Datos Enviados -->
+          <!-- Resumen de Datos Estructurados -->
           <div class="modal-summary-box">
             <div class="modal-summary-row">
-              <span class="modal-summary-label">Contacto:</span>
+              <span class="modal-summary-label">Contacto / Solicitante:</span>
               <span id="modal-summary-contacto" class="modal-summary-val">ALEJANDRO JAVIER AGUILAR MORALES</span>
             </div>
             <div class="modal-summary-row">
@@ -955,19 +1101,159 @@
               <span id="modal-summary-titulo" class="modal-summary-val">Creacion test automatizacion</span>
             </div>
             <div class="modal-summary-row">
-              <span class="modal-summary-label">Grupo:</span>
+              <span class="modal-summary-label">Grupo Asignado:</span>
               <span id="modal-summary-grupo" class="modal-summary-val">Lideres Tecnicos</span>
             </div>
             <div class="modal-summary-row">
               <span class="modal-summary-label">Área / Subárea:</span>
               <span id="modal-summary-area" class="modal-summary-val">Proyectos / Apoyo habilitacion cliente</span>
             </div>
+            <div class="modal-summary-row">
+              <span class="modal-summary-label">Usuario Petición:</span>
+              <span id="modal-summary-usuario-peticion" class="modal-summary-val">Alejandro.Aguilar</span>
+            </div>
+            <div class="modal-summary-row">
+              <span class="modal-summary-label">Estado de Cierre:</span>
+              <span id="modal-summary-logout-status" class="modal-summary-val" style="color: var(--status-success-text); font-weight: 700;">
+                ✓ Sesión Finalizada Limpiamente (Logout OK)
+              </span>
+            </div>
           </div>
         </div>
 
-        <div class="modal-footer">
-          <button type="button" id="btn-close-success-modal" class="btn btn-secondary">
-            Cerrar
+        <div class="modal-footer modal-footer-ticket-success" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <button type="button" id="btn-copy-both-ids" class="btn btn-secondary" title="Copiar resumen completo con ambos IDs">
+              📋 Copiar Resumen Completo
+            </button>
+            <button type="button" id="btn-open-email-modal" class="btn btn-warning btn-email-action" title="Enviar detalle del ticket por correo electrónico">
+              📧 Enviar correo
+            </button>
+          </div>
+          <button type="button" id="btn-close-success-modal" class="btn btn-primary">
+            Aceptar y Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====================================================================
+         c.1) MODAL / POPUP: ENVIAR DETALLE DEL TICKET POR CORREO (OFFICE 365)
+         ==================================================================== -->
+    <div id="email-ticket-modal" class="modal-backdrop" style="display: none;" tabindex="-1">
+      <div class="modal-dialog modal-dialog-lg" role="dialog" aria-modal="true" aria-labelledby="modal-email-title" tabindex="-1">
+        <div class="modal-header">
+          <div class="modal-header-brand">
+            <div class="modal-icon-email" style="background: rgba(245, 158, 11, 0.15); color: #d97706; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.35rem; border: 1px solid rgba(245, 158, 11, 0.3);">
+              📧
+            </div>
+            <div>
+              <h3 id="modal-email-title" class="modal-title">Enviar Detalle del Ticket por Correo</h3>
+              <p class="modal-subtitle">Notificación vía Office 365</p>
+            </div>
+          </div>
+          <button type="button" class="modal-close-btn" id="btn-close-email-modal-icon" aria-label="Cerrar modal">&times;</button>
+        </div>
+
+        <!-- Banner de Alerta de Error / Estado -->
+        <div id="email-status-alert" class="solicitud-alert-banner alert-danger" style="display: none; margin: 1rem 1.5rem 0 1.5rem;">
+          <div class="alert-icon" id="email-status-alert-icon">❌</div>
+          <div class="alert-content">
+            <div class="alert-title" id="email-error-title">No se pudo enviar el correo</div>
+            <div class="alert-description" id="email-error-desc">Verifica la configuración del servidor.</div>
+          </div>
+        </div>
+
+        <!-- Banner Informativo de IDs Asociados -->
+        <div class="email-ticket-badge-banner" style="margin: 1rem 1.5rem 0 1.5rem; padding: 0.65rem 1rem; background: var(--bg-surface-secondary); border-radius: var(--radius-md); border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
+          <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;">
+            <span style="font-weight: 600; color: var(--text-secondary);">Tickets Relacionados:</span>
+            <span id="email-badge-ticket-id" class="badge badge-primary" style="font-family: var(--font-mono); font-weight: 700;">SD0000000</span>
+            <span id="email-badge-peticion-id" class="badge badge-accent" style="font-family: var(--font-mono); font-weight: 700;">PET0000000</span>
+          </div>
+          <span style="font-size: 0.78rem; color: var(--text-muted);">Configuración: smtp.office365.com:587</span>
+        </div>
+
+        <div class="modal-body">
+          <form id="email-ticket-form" onsubmit="event.preventDefault();">
+            <div class="email-form-grid" style="display: flex; flex-direction: column; gap: 1rem;">
+              
+              <!-- Campo 1: Para (Destinatario) -->
+              <div class="form-group">
+                <label class="form-label" for="email-destinatario">
+                  Para (Destinatario) <span class="form-required">*</span>
+                </label>
+                <div class="input-with-icon">
+                  <span class="input-icon">👤</span>
+                  <input type="text" id="email-destinatario" class="form-input" value="alejandro.aguilarm@clarovtr.cl" placeholder="correo@clarovtr.cl" required>
+                </div>
+                <span class="form-help-text">Puedes especificar múltiples destinatarios separados por comas.</span>
+              </div>
+
+              <!-- Campo 2: Asunto -->
+              <div class="form-group">
+                <label class="form-label" for="email-asunto">
+                  Asunto <span class="form-required">*</span>
+                </label>
+                <div class="input-with-icon">
+                  <span class="input-icon">📝</span>
+                  <input type="text" id="email-asunto" class="form-input" placeholder="Asunto del correo" required>
+                </div>
+              </div>
+
+              <!-- Campo 3: Cuerpo del Correo -->
+              <div class="form-group">
+                <label class="form-label" for="email-cuerpo">
+                  Cuerpo del Correo <span class="form-required">*</span>
+                </label>
+                <textarea id="email-cuerpo" class="form-textarea" rows="6" placeholder="Detalle del requerimiento o mensaje..." required></textarea>
+                <span class="form-help-text">Texto que describe la solicitud y detalles del ticket.</span>
+              </div>
+
+              <!-- Campo 4: Archivo Adjunto (Opcional) -->
+              <div class="form-group">
+                <label class="form-label" for="email-adjunto">
+                  Adjunto <span style="font-size: 0.78rem; color: var(--text-muted); font-weight: normal;">(Opcional, máx. 15 MB)</span>
+                </label>
+                <div class="file-attachment-box" id="file-attachment-dropzone" tabindex="0" role="button" aria-label="Haz clic o presiona Enter para adjuntar un archivo (máximo 15 MB)" style="border: 2px dashed var(--border-color); border-radius: var(--radius-md); padding: 1.25rem 1rem; text-align: center; background: var(--bg-surface-secondary); cursor: pointer; transition: all 0.2s ease;">
+                  <input type="file" id="email-adjunto" class="file-input-hidden" style="display: none;">
+                  
+                  <!-- Estado sin archivo -->
+                  <div id="attachment-empty-state">
+                    <div style="font-size: 1.6rem; margin-bottom: 0.35rem;">📎</div>
+                    <div style="font-size: 0.88rem; font-weight: 600; color: var(--primary);">Haz clic o arrastra para adjuntar un archivo</div>
+                    <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.2rem;">Formatos soportados: PDF, PNG, JPG, XLSX, DOCX, ZIP (Máx. 15MB)</div>
+                  </div>
+
+                  <!-- Estado con archivo seleccionado -->
+                  <div id="attachment-selected-state" class="attachment-info" style="display: none; align-items: center; justify-content: space-between; padding: 0.6rem 0.85rem; background: var(--bg-surface); border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                    <div style="display: flex; align-items: center; gap: 0.65rem; text-align: left; overflow: hidden;">
+                      <span style="font-size: 1.3rem;">📄</span>
+                      <div style="overflow: hidden;">
+                        <div id="attachment-filename" style="font-weight: 600; font-size: 0.88rem; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; color: var(--text-primary);">archivo.pdf</div>
+                        <div id="attachment-filesize" style="font-size: 0.75rem; color: var(--text-muted);">0 KB</div>
+                      </div>
+                    </div>
+                    <button type="button" id="btn-remove-attachment" class="btn btn-secondary btn-sm" style="color: var(--status-danger-text); padding: 0.25rem 0.6rem;" title="Quitar archivo adjunto">
+                      ✖ Quitar
+                    </button>
+                  </div>
+
+                </div>
+              </div>
+
+            </div>
+          </form>
+        </div>
+
+        <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+          <button type="button" id="btn-cancel-email" class="btn btn-secondary">
+            Cancelar
+          </button>
+          <button type="button" id="btn-send-email" class="btn btn-primary btn-execute">
+            <span id="email-spinner" class="spinner-inline" style="display: none;"></span>
+            <span id="email-send-icon">✉️</span>
+            <span id="email-send-text">Enviar</span>
           </button>
         </div>
       </div>
@@ -1256,6 +1542,353 @@
           </button>
         </div>
 
+      </div>
+    </div>
+
+    <!-- ====================================================================
+         g) MODAL DE CREACIÓN DE USUARIO
+         ==================================================================== -->
+    <div id="create-user-modal" class="modal-backdrop" style="display: none;">
+      <div class="modal-dialog modal-dialog-lg" role="dialog" aria-modal="true" aria-labelledby="modal-create-user-title">
+        <div class="modal-header">
+          <div class="modal-header-brand">
+            <div class="modal-icon-edit" style="background: rgba(16, 185, 129, 0.15); color: #059669;">➕</div>
+            <div>
+              <h3 id="modal-create-user-title" class="modal-title">Nuevo Usuario</h3>
+              <p class="modal-subtitle">Registro de nueva cuenta en dbo.App_Usuarios</p>
+            </div>
+          </div>
+          <button type="button" class="modal-close-btn" id="btn-close-create-user-modal-icon" aria-label="Cerrar modal">&times;</button>
+        </div>
+
+        <div id="create-user-error-alert" class="solicitud-alert-banner alert-danger" style="display: none; margin: 1rem 1.5rem 0 1.5rem;">
+          <div class="alert-icon">❌</div>
+          <div class="alert-content">
+            <div class="alert-title">No se pudo crear el usuario</div>
+            <div class="alert-description" id="create-user-error-desc">Verifica los datos ingresados.</div>
+          </div>
+        </div>
+
+        <div class="modal-body">
+          <form id="create-user-form" onsubmit="event.preventDefault();">
+            <div class="solicitud-form-grid">
+              
+              <div class="form-group">
+                <label class="form-label" for="create-user-nombre">
+                  Nombre Completo <span class="form-required">*</span>
+                </label>
+                <div class="input-with-icon">
+                  <span class="input-icon">👤</span>
+                  <input type="text" id="create-user-nombre" class="form-input" placeholder="Ej: Perez Gonzalez Juan Carlos" required>
+                </div>
+                <span class="form-help-text">Nombre y apellidos institucionales del usuario.</span>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="create-user-username">
+                  Usuario (Username) <span class="form-required">*</span>
+                </label>
+                <div class="input-with-icon">
+                  <span class="input-icon">🆔</span>
+                  <input type="text" id="create-user-username" class="form-input" placeholder="Ej: jperez" required autocomplete="off">
+                </div>
+                <span class="form-help-text">Solo minúsculas, números, guiones y puntos (sin espacios ni tildes).</span>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="create-user-rol">
+                  Rol del Sistema <span class="form-required">*</span>
+                </label>
+                <div class="input-with-icon">
+                  <span class="input-icon">🛡️</span>
+                  <select id="create-user-rol" class="form-select" required>
+                    <option value="PM">PM (Project Manager - Solo Solicitud LTI)</option>
+                    <option value="LTI">LTI (Líder Técnico - Operativo)</option>
+                    <option value="ADMIN">ADMIN (Administrador del Sistema)</option>
+                  </select>
+                </div>
+                <span class="form-help-text">Define los privilegios de acceso en el sistema.</span>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="create-user-lt-asignado">
+                  Líder TI Vinculado (LT Asignado)
+                </label>
+                <div class="input-with-icon">
+                  <span class="input-icon">👔</span>
+                  <select id="create-user-lt-asignado" class="form-select">
+                    <option value="">— Ninguno / No Aplica —</option>
+                  </select>
+                </div>
+                <span class="form-help-text">Aplica si el usuario gestiona proyectos directamente.</span>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="create-user-password">
+                  Contraseña Inicial <span class="form-required">*</span>
+                </label>
+                <div class="input-with-icon">
+                  <span class="input-icon">🔑</span>
+                  <input type="password" id="create-user-password" class="form-input" value="Lti2026!" required>
+                </div>
+                <span class="form-help-text">Sugerida por defecto: <code>Lti2026!</code> (Mínimo 6 caracteres).</span>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="create-user-activo">
+                  Estado Inicial
+                </label>
+                <div class="input-with-icon">
+                  <span class="input-icon">🚦</span>
+                  <select id="create-user-activo" class="form-select">
+                    <option value="1">Activo (Permite iniciar sesión)</option>
+                    <option value="0">Bloqueado / Inactivo</option>
+                  </select>
+                </div>
+                <span class="form-help-text">Los usuarios bloqueados no pueden autenticarse.</span>
+              </div>
+
+            </div>
+          </form>
+        </div>
+
+        <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+          <button type="button" id="btn-cancel-create-user-modal" class="btn btn-secondary">
+            Cancelar
+          </button>
+          <button type="button" id="btn-save-create-user-modal" class="btn btn-primary btn-execute">
+            <span id="create-user-spinner" class="spinner-inline" style="display: none;"></span>
+            <span>💾 Crear Usuario</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====================================================================
+         h) MODAL DE EDICIÓN DE USUARIO
+         ==================================================================== -->
+    <div id="edit-user-modal" class="modal-backdrop" style="display: none;">
+      <div class="modal-dialog modal-dialog-lg" role="dialog" aria-modal="true" aria-labelledby="modal-edit-user-title">
+        <div class="modal-header">
+          <div class="modal-header-brand">
+            <div class="modal-icon-edit">✏️</div>
+            <div>
+              <h3 id="modal-edit-user-title" class="modal-title">Editar Usuario</h3>
+              <p class="modal-subtitle">Modificación de atributos y roles en dbo.App_Usuarios</p>
+            </div>
+          </div>
+          <button type="button" class="modal-close-btn" id="btn-close-edit-user-modal-icon" aria-label="Cerrar modal">&times;</button>
+        </div>
+
+        <div id="edit-user-error-alert" class="solicitud-alert-banner alert-danger" style="display: none; margin: 1rem 1.5rem 0 1.5rem;">
+          <div class="alert-icon">❌</div>
+          <div class="alert-content">
+            <div class="alert-title">No se pudo guardar la modificación</div>
+            <div class="alert-description" id="edit-user-error-desc">Verifica los datos.</div>
+          </div>
+        </div>
+
+        <div class="modal-body">
+          <form id="edit-user-form" onsubmit="event.preventDefault();">
+            <input type="hidden" id="edit-user-id">
+
+            <div class="solicitud-form-grid">
+              
+              <div class="form-group">
+                <label class="form-label" for="edit-user-username">
+                  Usuario (Username)
+                  <span class="badge-protected">🔒 Inmutable</span>
+                </label>
+                <div class="input-with-icon">
+                  <span class="input-icon">🆔</span>
+                  <input type="text" id="edit-user-username" class="form-input input-readonly" disabled readonly>
+                </div>
+                <span class="form-help-text">El nombre de usuario no puede modificarse tras su creación.</span>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="edit-user-nombre">
+                  Nombre Completo <span class="form-required">*</span>
+                </label>
+                <div class="input-with-icon">
+                  <span class="input-icon">👤</span>
+                  <input type="text" id="edit-user-nombre" class="form-input" required>
+                </div>
+                <span class="form-help-text">Nombre y apellidos institucionales.</span>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="edit-user-rol">
+                  Rol del Sistema <span class="form-required">*</span>
+                </label>
+                <div class="input-with-icon">
+                  <span class="input-icon">🛡️</span>
+                  <select id="edit-user-rol" class="form-select" required>
+                    <option value="PM">PM (Project Manager - Solo Solicitud LTI)</option>
+                    <option value="LTI">LTI (Líder Técnico - Operativo)</option>
+                    <option value="ADMIN">ADMIN (Administrador del Sistema)</option>
+                  </select>
+                </div>
+                <span class="form-help-text">Perfil y nivel de acceso RBAC.</span>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="edit-user-lt-asignado">
+                  Líder TI Vinculado
+                </label>
+                <div class="input-with-icon">
+                  <span class="input-icon">👔</span>
+                  <select id="edit-user-lt-asignado" class="form-select">
+                    <option value="">— Ninguno / No Aplica —</option>
+                  </select>
+                </div>
+                <span class="form-help-text">Líder asignado para seguimiento de proyectos.</span>
+              </div>
+
+              <div class="form-group full-width">
+                <label class="form-label" for="edit-user-activo">
+                  Estado de la Cuenta <span class="form-required">*</span>
+                </label>
+                <div class="input-with-icon">
+                  <span class="input-icon">🚦</span>
+                  <select id="edit-user-activo" class="form-select" required>
+                    <option value="1">Activo (Acceso Habilitado)</option>
+                    <option value="0">Bloqueado / Inactivo (Acceso Revocado)</option>
+                  </select>
+                </div>
+                <span class="form-help-text">Al bloquear una cuenta, se revoca inmediatamente el acceso al sistema.</span>
+              </div>
+
+            </div>
+          </form>
+        </div>
+
+        <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+          <button type="button" id="btn-cancel-edit-user-modal" class="btn btn-secondary">
+            Cancelar
+          </button>
+          <button type="button" id="btn-save-edit-user-modal" class="btn btn-primary btn-execute">
+            <span id="edit-user-spinner" class="spinner-inline" style="display: none;"></span>
+            <span>💾 Guardar Cambios</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====================================================================
+         i) MODAL DE RESETEO DE CONTRASEÑA DE USUARIO
+         ==================================================================== -->
+    <div id="reset-user-password-modal" class="modal-backdrop" style="display: none;">
+      <div class="modal-dialog modal-dialog-sm" role="dialog" aria-modal="true" aria-labelledby="modal-reset-user-title">
+        <div class="modal-header">
+          <div class="modal-header-brand">
+            <div class="modal-icon-edit" style="background: rgba(245, 158, 11, 0.15); color: #d97706;">🔑</div>
+            <div>
+              <h3 id="modal-reset-user-title" class="modal-title">Resetear Contraseña</h3>
+              <p class="modal-subtitle">Restablecimiento seguro de clave de acceso</p>
+            </div>
+          </div>
+          <button type="button" class="modal-close-btn" id="btn-close-reset-user-modal-icon" aria-label="Cerrar">&times;</button>
+        </div>
+
+        <div class="modal-body">
+          <input type="hidden" id="reset-user-id">
+
+          <div class="modal-summary-box" style="margin-bottom: 1.25rem;">
+            <div class="modal-summary-row">
+              <span class="modal-summary-label">Usuario:</span>
+              <span id="reset-user-username-display" class="modal-summary-val" style="font-family: var(--font-mono); font-weight: 700; color: var(--primary);">-</span>
+            </div>
+            <div class="modal-summary-row">
+              <span class="modal-summary-label">Nombre:</span>
+              <span id="reset-user-nombre-display" class="modal-summary-val" style="font-weight: 600;">-</span>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="reset-user-new-password">
+              Nueva Contraseña (Opcional)
+            </label>
+            <div class="input-with-icon">
+              <span class="input-icon">🔒</span>
+              <input type="password" id="reset-user-new-password" class="form-input" placeholder="Dejar en blanco para usar Lti2026!">
+            </div>
+            <span class="form-help-text">Si se deja en blanco, se asignará automáticamente <code>Lti2026!</code>.</span>
+          </div>
+
+          <div style="margin-top: 0.75rem;">
+            <button type="button" id="btn-reset-user-default-pass" class="btn btn-secondary btn-block" style="font-size: 0.85rem;">
+              ⚡ Usar Clave por Defecto (<code>Lti2026!</code>)
+            </button>
+          </div>
+        </div>
+
+        <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+          <button type="button" id="btn-cancel-reset-user-modal" class="btn btn-secondary">
+            Cancelar
+          </button>
+          <button type="button" id="btn-confirm-reset-user-modal" class="btn btn-primary btn-execute">
+            <span id="reset-user-spinner" class="spinner-inline" style="display: none;"></span>
+            <span>🔑 Confirmar Reseteo</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====================================================================
+         j) MODAL DE CONFIRMACIÓN DE ELIMINACIÓN DE USUARIO
+         ==================================================================== -->
+    <div id="delete-user-modal" class="modal-backdrop" style="display: none;">
+      <div class="modal-dialog modal-dialog-sm" role="dialog" aria-modal="true" aria-labelledby="modal-delete-user-title">
+        <div class="modal-header">
+          <div class="modal-header-brand">
+            <div class="modal-icon-danger">🗑️</div>
+            <div>
+              <h3 id="modal-delete-user-title" class="modal-title" style="color: var(--status-danger-text);">¿Eliminar Usuario?</h3>
+              <p class="modal-subtitle">Esta acción es irreversible</p>
+            </div>
+          </div>
+          <button type="button" class="modal-close-btn" id="btn-close-delete-user-modal-icon" aria-label="Cerrar">&times;</button>
+        </div>
+
+        <div class="modal-body">
+          <p class="modal-description" style="font-size: 0.95rem; margin-bottom: 1rem;">
+            ¿Estás seguro de que deseas eliminar permanentemente a este usuario de la base de datos?
+          </p>
+
+          <div class="modal-summary-box" style="border-left: 4px solid var(--status-danger-text); background-color: var(--bg-surface-secondary);">
+            <input type="hidden" id="delete-user-id">
+            <div class="modal-summary-row">
+              <span class="modal-summary-label">Usuario:</span>
+              <span id="delete-user-username-display" class="modal-summary-val" style="font-family: var(--font-mono); font-weight: 700; color: var(--primary);">-</span>
+            </div>
+            <div class="modal-summary-row">
+              <span class="modal-summary-label">Nombre:</span>
+              <span id="delete-user-nombre-display" class="modal-summary-val" style="font-weight: 600;">-</span>
+            </div>
+            <div class="modal-summary-row">
+              <span class="modal-summary-label">Rol:</span>
+              <span id="delete-user-rol-display" class="modal-summary-val">-</span>
+            </div>
+          </div>
+
+          <div class="solicitud-alert-banner alert-warning" style="margin-top: 1rem; padding: 0.75rem;">
+            <div class="alert-icon" style="font-size: 1.2rem;">⚠️</div>
+            <div class="alert-content" style="font-size: 0.85rem;">
+              El usuario será eliminado de <code>dbo.App_Usuarios</code>. No se puede recuperar.
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+          <button type="button" id="btn-cancel-delete-user-modal" class="btn btn-secondary">
+            Cancelar
+          </button>
+          <button type="button" id="btn-confirm-delete-user-modal" class="btn btn-danger btn-execute">
+            <span id="delete-user-spinner" class="spinner-inline" style="display: none;"></span>
+            <span>🗑️ Sí, Eliminar Usuario</span>
+          </button>
+        </div>
       </div>
     </div>
   </div>

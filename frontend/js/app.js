@@ -2,6 +2,8 @@
  * Main Application Script for App LTI
  */
 
+const CANONICAL_ESTADOS_SHAREPOINT = ['Generado', 'En revision', 'Atendido'];
+
 const App = {
   currentProject: null,
   projectsData: [],
@@ -9,7 +11,7 @@ const App = {
   estadosSharepoint: [],
   activeTab: 'summary',
   activeDirectSearchTab: 'proyectos',
-  currentModule: 'projects', // 'projects' | 'direct-search' | 'tickets' | 'solicitud-lti'
+  currentModule: 'projects', // 'projects' | 'direct-search' | 'tickets' | 'solicitud-lti' | 'usuarios'
   searchTags: [], // Tags array for direct search module
   isTicketRunning: false,
   ticketLogCount: 0,
@@ -17,6 +19,11 @@ const App = {
   ticketStartTime: null,
   ticketAutoScroll: true,
   ticketLogsRaw: [],
+  lastGeneratedTicketId: null,
+  lastGeneratedPeticionId: null,
+  lastTicketFormData: null,
+  selectedEmailFile: null,
+  isEmailSending: false,
   solicitudCatalogosLoaded: false,
   solicitudLideresList: [],
   solicitudEstadosList: [],
@@ -26,6 +33,9 @@ const App = {
   duplicateProjectId: null,
   isSolicitudSubmitting: false,
   lastLoadedSolotsText: '',
+  usuariosData: [],
+  isUserSubmitting: false,
+  userToDeleteId: null,
 
   init() {
     this.initTheme();
@@ -87,6 +97,10 @@ const App = {
     if (navSolicitudBtn) {
       navSolicitudBtn.addEventListener('click', () => this.switchModule('solicitud-lti'));
     }
+    const navUsuariosBtn = document.getElementById('nav-btn-usuarios');
+    if (navUsuariosBtn) {
+      navUsuariosBtn.addEventListener('click', () => this.switchModule('usuarios'));
+    }
 
     // Login Form
     const loginForm = document.getElementById('login-form');
@@ -105,7 +119,7 @@ const App = {
         try {
           await Auth.login(username, password);
           this.showAppView();
-          this.loadInitialData();
+          await this.loadInitialData();
         } catch (err) {
           errEl.textContent = err.message || 'Error de conexión';
         } finally {
@@ -147,7 +161,7 @@ const App = {
     if (kpiPendientesCard) {
       kpiPendientesCard.addEventListener('click', () => this.filterByUnassigned());
       kpiPendientesCard.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
+        if (e.key === 'Enter' || e.key === ' ' || e.code === 'Space') {
           e.preventDefault();
           this.filterByUnassigned();
         }
@@ -260,6 +274,106 @@ const App = {
     const copyTicketIdBtn = document.getElementById('btn-copy-ticket-id');
     if (copyTicketIdBtn) {
       copyTicketIdBtn.addEventListener('click', () => this.copyTicketIdToClipboard());
+    }
+
+    const copyPeticionIdBtn = document.getElementById('btn-copy-peticion-id');
+    if (copyPeticionIdBtn) {
+      copyPeticionIdBtn.addEventListener('click', () => this.copyPeticionIdToClipboard());
+    }
+
+    const copyBothIdsBtn = document.getElementById('btn-copy-both-ids');
+    if (copyBothIdsBtn) {
+      copyBothIdsBtn.addEventListener('click', () => this.copyBothIdsToClipboard());
+    }
+
+    // Email Notification Modal Events
+    const openEmailBtn = document.getElementById('btn-open-email-modal');
+    if (openEmailBtn) {
+      openEmailBtn.addEventListener('click', () => this.openEmailTicketModal());
+    }
+
+    const closeEmailIcon = document.getElementById('btn-close-email-modal-icon');
+    if (closeEmailIcon) {
+      closeEmailIcon.addEventListener('click', () => this.closeEmailTicketModal());
+    }
+
+    const cancelEmailBtn = document.getElementById('btn-cancel-email') || document.getElementById('btn-cancel-email-modal');
+    if (cancelEmailBtn) {
+      cancelEmailBtn.addEventListener('click', () => this.closeEmailTicketModal());
+    }
+
+    const sendEmailBtn = document.getElementById('btn-send-email') || document.getElementById('btn-send-email-submit');
+    if (sendEmailBtn) {
+      sendEmailBtn.addEventListener('click', () => this.submitSendTicketEmail());
+    }
+
+    const emailForm = document.getElementById('email-ticket-form');
+    if (emailForm) {
+      emailForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        this.submitSendTicketEmail();
+      });
+    }
+
+    const emailModal = document.getElementById('email-ticket-modal');
+    if (emailModal) {
+      emailModal.addEventListener('click', (e) => {
+        if (e.target === emailModal) {
+          this.closeEmailTicketModal();
+        }
+      });
+    }
+
+    const fileDropzone = document.getElementById('file-attachment-dropzone');
+    const fileInput = document.getElementById('email-adjunto') || document.getElementById('email-attachment');
+    if (fileDropzone && fileInput) {
+      fileDropzone.addEventListener('click', (e) => {
+        if (e.target.closest('#btn-remove-attachment')) return;
+        fileInput.click();
+      });
+
+      fileDropzone.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          if (e.target.closest('#btn-remove-attachment')) return;
+          e.preventDefault();
+          fileInput.click();
+        }
+      });
+
+      fileInput.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files[0]) {
+          this.handleEmailFileSelect(e.target.files[0]);
+        }
+      });
+
+      fileDropzone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        fileDropzone.classList.add('dragover');
+      });
+
+      fileDropzone.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        fileDropzone.classList.remove('dragover');
+      });
+
+      fileDropzone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        fileDropzone.classList.remove('dragover');
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
+          this.handleEmailFileSelect(e.dataTransfer.files[0]);
+        }
+      });
+    }
+
+    const removeAttBtn = document.getElementById('btn-remove-attachment');
+    if (removeAttBtn) {
+      removeAttBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.clearEmailAttachment();
+      });
     }
 
     // Solicitud LTI: Autocomplete on N° Proyecto
@@ -421,12 +535,135 @@ const App = {
       });
     }
 
+    // --- User Management Events (Module 5) ---
+    const userSearchInput = document.getElementById('usuarios-search-input');
+    if (userSearchInput) {
+      const debouncedLoadUsers = this.debounce(() => this.loadUsuarios(), 300);
+      userSearchInput.addEventListener('input', () => debouncedLoadUsers());
+    }
+
+    const userFilterRol = document.getElementById('usuarios-filter-rol');
+    if (userFilterRol) {
+      userFilterRol.addEventListener('change', () => this.loadUsuarios());
+    }
+
+    const userFilterEstado = document.getElementById('usuarios-filter-estado');
+    if (userFilterEstado) {
+      userFilterEstado.addEventListener('change', () => this.loadUsuarios());
+    }
+
+    const btnResetUserFilters = document.getElementById('btn-usuarios-reset-filters');
+    if (btnResetUserFilters) {
+      btnResetUserFilters.addEventListener('click', () => {
+        if (userSearchInput) userSearchInput.value = '';
+        if (userFilterRol) userFilterRol.value = '';
+        if (userFilterEstado) userFilterEstado.value = '';
+        this.loadUsuarios();
+      });
+    }
+
+    const btnCreateUserOpen = document.getElementById('btn-create-user-open');
+    if (btnCreateUserOpen) {
+      btnCreateUserOpen.addEventListener('click', () => this.openCreateUserModal());
+    }
+
+    // Create User Modal
+    const btnCloseCreateUserIcon = document.getElementById('btn-close-create-user-modal-icon');
+    if (btnCloseCreateUserIcon) {
+      btnCloseCreateUserIcon.addEventListener('click', () => this.closeCreateUserModal());
+    }
+    const btnCancelCreateUser = document.getElementById('btn-cancel-create-user-modal');
+    if (btnCancelCreateUser) {
+      btnCancelCreateUser.addEventListener('click', () => this.closeCreateUserModal());
+    }
+    const btnSaveCreateUser = document.getElementById('btn-save-create-user-modal');
+    if (btnSaveCreateUser) {
+      btnSaveCreateUser.addEventListener('click', () => this.submitCreateUserForm());
+    }
+    const createUserModal = document.getElementById('create-user-modal');
+    if (createUserModal) {
+      createUserModal.addEventListener('click', (e) => {
+        if (e.target === createUserModal) this.closeCreateUserModal();
+      });
+    }
+
+    // Edit User Modal
+    const btnCloseEditUserIcon = document.getElementById('btn-close-edit-user-modal-icon');
+    if (btnCloseEditUserIcon) {
+      btnCloseEditUserIcon.addEventListener('click', () => this.closeEditUserModal());
+    }
+    const btnCancelEditUser = document.getElementById('btn-cancel-edit-user-modal');
+    if (btnCancelEditUser) {
+      btnCancelEditUser.addEventListener('click', () => this.closeEditUserModal());
+    }
+    const btnSaveEditUser = document.getElementById('btn-save-edit-user-modal');
+    if (btnSaveEditUser) {
+      btnSaveEditUser.addEventListener('click', () => this.submitEditUserForm());
+    }
+    const editUserModal = document.getElementById('edit-user-modal');
+    if (editUserModal) {
+      editUserModal.addEventListener('click', (e) => {
+        if (e.target === editUserModal) this.closeEditUserModal();
+      });
+    }
+
+    // Reset User Password Modal
+    const btnCloseResetUserIcon = document.getElementById('btn-close-reset-user-modal-icon');
+    if (btnCloseResetUserIcon) {
+      btnCloseResetUserIcon.addEventListener('click', () => this.closeResetUserPasswordModal());
+    }
+    const btnCancelResetUser = document.getElementById('btn-cancel-reset-user-modal');
+    if (btnCancelResetUser) {
+      btnCancelResetUser.addEventListener('click', () => this.closeResetUserPasswordModal());
+    }
+    const btnConfirmResetUser = document.getElementById('btn-confirm-reset-user-modal');
+    if (btnConfirmResetUser) {
+      btnConfirmResetUser.addEventListener('click', () => this.submitResetUserPasswordForm());
+    }
+    const btnResetDefaultPass = document.getElementById('btn-reset-user-default-pass');
+    if (btnResetDefaultPass) {
+      btnResetDefaultPass.addEventListener('click', () => {
+        const passInput = document.getElementById('reset-user-new-password');
+        if (passInput) passInput.value = 'Lti2026!';
+      });
+    }
+    const resetUserModal = document.getElementById('reset-user-password-modal');
+    if (resetUserModal) {
+      resetUserModal.addEventListener('click', (e) => {
+        if (e.target === resetUserModal) this.closeResetUserPasswordModal();
+      });
+    }
+
+    // Delete User Modal
+    const btnCloseDeleteUserIcon = document.getElementById('btn-close-delete-user-modal-icon');
+    if (btnCloseDeleteUserIcon) {
+      btnCloseDeleteUserIcon.addEventListener('click', () => this.closeDeleteUserModal());
+    }
+    const btnCancelDeleteUser = document.getElementById('btn-cancel-delete-user-modal');
+    if (btnCancelDeleteUser) {
+      btnCancelDeleteUser.addEventListener('click', () => this.closeDeleteUserModal());
+    }
+    const btnConfirmDeleteUser = document.getElementById('btn-confirm-delete-user-modal');
+    if (btnConfirmDeleteUser) {
+      btnConfirmDeleteUser.addEventListener('click', () => this.confirmDeleteUser());
+    }
+    const deleteUserModal = document.getElementById('delete-user-modal');
+    if (deleteUserModal) {
+      deleteUserModal.addEventListener('click', (e) => {
+        if (e.target === deleteUserModal) this.closeDeleteUserModal();
+      });
+    }
+
     // Global keyboard listener for modal
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         const modal = document.getElementById('ticket-success-modal');
         if (modal && modal.style.display !== 'none') {
           this.closeSuccessModal();
+        }
+        const emailModal = document.getElementById('email-ticket-modal');
+        if (emailModal && emailModal.style.display !== 'none') {
+          this.closeEmailTicketModal();
         }
         const solModal = document.getElementById('solicitud-success-modal');
         if (solModal && solModal.style.display !== 'none') {
@@ -439,6 +676,22 @@ const App = {
         const delModal = document.getElementById('delete-project-modal');
         if (delModal && delModal.style.display !== 'none') {
           this.closeDeleteProjectModal();
+        }
+        const createUsrModal = document.getElementById('create-user-modal');
+        if (createUsrModal && createUsrModal.style.display !== 'none') {
+          this.closeCreateUserModal();
+        }
+        const editUsrModal = document.getElementById('edit-user-modal');
+        if (editUsrModal && editUsrModal.style.display !== 'none') {
+          this.closeEditUserModal();
+        }
+        const resetUsrModal = document.getElementById('reset-user-password-modal');
+        if (resetUsrModal && resetUsrModal.style.display !== 'none') {
+          this.closeResetUserPasswordModal();
+        }
+        const delUsrModal = document.getElementById('delete-user-modal');
+        if (delUsrModal && delUsrModal.style.display !== 'none') {
+          this.closeDeleteUserModal();
         }
         this.hideAutocompleteDropdown();
       }
@@ -457,22 +710,35 @@ const App = {
   // MODULE SWITCHER
   // --------------------------------------------------------------------------
   switchModule(moduleName) {
+    const user = Auth.getUser();
+    const rol = (user && user.rol) ? user.rol.toUpperCase() : 'PM';
+
+    // Restricciones de navegación por rol
+    if (rol === 'PM') {
+      moduleName = 'solicitud-lti';
+    } else if (rol === 'LTI' && moduleName === 'usuarios') {
+      moduleName = 'projects';
+    }
+
     this.currentModule = moduleName;
 
     const navProjectsBtn = document.getElementById('nav-btn-projects');
     const navDirectSearchBtn = document.getElementById('nav-btn-direct-search');
     const navTicketsBtn = document.getElementById('nav-btn-tickets');
     const navSolicitudBtn = document.getElementById('nav-btn-solicitud-lti');
+    const navUsuariosBtn = document.getElementById('nav-btn-usuarios');
 
     const moduleProjects = document.getElementById('module-projects-container');
     const moduleDirectSearch = document.getElementById('module-direct-search-container');
     const moduleTickets = document.getElementById('module-tickets-container');
     const moduleSolicitud = document.getElementById('module-solicitud-lti-container');
+    const moduleUsuarios = document.getElementById('module-usuarios-container');
 
     if (navProjectsBtn) navProjectsBtn.classList.toggle('active', moduleName === 'projects');
     if (navDirectSearchBtn) navDirectSearchBtn.classList.toggle('active', moduleName === 'direct-search');
     if (navTicketsBtn) navTicketsBtn.classList.toggle('active', moduleName === 'tickets');
     if (navSolicitudBtn) navSolicitudBtn.classList.toggle('active', moduleName === 'solicitud-lti');
+    if (navUsuariosBtn) navUsuariosBtn.classList.toggle('active', moduleName === 'usuarios');
 
     if (moduleProjects) {
       moduleProjects.style.display = moduleName === 'projects' ? 'block' : 'none';
@@ -490,8 +756,17 @@ const App = {
       moduleSolicitud.style.display = moduleName === 'solicitud-lti' ? 'block' : 'none';
       moduleSolicitud.classList.toggle('active', moduleName === 'solicitud-lti');
     }
+    if (moduleUsuarios) {
+      moduleUsuarios.style.display = moduleName === 'usuarios' ? 'block' : 'none';
+      moduleUsuarios.classList.toggle('active', moduleName === 'usuarios');
+    }
 
-    if (moduleName === 'solicitud-lti') {
+    if (moduleName === 'projects') {
+      const selectSp = document.getElementById('filter-estado-sp');
+      if (!this.estadosSharepoint || this.estadosSharepoint.length === 0 || (selectSp && selectSp.options.length <= 1)) {
+        this.loadEstados();
+      }
+    } else if (moduleName === 'solicitud-lti') {
       this.loadSolicitudCatalogos();
       const fechaInput = document.getElementById('solicitud-fecha');
       if (fechaInput && !fechaInput.value) {
@@ -501,12 +776,44 @@ const App = {
         const day = String(today.getDate()).padStart(2, '0');
         fechaInput.value = `${year}-${month}-${day}`;
       }
+    } else if (moduleName === 'usuarios') {
+      this.loadUsuarios();
     }
   },
 
   // --------------------------------------------------------------------------
-  // VIEW NAVIGATION
+  // VIEW NAVIGATION & RBAC RULES
   // --------------------------------------------------------------------------
+  applyRBACRules(rol) {
+    const navProjects = document.getElementById('nav-btn-projects');
+    const navDirectSearch = document.getElementById('nav-btn-direct-search');
+    const navTickets = document.getElementById('nav-btn-tickets');
+    const navSolicitud = document.getElementById('nav-btn-solicitud-lti');
+    const navUsuarios = document.getElementById('nav-btn-usuarios');
+
+    const rolUpper = (rol || '').toUpperCase();
+
+    if (rolUpper === 'PM') {
+      if (navProjects) navProjects.style.display = 'none';
+      if (navDirectSearch) navDirectSearch.style.display = 'none';
+      if (navTickets) navTickets.style.display = 'none';
+      if (navSolicitud) navSolicitud.style.display = 'inline-flex';
+      if (navUsuarios) navUsuarios.style.display = 'none';
+    } else if (rolUpper === 'LTI') {
+      if (navProjects) navProjects.style.display = 'inline-flex';
+      if (navDirectSearch) navDirectSearch.style.display = 'inline-flex';
+      if (navTickets) navTickets.style.display = 'inline-flex';
+      if (navSolicitud) navSolicitud.style.display = 'inline-flex';
+      if (navUsuarios) navUsuarios.style.display = 'none';
+    } else if (rolUpper === 'ADMIN') {
+      if (navProjects) navProjects.style.display = 'inline-flex';
+      if (navDirectSearch) navDirectSearch.style.display = 'inline-flex';
+      if (navTickets) navTickets.style.display = 'inline-flex';
+      if (navSolicitud) navSolicitud.style.display = 'inline-flex';
+      if (navUsuarios) navUsuarios.style.display = 'inline-flex';
+    }
+  },
+
   showAuthView() {
     const authView = document.getElementById('auth-view');
     if (authView) authView.style.display = 'flex';
@@ -526,11 +833,26 @@ const App = {
       }
       const userRole = document.getElementById('user-role-badge');
       if (userRole) {
-        userRole.textContent = user.rol === 'ADMIN' ? 'Administrador' : 'Líder TI';
+        const rol = (user.rol || 'PM').toUpperCase();
+        if (rol === 'ADMIN') {
+          userRole.textContent = 'Administrador';
+          userRole.className = 'badge badge-role-admin';
+        } else if (rol === 'LTI') {
+          userRole.textContent = 'Líder TI';
+          userRole.className = 'badge badge-role-lti';
+        } else {
+          userRole.textContent = 'Project Manager';
+          userRole.className = 'badge badge-role-pm';
+        }
       }
+      this.applyRBACRules(user.rol);
     }
 
-    this.switchModule(this.currentModule || 'projects');
+    let initialModule = 'projects';
+    if (user && user.rol === 'PM') {
+      initialModule = 'solicitud-lti';
+    }
+    this.switchModule(initialModule);
   },
 
   showProjectsList() {
@@ -550,6 +872,12 @@ const App = {
     document.getElementById('dd-lt-assigned').textContent = project.LT_Asignado || 'No asignado';
     document.getElementById('dd-status').innerHTML = this.renderStatusBadge(project.Estado);
     
+    const btnDdDelete = document.getElementById('btn-dd-delete-project');
+    if (btnDdDelete) {
+      const user = Auth.getUser();
+      btnDdDelete.style.display = (user && (user.rol || '').toUpperCase() === 'ADMIN') ? 'inline-flex' : 'none';
+    }
+
     this.switchTab('summary');
     this.loadProjectDetails(project.ID);
   },
@@ -611,27 +939,54 @@ const App = {
   },
 
   async loadEstados() {
+    const selectSp = document.getElementById('filter-estado-sp');
+    const previousValue = selectSp ? selectSp.value : '';
+
     try {
       const res = await Auth.fetchWithAuth('/api/estados');
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
       const data = await res.json();
-      this.estadosSharepoint = data.estados_sharepoint || [];
-
-      const selectSp = document.getElementById('filter-estado-sp');
-      if (selectSp) {
-        selectSp.innerHTML = '<option value="">— Estado Sharepoint (Todos) —</option>';
-        this.estadosSharepoint.forEach(est => {
-          const opt = document.createElement('option');
-          opt.value = est;
-          opt.textContent = est;
-          selectSp.appendChild(opt);
-        });
+      
+      // Asignación con fallback canónico si la lista viene vacía
+      if (Array.isArray(data.estados_sharepoint) && data.estados_sharepoint.length > 0) {
+        this.estadosSharepoint = data.estados_sharepoint;
+      } else {
+        this.estadosSharepoint = [...CANONICAL_ESTADOS_SHAREPOINT];
       }
     } catch (e) {
-      console.error('Error al cargar estados:', e);
+      console.warn('No se pudieron obtener los estados desde API, aplicando catálogo canónico:', e);
+      this.estadosSharepoint = [...CANONICAL_ESTADOS_SHAREPOINT];
+    }
+
+    if (selectSp) {
+      selectSp.innerHTML = '';
+      
+      // 1. Opción por defecto (Todos)
+      const defaultOpt = document.createElement('option');
+      defaultOpt.value = '';
+      defaultOpt.textContent = '— Estado Sharepoint (Todos) —';
+      selectSp.appendChild(defaultOpt);
+
+      // 2. Opciones canónicas
+      this.estadosSharepoint.forEach(est => {
+        const opt = document.createElement('option');
+        opt.value = est;
+        opt.textContent = est;
+        selectSp.appendChild(opt);
+      });
+
+      // 3. Restaurar valor previamente seleccionado si sigue existiendo
+      if (previousValue && this.estadosSharepoint.includes(previousValue)) {
+        selectSp.value = previousValue;
+      }
     }
   },
 
+  _kpisRequestId: 0,
   async loadKPIs() {
+    const currentReqId = ++this._kpisRequestId;
     try {
       const ltFilter = document.getElementById('filter-lt')?.value || '';
       let url = '/api/kpis';
@@ -641,6 +996,8 @@ const App = {
       
       const res = await Auth.fetchWithAuth(url);
       const kpis = await res.json();
+
+      if (this._kpisRequestId !== currentReqId) return;
 
       const valProyectos = document.getElementById('kpi-val-proyectos');
       const valEnCurso = document.getElementById('kpi-val-en-curso');
@@ -696,10 +1053,13 @@ const App = {
     }
   },
 
+  _projectsRequestId: 0,
   async loadProjects() {
     const tbody = document.getElementById('projects-table-body');
     if (!tbody) return;
 
+    this._projectsRequestId = (Number(this._projectsRequestId) || 0) + 1;
+    const currentReqId = this._projectsRequestId;
     tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 2rem;"><span class="badge badge-info">Cargando proyectos...</span></td></tr>`;
 
     const search = document.getElementById('filter-search')?.value || '';
@@ -713,7 +1073,11 @@ const App = {
 
     try {
       const res = await Auth.fetchWithAuth(`/api/proyectos?${params.toString()}`);
-      this.projectsData = await res.json();
+      const data = await res.json();
+
+      if (this._projectsRequestId !== currentReqId) return;
+
+      this.projectsData = data;
       this.renderProjectsTable(this.projectsData);
 
       // Update count badge
@@ -722,6 +1086,7 @@ const App = {
         countBadge.textContent = this.projectsData.length;
       }
     } catch (e) {
+      if (this._projectsRequestId !== currentReqId) return;
       tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 2rem; color: var(--status-danger-text);">Error al cargar proyectos: ${e.message}</td></tr>`;
       const countBadge = document.getElementById('projects-count-badge');
       if (countBadge) countBadge.textContent = '0';
@@ -745,9 +1110,16 @@ const App = {
       return;
     }
 
+    const user = Auth.getUser();
+    const isAdmin = user && (user.rol || '').toUpperCase() === 'ADMIN';
+
     tbody.innerHTML = proyectos.map(p => {
       const solicitanteFormatted = this.formatSolicitante(p.Solicitante);
       const isUnmatched = solicitanteFormatted.startsWith('NO IDENTIFICADO');
+      const deleteBtnHtml = isAdmin
+        ? `<button type="button" class="btn-action-icon btn-action-delete" onclick="App.openDeleteProjectModal(${p.ID})" title="Eliminar proyecto" aria-label="Eliminar Proyecto">🗑️</button>`
+        : '';
+
       return `
         <tr>
           <td>
@@ -776,9 +1148,7 @@ const App = {
               <button type="button" class="btn-action-icon btn-action-edit" onclick="App.openEditProjectModal(${p.ID})" title="Editar proyecto" aria-label="Editar Proyecto">
                 ✏️
               </button>
-              <button type="button" class="btn-action-icon btn-action-delete" onclick="App.openDeleteProjectModal(${p.ID})" title="Eliminar proyecto" aria-label="Eliminar Proyecto">
-                🗑️
-              </button>
+              ${deleteBtnHtml}
             </div>
           </td>
         </tr>
@@ -1348,10 +1718,20 @@ const App = {
     };
 
     // Validation: check required fields
-    if (!payload.contacto || !payload.titulo || !payload.descripcion || !payload.area || !payload.subarea || !payload.detalle || !payload.grupo) {
+    if (!payload.contacto || !payload.titulo || !payload.descripcion || !payload.area || !payload.subarea || !payload.detalle || !payload.grupo || !payload.impacto || !payload.urgencia) {
       alert('Por favor completa todos los campos obligatorios (*) antes de iniciar la automatización.');
       return;
     }
+    if (payload.titulo.length < 4) {
+      alert('El título de la interacción debe contener al menos 4 caracteres.');
+      return;
+    }
+    if (payload.descripcion.length < 5) {
+      alert('La descripción debe contener al menos 5 caracteres.');
+      return;
+    }
+
+    this.lastTicketFormData = { ...payload };
 
     // Set UI to running state
     this.setTicketExecutionState(true);
@@ -1439,42 +1819,62 @@ const App = {
     if (eventData.type === 'log') {
       const level = eventData.level || 'info';
       const message = eventData.message || '';
+      const progress = eventData.progress;
       this.appendLogEntry(message, level);
 
-      // Estimate progress and update current step according to event message
+      // If backend provides an explicit progress percentage, apply it
+      if (typeof progress === 'number') {
+        this.updateTicketProgress(progress);
+      }
+
+      // Estimate progress and update step text according to message content
       const msgLower = message.toLowerCase();
       if (msgLower.includes('iniciando proceso') || msgLower.includes('iniciando navegador')) {
-        this.updateTicketProgress(15);
+        if (progress === undefined) this.updateTicketProgress(12);
         this.updateTicketStatus('running', 'En ejecución', 'Iniciando navegador Chromium...');
-      } else if (msgLower.includes('conectando a portal') || msgLower.includes('autenticando')) {
-        this.updateTicketProgress(30);
-        this.updateTicketStatus('running', 'En ejecución', 'Autenticando en portal Service Manager...');
+      } else if (msgLower.includes('conectando a portal')) {
+        if (progress === undefined) this.updateTicketProgress(22);
+        this.updateTicketStatus('running', 'En ejecución', 'Conectando al portal Service Manager...');
+      } else if (msgLower.includes('autenticando')) {
+        if (progress === undefined) this.updateTicketProgress(30);
+        this.updateTicketStatus('running', 'En ejecución', 'Autenticando en portal...');
       } else if (msgLower.includes('centro de servicios') || msgLower.includes('servicios internos')) {
-        this.updateTicketProgress(50);
+        if (progress === undefined) this.updateTicketProgress(40);
         this.updateTicketStatus('running', 'En ejecución', 'Navegando a formulario de interacción...');
-      } else if (msgLower.includes('ingresando contacto') || msgLower.includes('título') || msgLower.includes('descripción')) {
-        this.updateTicketProgress(65);
+      } else if (msgLower.includes('ingresando contacto') || msgLower.includes('título') || msgLower.includes('descripción') || msgLower.includes('formulario de interacción')) {
+        if (progress === undefined) this.updateTicketProgress(50);
         this.updateTicketStatus('running', 'En ejecución', 'Llenando datos del formulario...');
-      } else if (msgLower.includes('clasificación') || msgLower.includes('área') || msgLower.includes('grupo')) {
-        this.updateTicketProgress(80);
-        this.updateTicketStatus('running', 'En ejecución', 'Asignando clasificación y grupo...');
-      } else if (msgLower.includes('guardando interacción') || msgLower.includes('guardar')) {
-        this.updateTicketProgress(90);
-        this.updateTicketStatus('running', 'En ejecución', 'Guardando ticket en Service Manager...');
-      } else if (msgLower.includes('esperando generación') || msgLower.includes('captura de id')) {
-        this.updateTicketProgress(95);
-        this.updateTicketStatus('running', 'En ejecución', 'Capturando N° de interacción generado...');
-      } else if (msgLower.includes('ticket generado exitosamente') || level === 'success') {
-        this.updateTicketProgress(100);
-        this.updateTicketStatus('active', 'Completado', '¡Ticket generado exitosamente!');
+      } else if (msgLower.includes('grupo') || msgLower.includes('asignando grupo')) {
+        if (progress === undefined) this.updateTicketProgress(60);
+        this.updateTicketStatus('running', 'En ejecución', 'Asignando grupo de asignación...');
+      } else if (msgLower.includes('guardando interacción') || (msgLower.includes('guardar') && !msgLower.includes('petición') && !msgLower.includes('salir'))) {
+        if (progress === undefined) this.updateTicketProgress(70);
+        this.updateTicketStatus('running', 'En ejecución', 'Guardando interacción en Service Manager...');
+      } else if (msgLower.includes('interacción generada') || (msgLower.includes('ticket generado') && !msgLower.includes('petición'))) {
+        if (progress === undefined) this.updateTicketProgress(75);
+        this.updateTicketStatus('running', 'En ejecución', 'Interacción SD generada exitosamente...');
+      } else if (msgLower.includes('registros relacionados') || msgLower.includes('vinculando petición') || msgLower.includes('peticiones relacionadas')) {
+        if (progress === undefined) this.updateTicketProgress(80);
+        this.updateTicketStatus('running', 'En ejecución', 'Vinculando petición relacionada...');
+      } else if (msgLower.includes('alejandro.aguilar') || msgLower.includes('responsable') || msgLower.includes('guardando formulario de la petición') || msgLower.includes('guardando petición')) {
+        if (progress === undefined) this.updateTicketProgress(85);
+        this.updateTicketStatus('running', 'En ejecución', 'Configurando usuario y guardando petición...');
+      } else if (msgLower.includes('petición generada exitosamente') || msgLower.includes('petición generada')) {
+        if (progress === undefined) this.updateTicketProgress(90);
+        this.updateTicketStatus('running', 'En ejecución', '¡Petición generada exitosamente!');
+      } else if (msgLower.includes('cerrando formularios') || msgLower.includes('cerrando sesión') || msgLower.includes('logout') || msgLower.includes('guardar y salir')) {
+        if (progress === undefined) this.updateTicketProgress(95);
+        this.updateTicketStatus('running', 'En ejecución', 'Cerrando sesión en Service Manager (Logout)...');
       } else if (level === 'error') {
         this.updateTicketStatus('error', 'Error', 'Error en la ejecución');
       }
     } else if (eventData.type === 'complete') {
       this.updateTicketProgress(100);
-      this.updateTicketStatus('active', 'Completado', '¡Ticket creado exitosamente!');
+      this.updateTicketStatus('active', 'Completado', '¡Interacción y Petición creadas con éxito!');
       const ticketId = eventData.ticket_id || 'SD0000000';
-      this.openTicketSuccessModal(ticketId, formData);
+      const peticionId = eventData.peticion_id || '-';
+      const dataPayload = eventData.data || formData;
+      this.openTicketSuccessModal(ticketId, peticionId, dataPayload);
     } else if (eventData.type === 'error') {
       const errorMsg = eventData.message || 'Error desconocido en la automatización';
       this.handleTicketError(errorMsg);
@@ -1531,9 +1931,9 @@ const App = {
         break;
     }
 
-    // Format message text: highlight ticket IDs (SD..., IM...)
+    // Format message text: highlight ticket IDs (SD..., IM..., PET..., REQ...)
     let formattedMsg = this.escapeHtml(message);
-    formattedMsg = formattedMsg.replace(/\b(SD\d{5,10}|IM\d{5,10})\b/g, '<span class="log-ticket-badge">$1</span>');
+    formattedMsg = formattedMsg.replace(/\b(SD-?\d{4,12}|IM-?\d{4,12}|PET-?\d{3,12}|REQ-?\d{3,12})\b/gi, '<span class="log-ticket-badge">$1</span>');
 
     const entryDiv = document.createElement('div');
     entryDiv.className = 'log-entry';
@@ -1686,18 +2086,25 @@ const App = {
     }
   },
 
-  openTicketSuccessModal(ticketId, formData = {}) {
+  openTicketSuccessModal(ticketId, peticionId = '-', formData = {}) {
     const modal = document.getElementById('ticket-success-modal');
     if (!modal) return;
 
-    const idEl = document.getElementById('ticket-success-id');
-    if (idEl) idEl.textContent = ticketId || 'SD0000000';
+    this.lastGeneratedTicketId = ticketId || 'SD0000000';
+    this.lastGeneratedPeticionId = peticionId || '-';
+    this.lastTicketFormData = formData && Object.keys(formData).length > 0 ? { ...formData } : (this.lastTicketFormData || {});
+
+    const ticketIdEl = document.getElementById('ticket-success-id');
+    if (ticketIdEl) ticketIdEl.textContent = this.lastGeneratedTicketId;
+
+    const peticionIdEl = document.getElementById('peticion-success-id');
+    if (peticionIdEl) peticionIdEl.textContent = this.lastGeneratedPeticionId;
 
     const contactoEl = document.getElementById('modal-summary-contacto');
     if (contactoEl) contactoEl.textContent = formData.contacto || 'ALEJANDRO JAVIER AGUILAR MORALES';
 
     const tituloEl = document.getElementById('modal-summary-titulo');
-    if (tituloEl) tituloEl.textContent = formData.titulo || 'Creacion test automatizacion';
+    if (tituloEl) tituloEl.textContent = formData.titulo || '-';
 
     const grupoEl = document.getElementById('modal-summary-grupo');
     if (grupoEl) grupoEl.textContent = formData.grupo || 'Lideres Tecnicos';
@@ -1708,13 +2115,28 @@ const App = {
       areaEl.textContent = areaStr;
     }
 
-    const feedbackEl = document.getElementById('ticket-copy-feedback');
-    if (feedbackEl) feedbackEl.style.display = 'none';
+    const usuarioPetEl = document.getElementById('modal-summary-usuario-peticion');
+    if (usuarioPetEl) usuarioPetEl.textContent = 'Alejandro.Aguilar';
 
-    const copyBtnText = document.getElementById('copy-ticket-btn-text');
-    if (copyBtnText) copyBtnText.textContent = '📋 Copiar Ticket';
+    const feedbackTicketEl = document.getElementById('ticket-copy-feedback');
+    if (feedbackTicketEl) feedbackTicketEl.style.display = 'none';
+
+    const feedbackPetEl = document.getElementById('peticion-copy-feedback');
+    if (feedbackPetEl) feedbackPetEl.style.display = 'none';
+
+    const copyTicketBtnText = document.getElementById('copy-ticket-btn-text');
+    if (copyTicketBtnText) copyTicketBtnText.textContent = '📋 Copiar SD';
+
+    const copyPeticionBtnText = document.getElementById('copy-peticion-btn-text');
+    if (copyPeticionBtnText) copyPeticionBtnText.textContent = '📋 Copiar Petición';
 
     modal.style.display = 'flex';
+
+    // Foco automático en el botón de confirmación para accesibilidad por teclado
+    setTimeout(() => {
+      const closeBtn = document.getElementById('btn-close-success-modal');
+      if (closeBtn) closeBtn.focus();
+    }, 50);
   },
 
   closeSuccessModal() {
@@ -1722,24 +2144,85 @@ const App = {
     if (modal) {
       modal.style.display = 'none';
     }
+    const execBtn = document.getElementById('btn-execute-ticket');
+    if (execBtn) {
+      execBtn.focus();
+    }
   },
 
   async copyTicketIdToClipboard() {
     const idEl = document.getElementById('ticket-success-id');
     const feedbackEl = document.getElementById('ticket-copy-feedback');
     const btnTextEl = document.getElementById('copy-ticket-btn-text');
+    const btn = document.getElementById('btn-copy-ticket-id');
 
-    const ticketId = idEl ? idEl.textContent.trim() : '';
+    const ticketId = idEl ? idEl.textContent.trim() : (this.lastGeneratedTicketId || '');
     if (!ticketId) return;
 
     const ok = await this.copyTextToClipboard(ticketId);
     if (ok) {
       if (feedbackEl) feedbackEl.style.display = 'block';
       if (btnTextEl) btnTextEl.textContent = '✓ ¡Copiado!';
+      if (btn) btn.classList.add('btn-success');
 
       setTimeout(() => {
         if (feedbackEl) feedbackEl.style.display = 'none';
-        if (btnTextEl) btnTextEl.textContent = '📋 Copiar Ticket';
+        if (btnTextEl) btnTextEl.textContent = '📋 Copiar SD';
+        if (btn) btn.classList.remove('btn-success');
+      }, 2500);
+    }
+  },
+
+  async copyPeticionIdToClipboard() {
+    const idEl = document.getElementById('peticion-success-id');
+    const feedbackEl = document.getElementById('peticion-copy-feedback');
+    const btnTextEl = document.getElementById('copy-peticion-btn-text');
+    const btn = document.getElementById('btn-copy-peticion-id');
+
+    const peticionId = idEl ? idEl.textContent.trim() : (this.lastGeneratedPeticionId || '');
+    if (!peticionId || peticionId === '-') return;
+
+    const ok = await this.copyTextToClipboard(peticionId);
+    if (ok) {
+      if (feedbackEl) feedbackEl.style.display = 'block';
+      if (btnTextEl) btnTextEl.textContent = '✓ ¡Copiado!';
+      if (btn) btn.classList.add('btn-success');
+
+      setTimeout(() => {
+        if (feedbackEl) feedbackEl.style.display = 'none';
+        if (btnTextEl) btnTextEl.textContent = '📋 Copiar Petición';
+        if (btn) btn.classList.remove('btn-success');
+      }, 2500);
+    }
+  },
+
+  async copyBothIdsToClipboard() {
+    const ticketId = (document.getElementById('ticket-success-id')?.textContent || this.lastGeneratedTicketId || '').trim();
+    const peticionId = (document.getElementById('peticion-success-id')?.textContent || this.lastGeneratedPeticionId || '').trim();
+    const contacto = (document.getElementById('modal-summary-contacto')?.textContent || '').trim();
+    const titulo = (document.getElementById('modal-summary-titulo')?.textContent || '').trim();
+    const grupo = (document.getElementById('modal-summary-grupo')?.textContent || '').trim();
+    const area = (document.getElementById('modal-summary-area')?.textContent || '').trim();
+    const usuarioPeticion = (document.getElementById('modal-summary-usuario-peticion')?.textContent || 'Alejandro.Aguilar').trim();
+    const btn = document.getElementById('btn-copy-both-ids');
+
+    const textToCopy = `[Service Manager] Automatización Exitosa
+- ID Interacción (SD): ${ticketId}
+- ID Petición: ${peticionId}
+- Contacto: ${contacto}
+- Título: ${titulo}
+- Grupo: ${grupo}
+- Área/Subárea: ${area}
+- Usuario Petición: ${usuarioPeticion}`;
+
+    const ok = await this.copyTextToClipboard(textToCopy);
+    if (ok && btn) {
+      const origText = btn.innerHTML;
+      btn.innerHTML = '✓ ¡Resumen Copiado!';
+      btn.classList.add('btn-success');
+      setTimeout(() => {
+        btn.innerHTML = origText;
+        btn.classList.remove('btn-success');
       }, 2500);
     }
   },
@@ -1769,6 +2252,244 @@ const App = {
     } catch (err) {
       console.error('Error al copiar al portapapeles con fallback:', err);
       return false;
+    }
+  },
+
+  // --------------------------------------------------------------------------
+  // MODAL: ENVIAR DETALLE DEL TICKET POR CORREO (OFFICE 365)
+  // --------------------------------------------------------------------------
+  openEmailTicketModal() {
+    const modal = document.getElementById('email-ticket-modal');
+    if (!modal) return;
+
+    // Guardar el elemento activo para retornar foco al cerrar
+    this.lastActiveElementBeforeEmailModal = document.activeElement;
+
+    // Reset error / status alert banner
+    const alertEl = document.getElementById('email-status-alert') || document.getElementById('email-error-alert');
+    if (alertEl) {
+      alertEl.style.display = 'none';
+      alertEl.className = 'solicitud-alert-banner alert-danger';
+    }
+
+    // Pre-fill recipient (Para)
+    const toInput = document.getElementById('email-destinatario') || document.getElementById('email-to');
+    if (toInput) {
+      toInput.value = 'alejandro.aguilarm@clarovtr.cl';
+    }
+
+    // Pre-fill Subject (Asunto)
+    const subjectInput = document.getElementById('email-asunto') || document.getElementById('email-subject');
+    if (subjectInput) {
+      const defaultTitle = this.lastTicketFormData?.titulo || document.getElementById('ticket-titulo')?.value?.trim() || '';
+      subjectInput.value = defaultTitle ? `Interacción Service Manager: ${defaultTitle}` : (this.lastGeneratedTicketId ? `Interacción ${this.lastGeneratedTicketId}` : 'Interacción Service Manager');
+    }
+
+    // Pre-fill Body (Cuerpo)
+    const bodyInput = document.getElementById('email-cuerpo') || document.getElementById('email-body');
+    if (bodyInput) {
+      const defaultDesc = this.lastTicketFormData?.descripcion || document.getElementById('ticket-descripcion')?.value?.trim() || '';
+      bodyInput.value = defaultDesc || (this.lastGeneratedTicketId ? `Interacción ${this.lastGeneratedTicketId} generada exitosamente.` : '');
+    }
+
+    // Update ticket badges
+    const badgeTicket = document.getElementById('email-badge-ticket-id');
+    if (badgeTicket) {
+      badgeTicket.textContent = this.lastGeneratedTicketId || 'SD0000000';
+    }
+    const badgePeticion = document.getElementById('email-badge-peticion-id');
+    if (badgePeticion) {
+      badgePeticion.textContent = this.lastGeneratedPeticionId || 'PET0000000';
+    }
+
+    // Reset attachment state
+    this.clearEmailAttachment();
+
+    // Reset button states
+    this.setEmailSendingState(false);
+
+    // Show modal
+    modal.style.display = 'flex';
+
+    // Focus on recipient input
+    setTimeout(() => {
+      if (toInput) toInput.focus();
+    }, 50);
+  },
+
+  closeEmailTicketModal() {
+    const modal = document.getElementById('email-ticket-modal');
+    if (modal) {
+      modal.style.display = 'none';
+    }
+    this.setEmailSendingState(false);
+
+    // Restaurar foco al elemento que abrió el modal
+    if (this.lastActiveElementBeforeEmailModal && typeof this.lastActiveElementBeforeEmailModal.focus === 'function') {
+      try {
+        this.lastActiveElementBeforeEmailModal.focus();
+      } catch (err) {
+        // Ignorar si el elemento ya no está en el DOM
+      }
+    }
+  },
+
+  handleEmailFileSelect(file) {
+    if (!file) return;
+
+    const MAX_SIZE = 15 * 1024 * 1024; // 15MB
+    if (file.size > MAX_SIZE) {
+      this.showEmailAlert(
+        'Archivo supera el límite',
+        'El archivo adjunto supera el tamaño máximo permitido de 15 MB. Por favor selecciona un archivo más pequeño.'
+      );
+      this.clearEmailAttachment();
+      return;
+    }
+
+    this.selectedEmailFile = file;
+
+    const emptyState = document.getElementById('attachment-empty-state');
+    const selectedState = document.getElementById('attachment-selected-state');
+    const filenameEl = document.getElementById('attachment-filename');
+    const filesizeEl = document.getElementById('attachment-filesize');
+
+    if (emptyState) emptyState.style.display = 'none';
+    if (selectedState) selectedState.style.display = 'flex';
+    if (filenameEl) filenameEl.textContent = file.name;
+    if (filesizeEl) {
+      const sizeKb = (file.size / 1024).toFixed(1);
+      const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
+      filesizeEl.textContent = file.size > 1024 * 1024 ? `${sizeMb} MB` : `${sizeKb} KB`;
+    }
+  },
+
+  clearEmailAttachment() {
+    this.selectedEmailFile = null;
+    const fileInput = document.getElementById('email-adjunto') || document.getElementById('email-attachment');
+    if (fileInput) fileInput.value = '';
+
+    const emptyState = document.getElementById('attachment-empty-state');
+    const selectedState = document.getElementById('attachment-selected-state');
+    if (emptyState) emptyState.style.display = 'block';
+    if (selectedState) selectedState.style.display = 'none';
+  },
+
+  showEmailAlert(title, message, isSuccess = false) {
+    const alertEl = document.getElementById('email-status-alert') || document.getElementById('email-error-alert');
+    if (!alertEl) return;
+
+    alertEl.className = isSuccess ? 'solicitud-alert-banner alert-success' : 'solicitud-alert-banner alert-danger';
+
+    const iconEl = document.getElementById('email-status-alert-icon') || alertEl.querySelector('.alert-icon');
+    if (iconEl) iconEl.textContent = isSuccess ? '✓' : '❌';
+
+    const titleEl = document.getElementById('email-error-title');
+    if (titleEl) titleEl.textContent = title;
+
+    const descEl = document.getElementById('email-error-desc');
+    if (descEl) descEl.textContent = message;
+
+    alertEl.style.display = 'flex';
+  },
+
+  setEmailSendingState(isSending) {
+    this.isEmailSending = isSending;
+    const sendBtn = document.getElementById('btn-send-email') || document.getElementById('btn-send-email-submit');
+    const cancelBtn = document.getElementById('btn-cancel-email') || document.getElementById('btn-cancel-email-modal');
+    const spinner = document.getElementById('email-spinner') || document.getElementById('email-send-spinner');
+    const sendIcon = document.getElementById('email-send-icon');
+    const sendText = document.getElementById('email-send-text');
+
+    if (sendBtn) sendBtn.disabled = isSending;
+    if (cancelBtn) cancelBtn.disabled = isSending;
+
+    if (spinner) spinner.style.display = isSending ? 'inline-block' : 'none';
+    if (sendIcon) sendIcon.style.display = isSending ? 'none' : 'inline';
+    if (sendText) sendText.textContent = isSending ? 'Enviando...' : 'Enviar';
+  },
+
+  async submitSendTicketEmail() {
+    if (this.isEmailSending) return;
+
+    const toInput = document.getElementById('email-destinatario') || document.getElementById('email-to');
+    const subjectInput = document.getElementById('email-asunto') || document.getElementById('email-subject');
+    const bodyInput = document.getElementById('email-cuerpo') || document.getElementById('email-body');
+
+    const toEmail = toInput ? toInput.value.trim() : '';
+    const subject = subjectInput ? subjectInput.value.trim() : '';
+    const body = bodyInput ? bodyInput.value.trim() : '';
+
+    if (!toEmail) {
+      this.showEmailAlert('Destinatario requerido', 'Por favor ingresa al menos una dirección de correo válida.');
+      if (toInput) toInput.focus();
+      return;
+    }
+
+    if (!subject) {
+      this.showEmailAlert('Asunto requerido', 'Por favor ingresa el asunto del correo.');
+      if (subjectInput) subjectInput.focus();
+      return;
+    }
+
+    if (!body) {
+      this.showEmailAlert('Cuerpo requerido', 'Por favor ingresa el contenido o cuerpo del mensaje.');
+      if (bodyInput) bodyInput.focus();
+      return;
+    }
+
+    // Hide previous alerts
+    const alertEl = document.getElementById('email-status-alert') || document.getElementById('email-error-alert');
+    if (alertEl) alertEl.style.display = 'none';
+
+    // Prepare FormData
+    const formData = new FormData();
+    formData.append('to_email', toEmail);
+    formData.append('para', toEmail);
+    formData.append('subject', subject);
+    formData.append('asunto', subject);
+    formData.append('body', body);
+    formData.append('cuerpo', body);
+
+    if (this.lastGeneratedTicketId) {
+      formData.append('ticket_id', this.lastGeneratedTicketId);
+    }
+    if (this.lastGeneratedPeticionId) {
+      formData.append('peticion_id', this.lastGeneratedPeticionId);
+    }
+
+    if (this.selectedEmailFile) {
+      formData.append('attachment', this.selectedEmailFile);
+      formData.append('adjunto', this.selectedEmailFile);
+    }
+
+    this.setEmailSendingState(true);
+
+    try {
+      const response = await Auth.fetchWithAuth('/api/automation/send-ticket-email', {
+        method: 'POST',
+        body: formData
+      });
+
+      const resData = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        const errorDetail = resData?.detail || `Error al enviar correo (HTTP ${response.status})`;
+        throw new Error(errorDetail);
+      }
+
+      // Success toast & close modal
+      this.showToast(`✓ Correo enviado exitosamente a ${toEmail}`, 'success');
+      this.closeEmailTicketModal();
+
+    } catch (err) {
+      console.error('Error enviando correo de ticket:', err);
+      this.showEmailAlert(
+        'No se pudo enviar el correo',
+        err.message || 'Ocurrió un error inesperado al contactar al servidor SMTP.'
+      );
+    } finally {
+      this.setEmailSendingState(false);
     }
   },
 
@@ -1920,6 +2641,10 @@ const App = {
     try {
       const res = await Auth.fetchWithAuth(`/api/solicitudes/solots-liray?nro_proyecto=${encodeURIComponent(nroProyecto)}`);
       if (res.ok) {
+        const currentProj = document.getElementById('solicitud-nro-proyecto')?.value?.trim();
+        if (!currentProj || !currentProj.includes(String(nroProyecto).trim())) {
+          return; // Form was reset or project number changed while in-flight
+        }
         const data = await res.json();
         const text = data.formatted_text || data.detalle_sugerido || '';
         if (detalleInput) {
@@ -2525,6 +3250,483 @@ const App = {
   },
 
   // --------------------------------------------------------------------------
+  // MÓDULO: MANTENEDOR DE USUARIOS & ROLES (CRUD)
+  // --------------------------------------------------------------------------
+  async loadUsuarios() {
+    const search = document.getElementById('usuarios-search-input')?.value || '';
+    const rol = document.getElementById('usuarios-filter-rol')?.value || '';
+    const estado = document.getElementById('usuarios-filter-estado')?.value || '';
+
+    const params = new URLSearchParams();
+    if (search.trim()) params.append('search', search.trim());
+    if (rol.trim()) params.append('rol', rol.trim());
+    if (estado.trim() !== '') params.append('activo', estado.trim());
+
+    const tbody = document.getElementById('usuarios-table-body');
+    if (tbody) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 2rem; color: var(--text-secondary);">Cargando usuarios...</td></tr>';
+    }
+
+    try {
+      const res = await Auth.fetchWithAuth(`/api/usuarios?${params.toString()}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'Error al consultar usuarios' }));
+        throw new Error(err.detail || 'Error al consultar usuarios');
+      }
+      this.usuariosData = await res.json();
+      this.renderUsuariosTable(this.usuariosData);
+
+      const countBadge = document.getElementById('usuarios-count-badge');
+      if (countBadge) {
+        countBadge.textContent = this.usuariosData.length;
+      }
+    } catch (e) {
+      if (tbody) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 2rem; color: var(--status-danger-text);">Error al cargar usuarios: ${e.message}</td></tr>`;
+      }
+      const countBadge = document.getElementById('usuarios-count-badge');
+      if (countBadge) countBadge.textContent = '0';
+    }
+  },
+
+  renderUsuariosTable(usuarios) {
+    const tbody = document.getElementById('usuarios-table-body');
+    if (!tbody) return;
+
+    if (!usuarios || usuarios.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="8">
+            <div class="empty-state">
+              <div class="empty-icon">👥</div>
+              <h3>No se encontraron usuarios</h3>
+              <p>Intenta ajustar los filtros de búsqueda o seleccionar otro Rol / Estado.</p>
+            </div>
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    const currentUser = Auth.getUser();
+
+    tbody.innerHTML = usuarios.map(u => {
+      let roleBadge = '';
+      const r = (u.rol || 'PM').toUpperCase();
+      if (r === 'ADMIN') {
+        roleBadge = '<span class="badge-role-admin">🛡️ ADMIN</span>';
+      } else if (r === 'LTI') {
+        roleBadge = '<span class="badge-role-lti">👔 LTI</span>';
+      } else {
+        roleBadge = '<span class="badge-role-pm">📋 PM</span>';
+      }
+
+      const statusBadge = u.activo
+        ? '<span class="badge-status-active">✓ Activo</span>'
+        : '<span class="badge-status-blocked">✕ Bloqueado</span>';
+
+      const toggleIcon = u.activo ? '🔒' : '🔓';
+      const toggleTitle = u.activo ? 'Bloquear usuario' : 'Desbloquear usuario';
+
+      const isSelf = currentUser && String(currentUser.id) === String(u.id);
+      const isRootAdmin = u.username === 'admin';
+
+      return `
+        <tr>
+          <td><span style="font-family: var(--font-mono); font-weight: 700; color: var(--text-secondary);">${u.id}</span></td>
+          <td><strong style="font-family: var(--font-mono); color: var(--primary);">${this.escapeHtml(u.username)}</strong></td>
+          <td><strong>${this.escapeHtml(u.nombre_completo)}</strong></td>
+          <td>${roleBadge}</td>
+          <td>${this.escapeHtml(u.lt_asignado || '—')}</td>
+          <td>${statusBadge}</td>
+          <td><small style="color: var(--text-secondary); font-weight: 600;">${this.formatDateDMY(u.created_at)}</small></td>
+          <td class="col-action-cell">
+            <div class="action-buttons-group">
+              <button type="button" class="btn-action-user-edit" onclick="App.openEditUserModal(${u.id})" title="Editar usuario" aria-label="Editar Usuario">
+                ✏️
+              </button>
+              <button type="button" class="btn-action-user-key" onclick="App.openResetUserPasswordModal(${u.id})" title="Resetear contraseña" aria-label="Resetear Contraseña">
+                🔑
+              </button>
+              <button type="button" class="btn-action-user-toggle" onclick="App.toggleUserStatus(${u.id})" title="${toggleTitle}" aria-label="${toggleTitle}" ${(isSelf || isRootAdmin) ? 'disabled style="opacity: 0.4; cursor: not-allowed;"' : ''}>
+                ${toggleIcon}
+              </button>
+              <button type="button" class="btn-action-user-delete" onclick="App.openDeleteUserModal(${u.id})" title="Eliminar usuario" aria-label="Eliminar Usuario" ${(isSelf || isRootAdmin) ? 'disabled style="opacity: 0.4; cursor: not-allowed;"' : ''}>
+                🗑️
+              </button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  },
+
+  openCreateUserModal() {
+    const modal = document.getElementById('create-user-modal');
+    if (!modal) return;
+
+    const errAlert = document.getElementById('create-user-error-alert');
+    if (errAlert) errAlert.style.display = 'none';
+
+    document.getElementById('create-user-nombre').value = '';
+    document.getElementById('create-user-username').value = '';
+    document.getElementById('create-user-password').value = 'Lti2026!';
+    document.getElementById('create-user-rol').value = 'PM';
+    document.getElementById('create-user-activo').value = '1';
+
+    const selectLt = document.getElementById('create-user-lt-asignado');
+    if (selectLt) {
+      selectLt.innerHTML = '<option value="">— Ninguno / No Aplica —</option>';
+      this.lideresList.forEach(lt => {
+        const opt = document.createElement('option');
+        opt.value = lt;
+        opt.textContent = lt;
+        selectLt.appendChild(opt);
+      });
+    }
+
+    modal.style.display = 'flex';
+  },
+
+  closeCreateUserModal() {
+    const modal = document.getElementById('create-user-modal');
+    if (modal) modal.style.display = 'none';
+  },
+
+  async submitCreateUserForm() {
+    if (this.isUserSubmitting) return;
+
+    const nombre = document.getElementById('create-user-nombre')?.value.trim();
+    const username = document.getElementById('create-user-username')?.value.trim();
+    const password = document.getElementById('create-user-password')?.value;
+    const rol = document.getElementById('create-user-rol')?.value;
+    const ltAsignado = document.getElementById('create-user-lt-asignado')?.value.trim() || null;
+    const activo = document.getElementById('create-user-activo')?.value === '1';
+
+    const errAlert = document.getElementById('create-user-error-alert');
+    const errDesc = document.getElementById('create-user-error-desc');
+    const spinner = document.getElementById('create-user-spinner');
+    const btn = document.getElementById('btn-save-create-user-modal');
+
+    if (!nombre || !username || !password || !rol) {
+      if (errAlert && errDesc) {
+        errDesc.textContent = 'Todos los campos obligatorios (*) deben ser completados.';
+        errAlert.style.display = 'flex';
+      }
+      return;
+    }
+
+    if (password.length < 6) {
+      if (errAlert && errDesc) {
+        errDesc.textContent = 'La contraseña debe tener al menos 6 caracteres.';
+        errAlert.style.display = 'flex';
+      }
+      return;
+    }
+
+    this.isUserSubmitting = true;
+    if (btn) btn.disabled = true;
+    if (spinner) spinner.style.display = 'inline-block';
+    if (errAlert) errAlert.style.display = 'none';
+
+    try {
+      const res = await Auth.fetchWithAuth('/api/usuarios', {
+        method: 'POST',
+        body: JSON.stringify({
+          nombre_completo: nombre,
+          username: username,
+          password: password,
+          rol: rol,
+          lt_asignado: ltAsignado,
+          activo: activo
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'Error al crear usuario' }));
+        throw new Error(err.detail || 'Error al crear usuario');
+      }
+
+      const newUser = await res.json();
+      this.closeCreateUserModal();
+      this.showToast(`Usuario '${newUser.username}' creado exitosamente`, 'success');
+      await this.loadUsuarios();
+    } catch (err) {
+      if (errAlert && errDesc) {
+        errDesc.textContent = err.message || 'Error al procesar la solicitud.';
+        errAlert.style.display = 'flex';
+      }
+    } finally {
+      this.isUserSubmitting = false;
+      if (btn) btn.disabled = false;
+      if (spinner) spinner.style.display = 'none';
+    }
+  },
+
+  async openEditUserModal(userId) {
+    const modal = document.getElementById('edit-user-modal');
+    if (!modal) return;
+
+    this.currentEditingUserId = userId;
+    const idInput = document.getElementById('edit-user-id');
+    if (idInput) idInput.value = userId;
+
+    const errAlert = document.getElementById('edit-user-error-alert');
+    if (errAlert) errAlert.style.display = 'none';
+
+    let user = this.usuariosData?.find(u => String(u.id) === String(userId));
+    if (!user) {
+      try {
+        const res = await Auth.fetchWithAuth(`/api/usuarios/${userId}`);
+        if (res.ok) {
+          user = await res.json();
+        }
+      } catch (e) {
+        console.warn('Error fetching user for edit modal:', e);
+      }
+    }
+
+    if (user) {
+      if (idInput) idInput.value = user.id;
+      const usernameInput = document.getElementById('edit-user-username');
+      if (usernameInput) usernameInput.value = user.username || '';
+      
+      const nombreInput = document.getElementById('edit-user-nombre');
+      if (nombreInput) nombreInput.value = user.nombre_completo || '';
+      
+      const rolSelect = document.getElementById('edit-user-rol');
+      if (rolSelect) rolSelect.value = user.rol || 'PM';
+      
+      const activoSelect = document.getElementById('edit-user-activo');
+      if (activoSelect) activoSelect.value = user.activo ? '1' : '0';
+
+      const selectLt = document.getElementById('edit-user-lt-asignado');
+      if (selectLt) {
+        selectLt.innerHTML = '<option value="">— Ninguno / No Aplica —</option>';
+        this.lideresList.forEach(lt => {
+          const opt = document.createElement('option');
+          opt.value = lt;
+          opt.textContent = lt;
+          if (user.lt_asignado === lt) {
+            opt.selected = true;
+          }
+          selectLt.appendChild(opt);
+        });
+      }
+    }
+
+    modal.style.display = 'flex';
+  },
+
+  closeEditUserModal() {
+    const modal = document.getElementById('edit-user-modal');
+    if (modal) modal.style.display = 'none';
+    this.currentEditingUserId = null;
+  },
+
+  async submitEditUserForm() {
+    if (this.isUserSubmitting) return;
+
+    const userId = this.currentEditingUserId || document.getElementById('edit-user-id')?.value;
+    const nombre = document.getElementById('edit-user-nombre')?.value.trim();
+    const rol = document.getElementById('edit-user-rol')?.value;
+    const ltAsignado = document.getElementById('edit-user-lt-asignado')?.value.trim() || null;
+    const activo = document.getElementById('edit-user-activo')?.value === '1';
+
+    const errAlert = document.getElementById('edit-user-error-alert');
+    const errDesc = document.getElementById('edit-user-error-desc');
+    const spinner = document.getElementById('edit-user-spinner');
+    const btn = document.getElementById('btn-save-edit-user-modal');
+
+    if (!userId || !nombre || !rol) {
+      if (errAlert && errDesc) {
+        errDesc.textContent = 'El nombre completo y rol son obligatorios.';
+        errAlert.style.display = 'flex';
+      }
+      return;
+    }
+
+    this.isUserSubmitting = true;
+    if (btn) btn.disabled = true;
+    if (spinner) spinner.style.display = 'inline-block';
+    if (errAlert) errAlert.style.display = 'none';
+
+    try {
+      const res = await Auth.fetchWithAuth(`/api/usuarios/${userId}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          nombre_completo: nombre,
+          rol: rol,
+          lt_asignado: ltAsignado,
+          activo: activo
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'Error al actualizar usuario' }));
+        throw new Error(err.detail || 'Error al actualizar usuario');
+      }
+
+      const updated = await res.json();
+      this.closeEditUserModal();
+      this.showToast(`Usuario '${updated.username}' actualizado exitosamente`, 'success');
+      await this.loadUsuarios();
+    } catch (err) {
+      if (errAlert && errDesc) {
+        errDesc.textContent = err.message || 'Error al procesar la actualización.';
+        errAlert.style.display = 'flex';
+      }
+    } finally {
+      this.isUserSubmitting = false;
+      if (btn) btn.disabled = false;
+      if (spinner) spinner.style.display = 'none';
+    }
+  },
+
+  openResetUserPasswordModal(userId) {
+    const modal = document.getElementById('reset-user-password-modal');
+    if (!modal) return;
+
+    const user = this.usuariosData.find(u => String(u.id) === String(userId));
+    if (!user) return;
+
+    document.getElementById('reset-user-id').value = user.id;
+    document.getElementById('reset-user-username-display').textContent = user.username;
+    document.getElementById('reset-user-nombre-display').textContent = user.nombre_completo;
+    document.getElementById('reset-user-new-password').value = '';
+
+    modal.style.display = 'flex';
+  },
+
+  closeResetUserPasswordModal() {
+    const modal = document.getElementById('reset-user-password-modal');
+    if (modal) modal.style.display = 'none';
+  },
+
+  async submitResetUserPasswordForm() {
+    const userId = document.getElementById('reset-user-id')?.value;
+    const newPass = document.getElementById('reset-user-new-password')?.value.trim();
+    const spinner = document.getElementById('reset-user-spinner');
+    const btn = document.getElementById('btn-confirm-reset-user-modal');
+
+    if (!userId) return;
+
+    if (btn) btn.disabled = true;
+    if (spinner) spinner.style.display = 'inline-block';
+
+    try {
+      const res = await Auth.fetchWithAuth(`/api/usuarios/${userId}/reset-password`, {
+        method: 'POST',
+        body: JSON.stringify({
+          new_password: newPass || 'Lti2026!'
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'Error al resetear contraseña' }));
+        throw new Error(err.detail || 'Error al resetear contraseña');
+      }
+
+      this.closeResetUserPasswordModal();
+      this.showToast('Contraseña restablecida exitosamente', 'success');
+    } catch (err) {
+      this.showToast(`Error: ${err.message}`, 'danger');
+    } finally {
+      if (btn) btn.disabled = false;
+      if (spinner) spinner.style.display = 'none';
+    }
+  },
+
+  async toggleUserStatus(userId) {
+    try {
+      const res = await Auth.fetchWithAuth(`/api/usuarios/${userId}/toggle-status`, {
+        method: 'PATCH'
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'Error al cambiar estado' }));
+        throw new Error(err.detail || 'Error al cambiar estado');
+      }
+
+      const data = await res.json();
+      const statusText = data.activo ? 'activado' : 'bloqueado';
+      this.showToast(`Usuario ${statusText} exitosamente`, 'success');
+      await this.loadUsuarios();
+    } catch (err) {
+      this.showToast(`Error: ${err.message}`, 'danger');
+    }
+  },
+
+  async openDeleteUserModal(userId) {
+    const modal = document.getElementById('delete-user-modal');
+    if (!modal) return;
+
+    let user = this.usuariosData?.find(u => String(u.id) === String(userId));
+    if (!user) {
+      try {
+        const res = await Auth.fetchWithAuth(`/api/usuarios/${userId}`);
+        if (res.ok) {
+          user = await res.json();
+        }
+      } catch (e) {
+        console.warn('Error fetching user for delete modal:', e);
+      }
+    }
+
+    this.userToDeleteId = user ? user.id : userId;
+    const deleteIdInput = document.getElementById('delete-user-id');
+    if (deleteIdInput) deleteIdInput.value = this.userToDeleteId;
+    
+    const userDisplay = document.getElementById('delete-user-username-display');
+    if (userDisplay) userDisplay.textContent = user ? user.username : `ID: ${userId}`;
+    
+    const nombreDisplay = document.getElementById('delete-user-nombre-display');
+    if (nombreDisplay) nombreDisplay.textContent = user ? user.nombre_completo : '';
+    
+    const rolDisplay = document.getElementById('delete-user-rol-display');
+    if (rolDisplay) rolDisplay.textContent = user ? user.rol : '';
+
+    modal.style.display = 'flex';
+  },
+
+  closeDeleteUserModal() {
+    const modal = document.getElementById('delete-user-modal');
+    if (modal) modal.style.display = 'none';
+    this.userToDeleteId = null;
+  },
+
+  async confirmDeleteUser() {
+    const userId = this.userToDeleteId || document.getElementById('delete-user-id')?.value;
+    if (!userId) return;
+
+    const spinner = document.getElementById('delete-user-spinner');
+    const btn = document.getElementById('btn-confirm-delete-user-modal');
+
+    if (btn) btn.disabled = true;
+    if (spinner) spinner.style.display = 'inline-block';
+
+    try {
+      const res = await Auth.fetchWithAuth(`/api/usuarios/${userId}`, {
+        method: 'DELETE'
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'Error al eliminar usuario' }));
+        throw new Error(err.detail || 'Error al eliminar usuario');
+      }
+
+      this.closeDeleteUserModal();
+      this.showToast('Usuario eliminado permanentemente', 'success');
+      await this.loadUsuarios();
+    } catch (err) {
+      this.showToast(`Error: ${err.message}`, 'danger');
+    } finally {
+      if (btn) btn.disabled = false;
+      if (spinner) spinner.style.display = 'none';
+    }
+  },
+
+  // --------------------------------------------------------------------------
   // COMPONENTE TOAST UNIVERSAL
   // --------------------------------------------------------------------------
   showToast(message, type = 'info') {
@@ -2553,6 +3755,8 @@ const App = {
     }, 3500);
   }
 };
+
+window.App = App;
 
 // Start application upon DOM load
 document.addEventListener('DOMContentLoaded', () => App.init());

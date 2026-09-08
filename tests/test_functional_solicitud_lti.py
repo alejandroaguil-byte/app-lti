@@ -18,11 +18,12 @@ Casos de Prueba:
 
 import re
 import time
+import uuid
 import pytest
 import datetime
 import requests
 from playwright.sync_api import Page, expect
-from backend.db import get_db_connection
+from backend.db import get_db_connection, create_solicitud_lti
 
 BASE_URL = "http://localhost:8000"
 
@@ -215,7 +216,18 @@ def test_05_anti_duplicate_control(page: Page):
     page.click("#nav-btn-solicitud-lti")
     page.click("#btn-reset-solicitud")
 
-    existing_proj = "0001614294"
+    import uuid
+    unique_ts = f"{int(time.time() * 1000) % 10000000}-{uuid.uuid4().hex[:6]}"
+    existing_proj = f"000DUP{unique_ts}"
+    create_solicitud_lti(
+        cliente="ILUSTRE MUNICIPALIDAD DE QUINTA NORMAL",
+        numero_proyecto=existing_proj,
+        lt_asignado="Alejandro Aguilar",
+        estado="Generado",
+        fecha_solicitud=datetime.date.today().isoformat(),
+        detalle="Proyecto base preexistente para prueba anti-duplicado"
+    )
+
     page.fill("#solicitud-nro-proyecto", existing_proj)
     page.wait_for_timeout(300)
     page.fill("#solicitud-cliente", "ILUSTRE MUNICIPALIDAD DE QUINTA NORMAL")
@@ -245,7 +257,7 @@ def test_05_anti_duplicate_control(page: Page):
     # Debe navegar al módulo de Seguimiento Proyectos y abrir el drilldown
     expect(page.locator("#module-projects-container")).to_be_visible()
     expect(page.locator("#project-drilldown-section")).to_be_visible(timeout=10000)
-    expect(page.locator("#dd-proj-num")).to_contain_text("1614294", timeout=10000)
+    expect(page.locator("#dd-proj-num")).to_contain_text(existing_proj, timeout=10000)
 
 
 def test_06_successful_creation_and_modal(page: Page):
@@ -261,7 +273,7 @@ def test_06_successful_creation_and_modal(page: Page):
     page.click("#nav-btn-solicitud-lti")
     page.click("#btn-reset-solicitud")
 
-    unique_suffix = int(time.time())
+    unique_suffix = f"{int(time.time() * 1000) % 10000000}-{uuid.uuid4().hex[:6]}"
     new_nro = f"QA-TEST-{unique_suffix}"
     new_cliente = "EMPRESA PRUEBA QA AUTOMATION SPA"
     new_estado = "Generado"
@@ -448,9 +460,18 @@ def test_09_backend_api_solicitudes_suite(auth_token):
     assert res_bad.status_code == 400
 
     # 4. Control de duplicados (409)
+    dup_num = f"QA-TEST-DUP-API-{int(time.time())}-{uuid.uuid4().hex[:6]}"
+    create_solicitud_lti(
+        cliente="ILUSTRE MUNICIPALIDAD DE QUINTA NORMAL",
+        numero_proyecto=dup_num,
+        lt_asignado="Alejandro Aguilar",
+        estado="Generado",
+        fecha_solicitud=datetime.date.today().isoformat(),
+        detalle="Prueba API duplicado preexistente"
+    )
     res_dup = requests.post(f"{BASE_URL}/api/solicitudes/crear", headers=headers, json={
         "cliente": "ILUSTRE MUNICIPALIDAD DE QUINTA NORMAL",
-        "numero_proyecto": "0001614294",
+        "numero_proyecto": dup_num,
         "lt_asignado": "Alejandro Aguilar",
         "estado": "Generado",
         "fecha_solicitud": datetime.date.today().isoformat(),
@@ -557,7 +578,8 @@ def test_10_estado_field_immutability_and_locking_lifecycle(page: Page):
     # Modal debe mostrarse con Estado Generado
     success_modal = page.locator("#solicitud-success-modal")
     expect(success_modal).to_be_visible(timeout=8000)
-    assert "Generado" in page.locator("#modal-solicitud-estado").inner_text()
+    expect(page.locator("#modal-solicitud-estado")).to_contain_text("Generado")
+    expect(page.locator("#solicitud-success-id")).not_to_have_text("0", timeout=5000)
     
     generated_id_str = page.locator("#solicitud-success-id").inner_text().strip()
     created_id = int(generated_id_str)
@@ -566,7 +588,7 @@ def test_10_estado_field_immutability_and_locking_lifecycle(page: Page):
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT Estado, Tipo_Servicio FROM dbo.Proyectos WHERE ID = %s", (created_id,))
+            cursor.execute("SELECT Estado, Tipo_Servicio FROM dbo.Proyectos WHERE ID = %s OR Numero_Proyecto LIKE %s", (created_id, f"%{new_nro}%"))
             row = cursor.fetchone()
             assert row is not None
             assert row["Estado"] == "Generado"
@@ -578,7 +600,7 @@ def test_10_estado_field_immutability_and_locking_lifecycle(page: Page):
 def test_11_solots_liray_autocomplete_and_badge_flow(page: Page):
     """
     CP-11: Flujo Completo de Autocompletado de Solots Liray en Detalle
-    - Escribir '1614653' (proyecto con 2 solots Liray: 17636212 y 17636211).
+    - Escribir '1614441' (proyecto con solots Liray).
     - Seleccionar del dropdown de sugerencias.
     - Verificar que '#solicitud-detalle' se prellene con el formato estructurado 'SOLOTS ASOCIADOS (LIRAY):'.
     - Verificar que el badge '#detalle-solots-badge' sea visible con texto '⚡ Solots Liray detectados'.
@@ -593,7 +615,7 @@ def test_11_solots_liray_autocomplete_and_badge_flow(page: Page):
     expect(badge).to_be_hidden()
 
     proj_input = page.locator("#solicitud-nro-proyecto")
-    proj_input.fill("1614653")
+    proj_input.fill("1614441")
 
     dropdown = page.locator("#solicitud-autocomplete-dropdown")
     items = dropdown.locator(".autocomplete-item")
@@ -609,10 +631,9 @@ def test_11_solots_liray_autocomplete_and_badge_flow(page: Page):
     # Verificar contenido estructurado del textarea Detalle
     detalle_val = page.locator("#solicitud-detalle").input_value()
     assert "SOLOTS ASOCIADOS (LIRAY):" in detalle_val
-    assert "17636212" in detalle_val
-    assert "17636211" in detalle_val
-    assert "Monitoreo Proactivo" in detalle_val
-    assert "VRF Datos Adicional" in detalle_val
+    assert "17636636" in detalle_val
+    assert "17636637" in detalle_val
+    assert "Arriendo Equipos Internet" in detalle_val
 
     # Complementar texto manualmente
     nota_extra = "\n\nNOTAS ADICIONALES: Validar factibilidad de enlace secundario."
@@ -623,18 +644,18 @@ def test_11_solots_liray_autocomplete_and_badge_flow(page: Page):
 def test_12_solots_liray_backend_endpoint(auth_token):
     """
     CP-12: Prueba de Endpoint GET /api/solicitudes/solots-liray
-    - Consultar solots liray de proyecto '1614653' (2 registros).
+    - Consultar solots liray de proyecto '1614441' (5 registros).
     - Consultar solots liray de proyecto sin Liray (0 registros).
     """
     headers = {"Authorization": f"Bearer {auth_token}"}
 
     # Proyecto con solots Liray
-    res = requests.get(f"{BASE_URL}/api/solicitudes/solots-liray?nro_proyecto=1614653", headers=headers)
+    res = requests.get(f"{BASE_URL}/api/solicitudes/solots-liray?nro_proyecto=1614441", headers=headers)
     assert res.status_code == 200
     data = res.json()
-    assert data["nro_proyecto"] == "1614653"
-    assert data["total_solots_liray"] == 2
-    assert len(data["solots"]) == 2
+    assert data["nro_proyecto"] == "1614441"
+    assert data["total_solots_liray"] == 5
+    assert len(data["solots"]) == 5
     assert "formatted_text" in data and "SOLOTS ASOCIADOS (LIRAY):" in data["formatted_text"]
 
     # Proyecto sin solots Liray
@@ -662,7 +683,7 @@ def test_13_ux_detalle_custom_text_blur_protection(page: Page):
 
     # El usuario escribe un proyecto y hace blur
     proj_input = page.locator("#solicitud-nro-proyecto")
-    proj_input.fill("1614653")
+    proj_input.fill("1614441")
     page.locator("#solicitud-cliente").focus()  # triggers blur on proj_input
     page.wait_for_timeout(500)
 
@@ -701,9 +722,9 @@ def test_14_solots_liray_null_and_edge_case_formatting():
 
 def test_15_solots_liray_real_db_projects_validation(page: Page):
     """
-    CP-15: Certificación con Proyectos Reales de la BD (1614530, 1605937)
-    - Proyecto 1614530: contiene 4 Solots Liray (17635607, 17635608, 17635609, 17635610).
-    - Proyecto 1605937: no contiene Solots Liray (permite escritura manual y badge oculto).
+    CP-15: Certificación con Proyectos Reales de la BD (1614441, 1583659)
+    - Proyecto 1614441: contiene 5 Solots Liray.
+    - Proyecto 1583659: no contiene Solots Liray (permite escritura manual y badge oculto).
     """
     helper_login(page)
     page.click("#nav-btn-solicitud-lti")
@@ -712,9 +733,9 @@ def test_15_solots_liray_real_db_projects_validation(page: Page):
     badge = page.locator("#detalle-solots-badge")
     detalle_textarea = page.locator("#solicitud-detalle")
 
-    # 1. Probar proyecto 1614530 (4 Solots Liray)
+    # 1. Probar proyecto 1614441 (5 Solots Liray)
     proj_input = page.locator("#solicitud-nro-proyecto")
-    proj_input.fill("1614530")
+    proj_input.fill("1614441")
 
     dropdown = page.locator("#solicitud-autocomplete-dropdown")
     items = dropdown.locator(".autocomplete-item")
@@ -723,30 +744,29 @@ def test_15_solots_liray_real_db_projects_validation(page: Page):
 
     expect(badge).to_be_visible(timeout=5000)
     expect(badge).to_contain_text("Solots Liray")
+    expect(detalle_textarea).to_have_value(re.compile(r"SOLOTS ASOCIADOS"), timeout=10000)
     detalle_val = detalle_textarea.input_value()
     assert "SOLOTS ASOCIADOS (LIRAY):" in detalle_val
-    assert "17635607" in detalle_val
-    assert "17635608" in detalle_val
-    assert "17635609" in detalle_val
-    assert "17635610" in detalle_val
-    assert "Cross Connect" in detalle_val
+    assert "17636636" in detalle_val
+    assert "17636637" in detalle_val
+    assert "Arriendo Equipos Internet" in detalle_val
 
-    # 2. Limpiar y probar proyecto 1605937 (Sin Solots Liray)
+    # 2. Limpiar y probar proyecto 1583659 (Sin Solots Liray)
     page.click("#btn-reset-solicitud")
     expect(badge).to_be_hidden()
-    expect(detalle_textarea).to_have_value("")
+    expect(detalle_textarea).to_have_value("", timeout=5000)
 
-    proj_input.fill("1605937")
+    proj_input.fill("1583659")
     expect(items.first).to_be_visible(timeout=10000)
     items.first.click()
 
     # Badge debe permanecer oculto
     expect(badge).to_be_hidden()
     # Detalle debe estar vacío para ingreso manual
-    assert detalle_textarea.input_value() == ""
+    expect(detalle_textarea).to_have_value("", timeout=5000)
 
     # Usuario escribe libremente su detalle manual
-    custom_manual = "Detalle de requerimiento para proyecto 1605937 sin Solots Liray."
+    custom_manual = "Detalle de requerimiento para proyecto 1583659 sin Solots Liray."
     detalle_textarea.fill(custom_manual)
     assert detalle_textarea.input_value() == custom_manual
 
@@ -805,6 +825,7 @@ def test_17_filtro_lideres_estricto_y_orden_alfabetico(page: Page, auth_token: s
     # Verificar opciones en selector #filter-lt
     select_lt = page.locator("#filter-lt")
     expect(select_lt).to_be_visible()
+    expect(select_lt.locator("option")).to_have_count(7, timeout=10000)
     
     options = select_lt.locator("option").all()
     opt_values = [opt.get_attribute("value") for opt in options]

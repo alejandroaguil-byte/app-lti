@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Guía de Despliegue y Desarrollo Continuo - App LTI (bobbadeveloper -> iacdi)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      --surface-card: rgba(30, 41, 59, 0.7);
+      --surface-card-border: rgba(255, 255, 255, 0.08);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent-blue: #38bdf8;
+      --accent-green: #34d399;
+      --accent-amber: #fbbf24;
+      --accent-purple: #a78bfa;
+      --accent-red: #f87171;
+      --code-bg: #0b1120;
+      --code-border: #1e293b;
+      --badge-bg: rgba(56, 189, 248, 0.15);
+      --badge-text: #38bdf8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      background: var(--bg-gradient);
+      color: var(--text-main);
+      line-height: 1.6;
+      padding: 40px 20px;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    /* Header */
+    .header {
+      text-align: center;
+      margin-bottom: 40px;
+      padding: 30px;
+      background: var(--surface-card);
+      border: 1px solid var(--surface-card-border);
+      border-radius: 20px;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+    }
+
+    .header-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      background: var(--badge-bg);
+      color: var(--badge-text);
+      font-size: 0.85rem;
+      font-weight: 700;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 16px;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+
+    .header h1 {
+      font-size: 2.2rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 10px;
+      background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .header p {
+      color: var(--text-muted);
+      font-size: 1.05rem;
+      max-width: 680px;
+      margin: 0 auto;
+    }
+
+    /* Grid Layout */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+
+    /* Cards */
+    .card {
+      background: var(--surface-card);
+      border: 1px solid var(--surface-card-border);
+      border-radius: 16px;
+      padding: 24px;
+      backdrop-filter: blur(10px);
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+
+    .card:hover {
+      border-color: rgba(56, 189, 248, 0.3);
+      transform: translateY(-2px);
+    }
+
+    .card-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .card-title .icon {
+      font-size: 1.4rem;
+    }
+
+    /* Steps Flow */
+    .step-list {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      margin-bottom: 35px;
+    }
+
+    .step-item {
+      display: flex;
+      gap: 20px;
+      background: var(--surface-card);
+      border: 1px solid var(--surface-card-border);
+      border-radius: 16px;
+      padding: 24px;
+      backdrop-filter: blur(10px);
+      position: relative;
+    }
+
+    .step-number {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #38bdf8 0%, #0284c7 100%);
+      color: #fff;
+      font-weight: 800;
+      font-size: 1.2rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      box-shadow: 0 6px 16px rgba(56, 189, 248, 0.3);
+    }
+
+    .step-content {
+      flex: 1;
+    }
+
+    .step-content h3 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin-bottom: 6px;
+      color: #f1f5f9;
+    }
+
+    .step-content p {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      margin-bottom: 12px;
+    }
+
+    /* Code Snippet */
+    .code-box {
+      background: var(--code-bg);
+      border: 1px solid var(--code-border);
+      border-radius: 10px;
+      padding: 14px 18px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+      color: #38bdf8;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      overflow-x: auto;
+      margin: 8px 0;
+    }
+
+    .code-box code {
+      color: #e2e8f0;
+    }
+
+    .code-box code .cmd {
+      color: #38bdf8;
+      font-weight: 600;
+    }
+
+    .code-box code .comment {
+      color: #64748b;
+    }
+
+    .copy-btn {
+      background: rgba(255, 255, 255, 0.1);
+      border: none;
+      color: #94a3b8;
+      padding: 4px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.75rem;
+      font-weight: 600;
+      transition: all 0.2s ease;
+    }
+
+    .copy-btn:hover {
+      background: rgba(56, 189, 248, 0.2);
+      color: #38bdf8;
+    }
+
+    /* Table */
+    .table-container {
+      overflow-x: auto;
+      margin-top: 12px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+    }
+
+    th, td {
+      padding: 12px 16px;
+      text-align: left;
+      border-bottom: 1px solid var(--surface-card-border);
+    }
+
+    th {
+      color: var(--text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 0.75rem;
+      letter-spacing: 0.05em;
+    }
+
+    td {
+      color: #e2e8f0;
+    }
+
+    /* Links */
+    a.link-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--accent-blue);
+      text-decoration: none;
+      font-weight: 600;
+      transition: color 0.2s;
+    }
+
+    a.link-btn:hover {
+      color: #7dd3fc;
+      text-decoration: underline;
+    }
+
+    /* Callouts */
+    .callout {
+      border-left: 4px solid var(--accent-amber);
+      background: rgba(251, 191, 36, 0.08);
+      padding: 16px 20px;
+      border-radius: 0 12px 12px 0;
+      margin: 20px 0;
+      font-size: 0.93rem;
+      color: #fde68a;
+    }
+
+    .callout-title {
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+      color: var(--accent-amber);
+    }
+
+    .callout-success {
+      border-left-color: var(--accent-green);
+      background: rgba(52, 211, 153, 0.08);
+      color: #a7f3d0;
+    }
+
+    .callout-success .callout-title {
+      color: var(--accent-green);
+    }
+
+    /* Footer */
+    .footer {
+      text-align: center;
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 1px solid var(--surface-card-border);
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    
+    <!-- Header -->
+    <header class="header">
+      <div class="header-badge">🚀 Guía Rápida de Operaciones</div>
+      <h1>Flujo de Desarrollo y Publicación</h1>
+      <p>Cómo desarrollar en <strong>bobbadeveloper</strong> y publicar cambios al instante en el servidor <strong>iacdi</strong> vía Tailscale.</p>
+    </header>
+
+    <!-- Resumen de Servidores y URLs -->
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">
+          <span class="icon">💻</span> Entorno de Desarrollo (Local)
+        </div>
+        <div class="table-container">
+          <table>
+            <tr>
+              <th>Host</th>
+              <td><code>bobbadeveloper</code></td>
+            </tr>
+            <tr>
+              <th>Directorio</th>
+              <td><code>/home/bobbasystem/Desarrollos/app-lti</code></td>
+            </tr>
+            <tr>
+              <th>Propósito</th>
+              <td>Edición de código, pruebas y desarrollo diario</td>
+            </tr>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <span class="icon">🌐</span> Servidor Publicado (Remoto)
+        </div>
+        <div class="table-container">
+          <table>
+            <tr>
+              <th>Host</th>
+              <td><code>iacdi</code> (Ubuntu Linux)</td>
+            </tr>
+            <tr>
+              <th>URL Tailscale</th>
+              <td><a href="http://100.82.24.75:8000" target="_blank" class="link-btn">http://100.82.24.75:8000 ↗</a></td>
+            </tr>
+            <tr>
+              <th>URL LAN Local</th>
+              <td><a href="http://192.168.10.20:8000" target="_blank" class="link-btn">http://192.168.10.20:8000 ↗</a></td>
+            </tr>
+            <tr>
+              <th>Directorio</th>
+              <td><code>/home/iacdi/Desarrollos/app-lti</code></td>
+            </tr>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Paso a Paso -->
+    <h2 style="margin-bottom: 20px; font-weight: 800; font-size: 1.5rem; display: flex; align-items: center; gap: 10px;">
+      <span>⚡</span> Paso a Paso del Flujo de Trabajo
+    </h2>
+
+    <div class="step-list">
+
+      <!-- Paso 1 -->
+      <div class="step-item">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <h3>Editas y pruebas tu código localmente</h3>
+          <p>Realiza cualquier cambio en tus archivos de Frontend (HTML, CSS, JS) o Backend (Python, consultas SQL, endpoints) en tu equipo <code>bobbadeveloper</code>.</p>
+        </div>
+      </div>
+
+      <!-- Paso 2 -->
+      <div class="step-item">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <h3>Ejecutas el script de sincronización</h3>
+          <p>Abre la terminal en la raíz del proyecto y ejecuta el siguiente comando:</p>
+          <div class="code-box">
+            <code><span class="cmd">./deploy_to_iacdi.sh</span></code>
+            <button class="copy-btn" onclick="navigator.clipboard.writeText('./deploy_to_iacdi.sh'); this.textContent='¡Copiado!'; setTimeout(()=>this.textContent='Copiar', 2000)">Copiar</button>
+          </div>
+          <p style="margin-top: 8px; font-size: 0.88rem; color: #94a3b8;">
+            ✓ Transfiere únicamente los archivos que cambiaron en <strong>~1 segundo</strong>.<br>
+            ✓ Excluye de forma segura <code>venv/</code>, <code>.git/</code>, archivos temporales y respeta el <code>.env</code> del servidor.
+          </p>
+        </div>
+      </div>
+
+      <!-- Paso 3 -->
+      <div class="step-item">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <h3>¡Listo! La app se recarga automáticamente</h3>
+          <p>El servidor <code>iacdi</code> cuenta con <strong>Hot-Reload (recarga en caliente)</strong>. En cuanto recibe los archivos nuevos, Uvicorn actualiza el servicio en milisegundos sin desconectar la aplicación.</p>
+          
+          <div class="callout callout-success" style="margin: 10px 0 0 0;">
+            <div class="callout-title">🎉 Verificación Inmediata</div>
+            Abre o refresca en tu navegador: <a href="http://100.82.24.75:8000" target="_blank" class="link-btn" style="color: #34d399; font-weight: 700;">http://100.82.24.75:8000 ↗</a>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Caso Excepcional: Nuevas Librerías Python -->
+    <div class="card" style="margin-bottom: 30px; border-color: rgba(251, 191, 36, 0.3);">
+      <div class="card-title" style="color: var(--accent-amber);">
+        <span class="icon">📦</span> Caso Excepcional: Agregar Nuevas Librerías Python
+      </div>
+      <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 12px;">
+        Si agregas un nuevo paquete a <code>requirements.txt</code>, además de sincronizar con <code>./deploy_to_iacdi.sh</code>, ejecuta este comando en tu terminal para instalarla en el entorno virtual del servidor:
+      </p>
+      <div class="code-box">
+        <code><span class="cmd">ssh iacdi "/home/iacdi/Desarrollos/app-lti/venv/bin/pip install -r /home/iacdi/Desarrollos/app-lti/requirements.txt"</span></code>
+        <button class="copy-btn" onclick="navigator.clipboard.writeText('ssh iacdi \"/home/iacdi/Desarrollos/app-lti/venv/bin/pip install -r /home/iacdi/Desarrollos/app-lti/requirements.txt\"'); this.textContent='¡Copiado!'; setTimeout(()=>this.textContent='Copiar', 2000)">Copiar</button>
+      </div>
+    </div>
+
+    <!-- Comandos de Utilidad en el Servidor iacdi -->
+    <div class="card">
+      <div class="card-title">
+        <span class="icon">🛠️</span> Comandos de Administración en iacdi (Opcionales)
+      </div>
+      <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 16px;">
+        Por lo general no necesitas ingresar por SSH, pero estos comandos están disponibles si deseas supervisar el estado:
+      </p>
+
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <div>
+          <div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 4px;">1. Conectar por SSH al servidor:</div>
+          <div class="code-box">
+            <code><span class="cmd">ssh iacdi</span></code>
+          </div>
+        </div>
+
+        <div>
+          <div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 4px;">2. Ver estado del servicio en segundo plano:</div>
+          <div class="code-box">
+            <code><span class="cmd">systemctl --user status app-lti.service</span></code>
+          </div>
+        </div>
+
+        <div>
+          <div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 4px;">3. Ver logs en tiempo real:</div>
+          <div class="code-box">
+            <code><span class="cmd">journalctl --user -u app-lti -f</span></code>
+          </div>
+        </div>
+
+        <div>
+          <div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 4px;">4. Reiniciar manualmente el servicio:</div>
+          <div class="code-box">
+            <code><span class="cmd">systemctl --user restart app-lti.service</span></code>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+      App LTI &bull; Portal de Seguimiento Líderes TI &bull; Documento generado automáticamente para <strong>bobbadeveloper</strong>.
+    </footer>
+
+  </div>
+
+</body>
+</html>

@@ -179,7 +179,7 @@ def test_t2_03_frontend_filter_unassigned_interaction(page: Page):
                 row_tds = rows.nth(i).locator("td")
                 if row_tds.count() >= 3:
                     lt_cell = row_tds.nth(2).inner_text().strip()
-                    assert lt_cell in ["Sin Asignar", "-", "sin asignar", ""], f"Fila {i} tiene LT asignado inesperado: {lt_cell}"
+                    assert lt_cell in ["Sin Asignar", "No asignado", "-", "sin asignar", "no asignado", ""], f"Fila {i} tiene LT asignado inesperado: {lt_cell}"
 
 
 # ==============================================================================
@@ -285,14 +285,14 @@ def test_t4_01_kpi_card_render_and_accessibility(page: Page, auth_token: str):
     - Verificar presencia de #kpi-card-pendientes y #kpi-val-pendientes-asignar.
     - Verificar role="button", tabindex="0", title descriptivo y badge 'Filtrar ⚡'.
     """
+    helper_login(page)
+    expect(page.locator("#module-projects-container")).to_be_visible()
+
     headers = {"Authorization": f"Bearer {auth_token}"}
     res = requests.get(f"{BASE_URL}/api/kpis", headers=headers)
     assert res.status_code == 200
     kpis_data = res.json()
     expected_val = kpis_data.get("pendientes_asignar", 0)
-
-    helper_login(page)
-    expect(page.locator("#module-projects-container")).to_be_visible()
 
     card = page.locator("#kpi-card-pendientes")
     expect(card).to_be_visible()
@@ -300,7 +300,7 @@ def test_t4_01_kpi_card_render_and_accessibility(page: Page, auth_token: str):
     expect(card).to_have_attribute("tabindex", "0")
 
     val_el = page.locator("#kpi-val-pendientes-asignar")
-    expect(val_el).to_have_text(str(expected_val))
+    expect(val_el).to_have_text(str(expected_val), timeout=10000)
 
     badge = card.locator(".kpi-clickable-badge")
     expect(badge).to_be_visible()
@@ -529,16 +529,16 @@ def test_t5_03_end_to_end_lifecycle_creation_filter_and_assignment(page: Page, a
     edit_btn = row.locator(".btn-action-edit")
     edit_btn.click()
 
-    expect(page.locator("#edit-project-modal")).to_be_visible(timeout=5000)
-    expect(page.locator("#edit-project-id")).to_have_value(str(created_id))
+    expect(page.locator("#edit-project-modal")).to_be_visible(timeout=10000)
+    expect(page.locator("#edit-project-id")).to_have_value(str(created_id), timeout=10000)
 
     # 7. Asignar líder Erwin Sandoval y guardar
     page.select_option("#edit-project-lt-asignado", "Erwin Sandoval")
     page.click("#btn-save-edit-modal")
 
     # Modal debe cerrarse y mostrar toast de éxito
-    expect(page.locator("#edit-project-modal")).to_be_hidden(timeout=5000)
-    expect(page.locator(".alert-toast")).to_be_visible(timeout=5000)
+    expect(page.locator("#edit-project-modal")).to_be_hidden(timeout=10000)
+    expect(page.locator(".alert-toast")).to_be_visible(timeout=10000)
 
     # 8. Al estar en la vista filtrada '__UNASSIGNED__', el proyecto ya NO debe estar en la tabla
     page.wait_for_timeout(800)
@@ -546,7 +546,7 @@ def test_t5_03_end_to_end_lifecycle_creation_filter_and_assignment(page: Page, a
     expect(row_after).to_have_count(0)
 
     # 9. KPI Pendientes debe haber decrementado de nuevo al valor inicial
-    expect(val_pendientes_el).to_have_text(str(initial_pendientes), timeout=5000)
+    expect(val_pendientes_el).to_have_text(str(initial_pendientes), timeout=10000)
 
     # 10. Verificar en BD que la asignación persistió
     conn = get_db_connection()

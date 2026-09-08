@@ -1,6 +1,8 @@
 """
-Módulo de automatización para la creación de tickets (interacciones) en Service Manager.
-Provee ejecución desatendida mediante Playwright Async y emisión de eventos en tiempo real (SSE).
+Módulo de automatización para la creación de tickets (interacciones) y peticiones relacionadas
+en Micro Focus Service Manager (HPSM).
+Provee ejecución desatendida mediante Playwright Async, estrategias de resiliencia avanzadas,
+cierre de sesión seguro y emisión de eventos en tiempo real (Server-Sent Events - SSE).
 """
 
 import asyncio
@@ -10,7 +12,7 @@ import os
 import re
 import sys
 import time
-from typing import AsyncGenerator, Dict, Any, Optional, Tuple
+from typing import AsyncGenerator, Dict, Any, Optional, Tuple, Callable
 
 from playwright.async_api import (
     async_playwright,
@@ -38,14 +40,15 @@ PORTAL_PASS = os.getenv("PORTAL_PASS", DEFAULT_PORTAL_PASS)
 TIMEOUT = int(os.getenv("PORTAL_TIMEOUT", str(DEFAULT_TIMEOUT)))
 
 DEFAULT_CONTACTO = "ALEJANDRO JAVIER AGUILAR MORALES"
-DEFAULT_TITULO = "Creacion test automatizacion"
-DEFAULT_DESCRIPCION = "Prueba test automatización"
+DEFAULT_TITULO = ""
+DEFAULT_DESCRIPCION = ""
 DEFAULT_AREA = "Proyectos"
 DEFAULT_SUBAREA = "Apoyo habilitacion cliente"
 DEFAULT_DETALLE = "Apoyo habilitacion cliente"
 DEFAULT_GRUPO = "Lideres Tecnicos"
 DEFAULT_IMPACTO = "3 - Menor (Existen WorkAround)"
 DEFAULT_URGENCIA = "3 - Media (Resolución a mediano plazo)"
+DEFAULT_USUARIO_PETICION = "Alejandro.Aguilar"
 
 _SEARCH_INPUT_RE = re.compile(r"find|buscar|b[uú]squeda|search|consulta|filtrar|query", re.I)
 _SEARCH_BUTTON_RE = re.compile(
@@ -78,8 +81,70 @@ def _is_page(target: Any) -> bool:
     return hasattr(target, "close") and hasattr(target, "title")
 
 
+def _frame_label(target: Any) -> str:
+    """Genera una etiqueta descriptiva para un Frame o Page."""
+    name = getattr(target, "name", None)
+    return name if name else getattr(target, "url", target.__class__.__name__)
+
+
+async def wait_context(context: BrowserContext, timeout_ms: int) -> None:
+    """Pausa la ejecución en el contexto activo usando el temporizador del navegador."""
+    pages = list(context.pages)
+    if pages:
+        await pages[0].wait_for_timeout(timeout_ms)
+    else:
+        await asyncio.sleep(timeout_ms / 1000.0)
+
+
 # ==============================================================================
-# LOCALIZACIÓN Y NAVEGACIÓN EN FRAMES
+# FASE 1: AUTENTICACIÓN DEFENSIVA CONTRA ROBO DE FOCO
+# ==============================================================================
+async def set_login_value(locator: Any, value: str, label: str, timeout_ms: int = DEFAULT_TIMEOUT) -> None:
+    """
+    Fija el valor de un campo de login mediante asignación directa en JS y despacho de eventos.
+    Previene que el portal robe el foco y concatene la contraseña dentro del campo de usuario.
+    """
+    await locator.wait_for(state="visible", timeout=timeout_ms)
+    await locator.scroll_into_view_if_needed(timeout=timeout_ms)
+    await locator.evaluate(
+        """(el, value) => {
+            el.focus();
+            el.value = value;
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            el.blur();
+        }""",
+        value,
+    )
+    current_value = await locator.input_value(timeout=timeout_ms)
+    if current_value != value:
+        raise RuntimeError(f"No se pudo fijar {label}: esperado {value!r}, obtenido {current_value!r}")
+
+
+async def fill_login_credentials(page: Page, username: str, password: str, timeout_ms: int = DEFAULT_TIMEOUT) -> None:
+    """Llena las credenciales con validación y doble chequeo contra foco desfasado."""
+    user_field = page.get_by_role("textbox", name="Nombre de usuario", exact=True).first
+    if await user_field.count() == 0:
+        user_field = page.locator("input[name*='user' i], input[id*='user' i], #username").first
+
+    password_field = page.get_by_role("textbox", name="Contraseña", exact=True).first
+    if await password_field.count() == 0:
+        password_field = page.locator("input[type='password'], input[name*='pass' i]").first
+
+    await set_login_value(user_field, username, "usuario", timeout_ms=timeout_ms)
+    await set_login_value(password_field, password, "contraseña", timeout_ms=timeout_ms)
+
+    # Defensa explícita contra concatenación tardía por robo de foco
+    user_value = await user_field.input_value(timeout=timeout_ms)
+    password_value = await password_field.input_value(timeout=timeout_ms)
+    if user_value != username or password_value != password:
+        logger.warning("Detección de foco desfasado en login; reaplicando valores...")
+        await set_login_value(user_field, username, "usuario", timeout_ms=timeout_ms)
+        await set_login_value(password_field, password, "contraseña", timeout_ms=timeout_ms)
+
+
+# ==============================================================================
+# FASE 2: LOCALIZACIÓN Y NAVEGACIÓN EN FORMULARIO DE INTERACCIÓN
 # ==============================================================================
 async def find_servicios_internos(
     context: BrowserContext,
@@ -126,7 +191,7 @@ async def fill_by_label(frame: Frame, label_regex: str, value: str) -> None:
 
 
 # ==============================================================================
-# ESTRATEGIAS RESILIENTES: DESCRIPCIÓN (#X57 / #X57View)
+# FASE 2.1: ESTRATEGIAS RESILIENTES EN DESCRIPCIÓN (#X57 / #X57View)
 # ==============================================================================
 async def _read_descripcion(frame: Frame) -> str:
     """Lee el texto actual del campo de descripción (#X57View o #X57)."""
@@ -151,8 +216,14 @@ async def _read_descripcion(frame: Frame) -> str:
 
 async def fill_descripcion(frame: Frame, descripcion: str) -> None:
     """
-    Llena el campo de descripción ejecutando en cascada todas las estrategias resilientes
-    probadas en portal_login.py.
+    Llena el campo de descripción ejecutando en cascada las 7 estrategias resilientes:
+    (0) Fill en control real oculto #X57
+    (a) Clic + fill directo en #X57View
+    (b) Clic + fill en descendientes [contenteditable]
+    (c) Clic + fill en textarea/input descendiente
+    (d) press_sequentially simulando teclado físico
+    (e) Inyección en portapapeles y atajos de pegado
+    (f) Asignación directa DOM vía JavaScript
     """
     root = frame.locator("#X57View").first
     await root.wait_for(timeout=5_000)
@@ -321,7 +392,7 @@ async def fill_descripcion(frame: Frame, descripcion: str) -> None:
 
 
 # ==============================================================================
-# ESTRATEGIAS RESILIENTES: GRUPO DE ASIGNACIÓN (POPUP MODAL)
+# FASE 2.2: ESTRATEGIAS RESILIENTES EN GRUPO DE ASIGNACIÓN (POPUP MODAL)
 # ==============================================================================
 async def _read_grupo(frame: Frame) -> str:
     """Lee el valor actual de Grupo de asignación en el formulario."""
@@ -687,7 +758,7 @@ async def fill_grupo(frame: Frame, context: BrowserContext, grupo: str) -> None:
 
 
 # ==============================================================================
-# GUARDADO Y CAPTURA DE ID DE TICKET
+# FASE 3: GUARDADO DE INTERACCIÓN Y CAPTURA DE ID (SD)
 # ==============================================================================
 async def click_guardar(page: Page, context: BrowserContext) -> None:
     """Busca y presiona el botón 'Guardar (Alt+F1)' en la página o en cualquiera de sus frames."""
@@ -746,10 +817,19 @@ async def get_ticket_id(context: BrowserContext, timeout_ms: int = 30_000) -> st
             try:
                 for frame in p.frames:
                     try:
-                        field = frame.get_by_role("textbox", name="ID de la interacción:")
+                        field = frame.get_by_role("textbox", name=re.compile(r"ID de la interacci[oó]n", re.I))
                         if await field.count() == 0:
-                            continue
+                            field = frame.locator(
+                                "input[aria-label*='ID de la interacci' i], "
+                                "input[title*='ID de la interacci' i], "
+                                "input[aria-label*='interacci' i], "
+                                "#X3"
+                            ).first
+                            if await field.count() == 0:
+                                continue
                         value = await field.first.input_value()
+                        if value:
+                            last_value = value.strip()
                     except Exception:
                         continue
                     if value and value.strip():
@@ -768,19 +848,579 @@ async def get_ticket_id(context: BrowserContext, timeout_ms: int = 30_000) -> st
 
 
 # ==============================================================================
-# GENERADOR ASÍNCRONO PARA SERVER-SENT EVENTS (SSE)
+# FASE 4: VINCULACIÓN DE PETICIÓN RELACIONADA
+# ==============================================================================
+async def find_registros_relacionados_frame(context: BrowserContext, timeout_ms: int = 20_000) -> Tuple[Frame, Any]:
+    """Busca en todos los frames del contexto la pestaña 'Registros relacionados'."""
+    deadline = time.time() + (timeout_ms / 1000.0)
+    tab_re = re.compile(r"Registros relacionados", re.I)
+    while time.time() < deadline:
+        for p in list(context.pages):
+            for frame in p.frames:
+                try:
+                    tab = frame.get_by_role("tab", name=tab_re).first
+                    if await tab.count() > 0:
+                        return frame, tab
+                except Exception:
+                    continue
+        await asyncio.sleep(0.5)
+    raise TimeoutError("No se encontró la pestaña 'Registros relacionados' en ningún frame")
+
+
+async def click_button_in_context(context: BrowserContext, name_regex: re.Pattern, error_label: str) -> None:
+    """Hace clic en un botón en cualquier página o frame del contexto usando accesibilidad y texto."""
+    last_error = None
+    for p in list(context.pages):
+        targets = [("page", p)] + [(f"frame {f.name!r}", f) for f in p.frames]
+        for label, target in targets:
+            try:
+                buttons = await target.get_by_role("button", name=name_regex).all()
+            except Exception as exc:
+                last_error = exc
+                continue
+            for btn in buttons:
+                try:
+                    if not await btn.is_visible():
+                        continue
+                except Exception:
+                    pass
+                try:
+                    await btn.scroll_into_view_if_needed(timeout=5_000)
+                    await btn.click(timeout=10_000, force=True)
+                    logger.info(f"Clic exitoso en botón '{error_label}' en {label}")
+                    return
+                except Exception as exc:
+                    last_error = exc
+
+    # Fallback para botones ExtJS cuyo nombre accesible varía
+    for p in list(context.pages):
+        targets = [("page", p)] + [(f"frame {f.name!r}", f) for f in p.frames]
+        for label, target in targets:
+            try:
+                buttons = await target.get_by_role("button").all()
+            except Exception as exc:
+                last_error = exc
+                continue
+            for btn in buttons:
+                try:
+                    text = ""
+                    try:
+                        text = (await btn.inner_text() or "").strip()
+                    except Exception:
+                        pass
+                    data = " ".join([
+                        text,
+                        await btn.get_attribute("aria-label") or "",
+                        await btn.get_attribute("title") or "",
+                    ])
+                    if not name_regex.search(data):
+                        continue
+                    if not await btn.is_visible():
+                        continue
+                    await btn.scroll_into_view_if_needed(timeout=5_000)
+                    await btn.click(timeout=10_000, force=True)
+                    logger.info(f"Clic exitoso por fallback en '{error_label}' en {label}")
+                    return
+                except Exception as exc:
+                    last_error = exc
+
+    raise TimeoutError(f"No se encontró o no se pudo hacer clic en '{error_label}': {last_error}")
+
+
+async def click_expandir_lista_registros(frame: Frame) -> None:
+    """Expande la lista desplegable en la sección de Registros Relacionados."""
+    strategies = [
+        ("img role exact", lambda: frame.get_by_role("img", name="Expandir lista").first),
+        ("button role exact", lambda: frame.get_by_role("button", name="Expandir lista").first),
+        ("img alt", lambda: frame.locator('img[alt="Expandir lista"]').first),
+        ("img title", lambda: frame.locator('img[title="Expandir lista"]').first),
+        ("any title/alt expandir", lambda: frame.locator('img[alt*="Expandir"], img[title*="Expandir"], button[title*="Expandir"]').first),
+    ]
+    last_error = None
+    for label, make_loc in strategies:
+        try:
+            loc = make_loc()
+            if await loc.count() == 0:
+                continue
+            try:
+                await loc.scroll_into_view_if_needed(timeout=2_000)
+            except Exception:
+                pass
+            await loc.click(timeout=5_000, force=True)
+            logger.info(f"Expandir lista exitoso con estrategia '{label}'")
+            return
+        except Exception as exc:
+            last_error = exc
+
+    # Fallback ExtJS vía JavaScript
+    try:
+        clicked = await frame.evaluate(
+            """() => {
+                const candidates = Array.from(document.querySelectorAll('img,button,a,div,span'))
+                    .filter(el => /Expandir lista/i.test(
+                        [el.getAttribute('alt'), el.getAttribute('title'), el.getAttribute('aria-label'), el.textContent]
+                            .filter(Boolean).join(' ')
+                    ));
+                for (const el of candidates) {
+                    const target = el.closest('a,button,[role="button"],.image-link,.x-form-trigger,.x-btn,.x-btn-text') || el;
+                    try {
+                        target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+                        target.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+                        target.click();
+                        return { ok: true, id: el.id || target.id || '', tag: el.tagName, targetTag: target.tagName };
+                    } catch (e) {}
+                }
+                return { ok: false };
+            }"""
+        )
+        if clicked and clicked.get("ok"):
+            await frame.wait_for_timeout(800)
+            logger.info(f"Expandir lista exitoso con JS fallback: {clicked}")
+            return
+    except Exception as exc:
+        last_error = exc
+
+    raise TimeoutError(f"No se pudo hacer clic en 'Expandir lista': {last_error}")
+
+
+async def click_vincular_nuevo_registro(context: BrowserContext) -> None:
+    """Hace clic en el control 'Vincular nuevo registro'."""
+    await wait_context(context, 1500)
+    pat = re.compile(r"Vincular nuevo registro", re.I)
+    last_error = None
+    try:
+        await click_button_in_context(context, pat, "Vincular nuevo registro")
+        return
+    except Exception as exc:
+        last_error = exc
+
+    for p in list(context.pages):
+        targets = [("page", p)] + [(f"frame {f.name!r}", f) for f in p.frames]
+        for label, target in targets:
+            for role in ("link", "img"):
+                try:
+                    els = await target.get_by_role(role, name=pat).all()
+                except Exception as exc:
+                    last_error = exc
+                    continue
+                for el in els:
+                    try:
+                        if not await el.is_visible():
+                            continue
+                        await el.scroll_into_view_if_needed(timeout=5_000)
+                        await el.click(timeout=10_000, force=True)
+                        logger.info(f"Vincular nuevo registro exitoso en {label} role={role}")
+                        return
+                    except Exception as exc:
+                        last_error = exc
+
+            try:
+                clicked = await target.evaluate(
+                    """() => {
+                        const pat = /Vincular nuevo registro/i;
+                        const els = Array.from(document.querySelectorAll('button,a,img,span,div'));
+                        for (const el of els) {
+                            const data = [el.textContent, el.getAttribute('aria-label'), el.getAttribute('title'), el.getAttribute('alt')]
+                                .filter(Boolean).join(' ');
+                            if (!pat.test(data)) continue;
+                            const target = el.closest('a,button,[role="button"],.x-btn,.x-btn-text,.image-link') || el;
+                            target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+                            target.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+                            target.click();
+                            return { ok: true, tag: el.tagName, id: el.id || '', targetTag: target.tagName, targetId: target.id || '' };
+                        }
+                        return { ok: false };
+                    }"""
+                )
+                if clicked and clicked.get("ok"):
+                    logger.info(f"Vincular nuevo registro exitoso con JS fallback en {label}")
+                    await wait_context(context, 1000)
+                    return
+            except Exception as exc:
+                last_error = exc
+
+    raise TimeoutError(f"No se pudo hacer clic en 'Vincular nuevo registro': {last_error}")
+
+
+async def click_alejandro_aguilar_option(context: BrowserContext, user_target: str = DEFAULT_USUARIO_PETICION) -> None:
+    """Selecciona el usuario responsable (Alejandro.Aguilar) en el formulario de petición."""
+    pat = re.compile(re.escape(user_target), re.I)
+    last_error = None
+    for p in list(context.pages):
+        targets = [("page", p)] + [(f"frame {f.name!r}", f) for f in p.frames]
+        for label, target in targets:
+            for role in ("option", "listitem", "row", "cell", "gridcell"):
+                try:
+                    els = await target.get_by_role(role, name=pat).all()
+                except Exception as exc:
+                    last_error = exc
+                    continue
+                for el in els:
+                    try:
+                        if not await el.is_visible():
+                            continue
+                        await el.scroll_into_view_if_needed(timeout=5_000)
+                        await el.click(timeout=10_000, force=True)
+                        logger.info(f"Usuario {user_target} seleccionado en {label} role={role}")
+                        return
+                    except Exception as exc:
+                        last_error = exc
+
+            try:
+                els = await target.get_by_text(pat).all()
+            except Exception as exc:
+                last_error = exc
+                continue
+            for el in els:
+                try:
+                    if not await el.is_visible():
+                        continue
+                    await el.scroll_into_view_if_needed(timeout=5_000)
+                    await el.click(timeout=10_000, force=True)
+                    logger.info(f"Usuario {user_target} seleccionado por texto en {label}")
+                    return
+                except Exception as exc:
+                    last_error = exc
+
+            # Fallback ExtJS DOM y asignación directa a #X59
+            try:
+                result = await target.evaluate(
+                    """(targetUser) => {
+                        const pat = new RegExp(targetUser.replace('.', '[.]'), 'i');
+                        const els = Array.from(document.querySelectorAll('div,span,td,tr,li,a'));
+                        for (const el of els) {
+                            if (!pat.test(el.textContent || '')) continue;
+                            const target = el.closest('[role="option"],li,tr,td,a,.x-combo-list-item,.x-boundlist-item,.x-grid3-row,.x-grid-row') || el;
+                            target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+                            target.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+                            target.click();
+                            return { ok: true, mode: 'dom-click', tag: el.tagName, targetTag: target.tagName, text: (el.textContent || '').trim().slice(0, 120) };
+                        }
+                        const field = document.querySelector('#X59, input[name="X59"], textarea[name="X59"]');
+                        if (field) {
+                            field.focus();
+                            field.value = targetUser;
+                            field.dispatchEvent(new Event('input', { bubbles: true }));
+                            field.dispatchEvent(new Event('change', { bubbles: true }));
+                            field.dispatchEvent(new Event('blur', { bubbles: true }));
+                            return { ok: true, mode: 'set-X59', tag: field.tagName, id: field.id || '' };
+                        }
+                        return { ok: false };
+                    }""",
+                    user_target
+                )
+                if result and result.get("ok"):
+                    logger.info(f"Usuario {user_target} seleccionado con JS fallback en {label}: {result}")
+                    await wait_context(context, 800)
+                    return
+            except Exception as exc:
+                last_error = exc
+
+    raise TimeoutError(f"No se pudo seleccionar el usuario '{user_target}': {last_error}")
+
+
+async def click_guardar_peticion(context: BrowserContext) -> None:
+    """Presiona Guardar (Alt+F1) en el formulario de la Petición."""
+    await click_button_in_context(
+        context,
+        re.compile(r"Guardar \(Alt\+F1\)", re.I),
+        "Guardar (Alt+F1)",
+    )
+
+
+async def get_peticion_id(context: BrowserContext, timeout_ms: int = 30_000) -> str:
+    """Monitorea los frames y páginas para capturar el valor generado en 'ID de la petición:'."""
+    deadline = time.time() + (timeout_ms / 1000.0)
+    last_value = ""
+    while time.time() < deadline:
+        for p in list(context.pages):
+            try:
+                for frame in p.frames:
+                    try:
+                        field = frame.get_by_role("textbox", name=re.compile(r"ID de la petici[oó]n", re.I))
+                        if await field.count() == 0:
+                            field = frame.locator(
+                                "input[aria-label*='ID de la petici' i], "
+                                "input[title*='ID de la petici' i], "
+                                "input[aria-label*='petici' i], "
+                                "#X3"
+                            ).first
+                            if await field.count() == 0:
+                                continue
+                        value = await field.first.input_value()
+                        if value:
+                            last_value = value.strip()
+                    except Exception:
+                        continue
+                    if value and value.strip():
+                        peticion_val = value.strip()
+                        copy_id_to_clipboard(peticion_val)
+                        return peticion_val
+            except Exception:
+                continue
+        await asyncio.sleep(1)
+
+    if last_value and last_value.strip():
+        copy_id_to_clipboard(last_value.strip())
+        return last_value.strip()
+
+    raise TimeoutError(f"No se capturó el ID de la petición dentro del timeout ({timeout_ms / 1000:.0f}s)")
+
+
+async def click_guardar_registro_y_salir(context: BrowserContext) -> None:
+    """Hace clic en 'Guardar registro y salir ('."""
+    await click_button_in_context(
+        context,
+        re.compile(r"Guardar registro y salir \(", re.I),
+        "Guardar registro y salir (",
+    )
+
+
+async def click_guardar_y_salir_final(context: BrowserContext) -> None:
+    """Hace clic en 'Guardar y salir' para cerrar el formulario intermedio."""
+    await wait_context(context, 1500)
+    await click_button_in_context(
+        context,
+        re.compile(r"Guardar y salir", re.I),
+        "Guardar y salir",
+    )
+    await wait_context(context, 1500)
+
+
+async def has_guardar_y_salir_visible(context: BrowserContext) -> bool:
+    """Verifica si aún existe algún formulario abierto con botón 'Guardar y salir' visible."""
+    pat = re.compile(r"Guardar y salir", re.I)
+    for p in list(context.pages):
+        targets = [("page", p)] + [(f"frame {f.name!r}", f) for f in p.frames]
+        for _, target in targets:
+            try:
+                buttons = await target.get_by_role("button", name=pat).all()
+                for btn in buttons:
+                    try:
+                        if await btn.is_visible():
+                            return True
+                    except Exception:
+                        continue
+            except Exception:
+                continue
+    return False
+
+
+async def close_visible_final_forms(context: BrowserContext, max_clicks: int = 3) -> None:
+    """Cierra en cascada formularios visibles antes de realizar logout."""
+    for i in range(max_clicks):
+        if not await has_guardar_y_salir_visible(context):
+            return
+        logger.info(f"Formulario abierto detectado; cerrando con 'Guardar y salir' ({i + 1}/{max_clicks})")
+        try:
+            await click_guardar_y_salir_final(context)
+        except Exception:
+            pass
+
+
+# ==============================================================================
+# FASE 5: LOGOUT LIMPIO Y CIERRE DE SESIÓN SEGURO
+# ==============================================================================
+async def click_text_action(context: BrowserContext, text_regex: re.Pattern, label: str) -> None:
+    """Hace clic en una acción por texto o nombre accesible en el menú superior / diálogo."""
+    last_error = None
+    for p in list(context.pages):
+        targets = [("page", p)] + [(f"frame {f.name!r}", f) for f in p.frames]
+        for target_label, target in targets:
+            for role in ("button", "menuitem", "link"):
+                try:
+                    els = await target.get_by_role(role, name=text_regex).all()
+                except Exception as exc:
+                    last_error = exc
+                    continue
+                for el in els:
+                    try:
+                        if not await el.is_visible():
+                            continue
+                        await el.click(timeout=10_000, force=True)
+                        logger.info(f"Clic exitoso en {label} en {target_label} role={role}")
+                        return
+                    except Exception as exc:
+                        last_error = exc
+
+            try:
+                els = await target.get_by_text(text_regex).all()
+            except Exception as exc:
+                last_error = exc
+                continue
+            for el in els:
+                try:
+                    if not await el.is_visible():
+                        continue
+                    await el.click(timeout=10_000, force=True)
+                    logger.info(f"Clic exitoso en {label} por texto en {target_label}")
+                    return
+                except Exception as exc:
+                    last_error = exc
+
+            try:
+                clicked = await target.evaluate(
+                    """pattern => {
+                        const re = new RegExp(pattern, 'i');
+                        const els = Array.from(document.querySelectorAll('button,a,span,div,td,li'));
+                        for (const el of els) {
+                            const text = [el.textContent, el.getAttribute('aria-label'), el.getAttribute('title')]
+                                .filter(Boolean).join(' ').trim();
+                            if (!re.test(text)) continue;
+                            const rect = el.getBoundingClientRect();
+                            if (rect.width === 0 || rect.height === 0) continue;
+                            const target = el.closest('button,a,[role="button"],[role="menuitem"],.x-menu-item,.x-btn,.x-btn-text') || el;
+                            target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+                            target.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+                            target.click();
+                            return { ok: true, tag: el.tagName, text: text.slice(0, 120), targetTag: target.tagName, targetClass: target.className || '' };
+                        }
+                        return { ok: false };
+                    }""",
+                    text_regex.pattern,
+                )
+                if clicked and clicked.get("ok"):
+                    logger.info(f"Clic exitoso en {label} con JS fallback en {target_label}: {clicked}")
+                    return
+            except Exception as exc:
+                last_error = exc
+
+    raise TimeoutError(f"No se pudo hacer clic en '{label}': {last_error}")
+
+
+async def logout(page: Page, context: BrowserContext) -> None:
+    """Ejecuta el cierre de sesión completo en Micro Focus Service Manager."""
+    logger.info("Iniciando secuencia de Logout...")
+    await close_visible_final_forms(context)
+
+    await page.get_by_role("button", name="Info. del usuario").click(timeout=10_000, force=True)
+    await wait_context(context, 1000)
+
+    try:
+        await click_text_action(context, re.compile(r"Cerrar sesi[oó]n|logout", re.I), "Cerrar sesión")
+    except Exception:
+        if await has_guardar_y_salir_visible(context):
+            logger.warning("Formulario residual detectado durante logout; cerrando y reintentando...")
+            await close_visible_final_forms(context)
+            await page.get_by_role("button", name="Info. del usuario").click(timeout=10_000, force=True)
+            await wait_context(context, 1000)
+            await click_text_action(context, re.compile(r"Cerrar sesi[oó]n|logout", re.I), "Cerrar sesión")
+        else:
+            raise
+
+    await wait_context(context, 1000)
+    await click_text_action(context, re.compile(r"^S[ií]$", re.I), "Sí")
+    logger.info("Logout completado exitosamente.")
+
+
+# ==============================================================================
+# SUBFLUJO: VINCULACIÓN DE PETICIÓN RELACIONADA ORQUESTADA
+# ==============================================================================
+async def vincular_peticion_relacionada(
+    context: BrowserContext,
+    emit_log_fn: Optional[Callable[[str, str, int], Any]] = None
+) -> str:
+    """
+    Orquesta el flujo completo de vinculación de Petición Relacionada:
+    1. Acceso a pestaña 'Registros relacionados'
+    2. Expansión y selección de 'Peticiones relacionadas'
+    3. Clic en 'Vincular nuevo registro'
+    4. Selección del usuario 'Alejandro.Aguilar'
+    5. Guardado de la petición y captura de su ID
+    6. Cierre seguro de formularios
+    """
+    if emit_log_fn:
+        await emit_log_fn("Buscando pestaña 'Registros relacionados'...", "step", 80)
+
+    frame, tab = await find_registros_relacionados_frame(context)
+    await tab.click(timeout=10_000, force=True)
+    await frame.wait_for_timeout(1500)
+
+    if emit_log_fn:
+        await emit_log_fn("Expandiendo lista y seleccionando 'Peticiones relacionadas'...", "step", 82)
+
+    frame, _ = await find_registros_relacionados_frame(context, timeout_ms=10_000)
+    await click_expandir_lista_registros(frame)
+    await frame.get_by_role("option", name="Peticiones relacionadas").click(timeout=10_000, force=True)
+    await wait_context(context, 1000)
+
+    if emit_log_fn:
+        await emit_log_fn("Haciendo clic en 'Vincular nuevo registro'...", "step", 84)
+
+    await click_vincular_nuevo_registro(context)
+
+    if emit_log_fn:
+        await emit_log_fn("Abriendo selector de usuario y asignando 'Alejandro.Aguilar'...", "step", 86)
+
+    # Búsqueda tolerante del disparador de selección de usuario
+    user_btn_clicked = False
+    for p in list(context.pages):
+        for f in p.frames:
+            try:
+                loc = f.locator("#X59ButtonDiv > .image-link, #X59ButtonDiv img, img[alt*='Rellenar campo Usuario'], img[title*='Rellenar campo Usuario']").first
+                if await loc.count() > 0:
+                    await loc.click(timeout=8_000, force=True)
+                    user_btn_clicked = True
+                    break
+            except Exception:
+                continue
+        if user_btn_clicked:
+            break
+
+    if not user_btn_clicked:
+        try:
+            await frame.locator("#X59ButtonDiv > .image-link").click(timeout=8_000, force=True)
+        except Exception:
+            pass
+
+    await wait_context(context, 1000)
+    await click_alejandro_aguilar_option(context)
+
+    if emit_log_fn:
+        await emit_log_fn("Guardando formulario de la Petición...", "step", 88)
+
+    await click_guardar_peticion(context)
+
+    if emit_log_fn:
+        await emit_log_fn("Capturando ID de la Petición generada...", "step", 89)
+
+    peticion_id = await get_peticion_id(context)
+
+    if emit_log_fn:
+        await emit_log_fn(f"¡Petición generada exitosamente! ID: {peticion_id}", "success", 90)
+
+    if emit_log_fn:
+        await emit_log_fn("Cerrando formularios de registro y confirmación...", "step", 93)
+
+    await click_guardar_registro_y_salir(context)
+    await click_guardar_y_salir_final(context)
+
+    return peticion_id
+
+
+# ==============================================================================
+# GENERADOR ASÍNCRONO PRINCIPAL PARA SERVER-SENT EVENTS (SSE)
 # ==============================================================================
 async def stream_ticket_creation(params: Dict[str, Any]) -> AsyncGenerator[str, None]:
     """
     Generador asíncrono para Server-Sent Events (SSE).
-    Ejecuta el flujo completo de creación de ticket en Service Manager emitiendo logs
-    y eventos de estado en tiempo real.
+    Ejecuta el ciclo de vida completo de automatización en Service Manager:
+    - Autenticación defensiva
+    - Apertura de Interacción (SD) con 7 estrategias en descripción y modal search en grupo
+    - Guardado y captura del ID de interacción (SD)
+    - Vinculación de Petición Relacionada con asignación a Alejandro.Aguilar
+    - Guardado y captura del ID de petición
+    - Cierre en cascada de formularios y Logout seguro con confirmación
     """
-    # Extracción de parámetros con valores por defecto
     url = params.get("url") or params.get("portal_url") or PORTAL_URL
     username = params.get("username") or params.get("portal_user") or PORTAL_USER
     password = params.get("password") or params.get("portal_pass") or PORTAL_PASS
-    headless = params.get("headless", True)
+    
+    headless_raw = params.get("headless", True)
+    if isinstance(headless_raw, str):
+        headless = headless_raw.lower() in ("true", "1", "yes")
+    else:
+        headless = bool(headless_raw)
 
     contacto = params.get("contacto") or DEFAULT_CONTACTO
     titulo = params.get("titulo") or DEFAULT_TITULO
@@ -791,23 +1431,29 @@ async def stream_ticket_creation(params: Dict[str, Any]) -> AsyncGenerator[str, 
     grupo = params.get("grupo") or DEFAULT_GRUPO
     impacto = params.get("impacto") or DEFAULT_IMPACTO
     urgencia = params.get("urgencia") or DEFAULT_URGENCIA
+    usuario_peticion = params.get("usuario_peticion") or params.get("user_target") or DEFAULT_USUARIO_PETICION
 
     playwright: Optional[Playwright] = None
     browser: Optional[Browser] = None
     context: Optional[BrowserContext] = None
     page: Optional[Page] = None
 
+    ticket_id: Optional[str] = None
+    peticion_id: Optional[str] = None
+
     try:
         yield format_sse({
             "type": "log",
-            "message": "Iniciando proceso de automatización de ticket...",
-            "level": "info"
+            "message": "Iniciando proceso de automatización de ticket y petición...",
+            "level": "info",
+            "progress": 5
         })
 
         yield format_sse({
             "type": "log",
             "message": f"Iniciando navegador Chromium (headless={headless})...",
-            "level": "info"
+            "level": "info",
+            "progress": 12
         })
 
         playwright = await async_playwright().start()
@@ -822,11 +1468,15 @@ async def stream_ticket_creation(params: Dict[str, Any]) -> AsyncGenerator[str, 
 
         context = await browser.new_context()
 
-        # Manejador automático de diálogos JS
-        async def _handle_dialog(dialog: Dialog):
+        # Manejador automático de diálogos JS nativos tolerante a sync/async
+        async def _handle_dialog(dialog: Any):
             try:
-                logger.info(f"Diálogo JS interceptado: {dialog.message}")
-                await dialog.accept()
+                msg = getattr(dialog, "message", "")
+                logger.info(f"Diálogo JS interceptado: {msg}")
+                if hasattr(dialog, "accept"):
+                    res = dialog.accept()
+                    if asyncio.iscoroutine(res):
+                        await res
             except Exception as exc:
                 logger.debug(f"Error al aceptar diálogo JS: {exc}")
 
@@ -837,25 +1487,31 @@ async def stream_ticket_creation(params: Dict[str, Any]) -> AsyncGenerator[str, 
         yield format_sse({
             "type": "log",
             "message": f"Conectando a portal Service Manager: {url}...",
-            "level": "step"
+            "level": "step",
+            "progress": 22
         })
 
         await page.goto(url, timeout=TIMEOUT, wait_until="domcontentloaded")
+        try:
+            await page.wait_for_load_state("networkidle", timeout=10_000)
+        except Exception:
+            pass
 
         yield format_sse({
             "type": "log",
-            "message": f"Autenticando usuario '{username}'...",
-            "level": "step"
+            "message": f"Autenticando usuario '{username}' (modo defensivo contra robo de foco)...",
+            "level": "step",
+            "progress": 30
         })
 
-        await page.get_by_role("textbox", name="Nombre de usuario").fill(username)
-        await page.get_by_role("textbox", name="Contraseña").fill(password)
+        await fill_login_credentials(page, username, password, timeout_ms=TIMEOUT)
         await page.get_by_role("button", name="Iniciar sesión").click()
 
         yield format_sse({
             "type": "log",
             "message": "Navegando a 'Centro de Servicios' > 'Crear nueva interacción'...",
-            "level": "step"
+            "level": "step",
+            "progress": 40
         })
 
         await page.get_by_text("Centro de Servicios").click(timeout=TIMEOUT)
@@ -864,16 +1520,18 @@ async def stream_ticket_creation(params: Dict[str, Any]) -> AsyncGenerator[str, 
         yield format_sse({
             "type": "log",
             "message": "Abriendo sección 'Servicios Internos'...",
-            "level": "step"
+            "level": "step",
+            "progress": 45
         })
 
         frame = await click_servicios_internos(context, page)
 
-        # Llenado de formulario
+        # Llenado de formulario de interacción
         yield format_sse({
             "type": "log",
             "message": f"Ingresando Contacto: '{contacto}'...",
-            "level": "step"
+            "level": "step",
+            "progress": 48
         })
         try:
             await frame.get_by_role("textbox", name="Contacto:", exact=True).fill(contacto)
@@ -883,13 +1541,15 @@ async def stream_ticket_creation(params: Dict[str, Any]) -> AsyncGenerator[str, 
             yield format_sse({
                 "type": "log",
                 "message": f"Aviso al completar contacto: {exc}",
-                "level": "info"
+                "level": "info",
+                "progress": 49
             })
 
         yield format_sse({
             "type": "log",
             "message": "Estableciendo Estado: 'Abierto'...",
-            "level": "step"
+            "level": "step",
+            "progress": 50
         })
         try:
             await frame.locator("#X23Border a").click()
@@ -898,27 +1558,31 @@ async def stream_ticket_creation(params: Dict[str, Any]) -> AsyncGenerator[str, 
             yield format_sse({
                 "type": "log",
                 "message": f"Aviso al seleccionar estado: {exc}",
-                "level": "info"
+                "level": "info",
+                "progress": 51
             })
 
         yield format_sse({
             "type": "log",
             "message": f"Ingresando Título: '{titulo}'...",
-            "level": "step"
+            "level": "step",
+            "progress": 52
         })
         await frame.get_by_role("textbox", name="Título:").fill(titulo)
 
         yield format_sse({
             "type": "log",
-            "message": "Ingresando Descripción (aplicando estrategias resilientes)...",
-            "level": "step"
+            "message": "Ingresando Descripción (aplicando cascada de 7 estrategias)...",
+            "level": "step",
+            "progress": 55
         })
         await fill_descripcion(frame, descripcion)
 
         yield format_sse({
             "type": "log",
             "message": f"Configurando Clasificación: Área='{area}', Sub-área='{subarea}', Detalle='{detalle}'...",
-            "level": "step"
+            "level": "step",
+            "progress": 58
         })
         await fill_by_label(frame, "^Área", area)
         await fill_by_label(frame, "^Sub-área", subarea)
@@ -927,14 +1591,16 @@ async def stream_ticket_creation(params: Dict[str, Any]) -> AsyncGenerator[str, 
         yield format_sse({
             "type": "log",
             "message": f"Asignando Grupo mediante modal: '{grupo}'...",
-            "level": "step"
+            "level": "step",
+            "progress": 60
         })
         await fill_grupo(frame, context, grupo)
 
         yield format_sse({
             "type": "log",
             "message": f"Configurando Impacto='{impacto}' y Urgencia='{urgencia}'...",
-            "level": "step"
+            "level": "step",
+            "progress": 65
         })
         try:
             await frame.locator("#X71ButtonDiv > .image-link").click()
@@ -951,58 +1617,157 @@ async def stream_ticket_creation(params: Dict[str, Any]) -> AsyncGenerator[str, 
         yield format_sse({
             "type": "log",
             "message": "Formulario completado. Guardando interacción (Guardar Alt+F1)...",
-            "level": "step"
+            "level": "step",
+            "progress": 70
         })
         await click_guardar(page, context)
 
         yield format_sse({
             "type": "log",
-            "message": "Esperando generación y captura de ID de Ticket...",
-            "level": "step"
+            "message": "Esperando generación y captura de ID de Interacción (SD)...",
+            "level": "step",
+            "progress": 72
         })
 
         ticket_id = await get_ticket_id(context, timeout_ms=35_000)
 
         yield format_sse({
             "type": "log",
-            "message": f"¡Ticket generado exitosamente! ID: {ticket_id}",
-            "level": "success"
+            "message": f"¡Interacción generada exitosamente! ID: {ticket_id}",
+            "level": "success",
+            "progress": 75
+        })
+
+        # FASE 4: Vinculación Directa de Petición Relacionada (Secuencial y Lineal)
+        yield format_sse({"type": "log", "message": "Buscando pestaña 'Registros relacionados'...", "level": "step", "progress": 80})
+        frame, tab = await find_registros_relacionados_frame(context)
+        await tab.click(timeout=10_000, force=True)
+        await frame.wait_for_timeout(1500)
+
+        yield format_sse({"type": "log", "message": "Expandiendo lista y seleccionando 'Peticiones relacionadas'...", "level": "step", "progress": 82})
+        frame, _ = await find_registros_relacionados_frame(context, timeout_ms=10_000)
+        await click_expandir_lista_registros(frame)
+        await frame.get_by_role("option", name="Peticiones relacionadas").click(timeout=10_000, force=True)
+        await wait_context(context, 1000)
+
+        yield format_sse({"type": "log", "message": "Haciendo clic en 'Vincular nuevo registro'...", "level": "step", "progress": 84})
+        await click_vincular_nuevo_registro(context)
+
+        yield format_sse({"type": "log", "message": f"Abriendo selector de usuario y asignando '{usuario_peticion}'...", "level": "step", "progress": 86})
+        user_btn_clicked = False
+        for p in list(context.pages):
+            for f in p.frames:
+                try:
+                    loc = f.locator("#X59ButtonDiv > .image-link, #X59ButtonDiv img, img[alt*='Rellenar campo Usuario'], img[title*='Rellenar campo Usuario']").first
+                    if await loc.count() > 0:
+                        await loc.click(timeout=8_000, force=True)
+                        user_btn_clicked = True
+                        break
+                except Exception:
+                    continue
+            if user_btn_clicked:
+                break
+        if not user_btn_clicked:
+            try:
+                await frame.locator("#X59ButtonDiv > .image-link").click(timeout=8_000, force=True)
+            except Exception:
+                pass
+        await wait_context(context, 1000)
+        await click_alejandro_aguilar_option(context, user_target=usuario_peticion)
+
+        yield format_sse({"type": "log", "message": "Guardando formulario de la Petición (Guardar Alt+F1)...", "level": "step", "progress": 88})
+        await click_guardar_peticion(context)
+
+        yield format_sse({"type": "log", "message": "Capturando ID de la Petición generada...", "level": "step", "progress": 89})
+        peticion_id = await get_peticion_id(context)
+
+        yield format_sse({"type": "log", "message": f"¡Petición generada exitosamente! ID: {peticion_id}", "level": "success", "progress": 90})
+
+        yield format_sse({"type": "log", "message": "Cerrando formularios de registro y confirmación...", "level": "step", "progress": 93})
+        await click_guardar_registro_y_salir(context)
+        await click_guardar_y_salir_final(context)
+
+        # FASE 5: Logout Seguro
+        yield format_sse({
+            "type": "log",
+            "message": "Cerrando formularios residuales y ejecutando Logout seguro...",
+            "level": "step",
+            "progress": 95
+        })
+
+        try:
+            await logout(page, context)
+            yield format_sse({
+                "type": "log",
+                "message": "Sesión finalizada limpiamente en Service Manager (Logout OK).",
+                "level": "success",
+                "progress": 98
+            })
+        except Exception as exc:
+            yield format_sse({
+                "type": "log",
+                "message": f"Aviso durante el cierre de sesión: {exc}",
+                "level": "warn",
+                "progress": 98
+            })
+
+        # FASE 6: Eventos Finales de Completitud
+        yield format_sse({
+            "type": "log",
+            "message": f"Flujo completado exitosamente. Interacción: {ticket_id} | Petición: {peticion_id}",
+            "level": "success",
+            "progress": 100
         })
 
         yield format_sse({
             "type": "complete",
             "status": "success",
             "ticket_id": ticket_id,
-            "message": "Ticket generado con éxito"
+            "peticion_id": peticion_id,
+            "message": "Interacción y Petición creadas con éxito",
+            "data": {
+                "ticket_id": ticket_id,
+                "peticion_id": peticion_id,
+                "contacto": contacto,
+                "titulo": titulo,
+                "grupo": grupo,
+                "area": area,
+                "subarea": subarea,
+                "detalle": detalle,
+                "usuario_peticion": usuario_peticion
+            }
         })
 
     except Exception as exc:
         err_msg = str(exc)
-        logger.exception("Error durante la automatización de ticket")
+        logger.exception("Error durante la automatización de ticket y petición")
         yield format_sse({
             "type": "log",
             "message": f"Error en la automatización: {err_msg}",
-            "level": "error"
+            "level": "error",
+            "progress": 0
         })
         yield format_sse({
             "type": "error",
-            "message": err_msg
+            "message": err_msg,
+            "ticket_id": ticket_id,
+            "peticion_id": peticion_id
         })
 
     finally:
-        # Limpieza estricta de recursos Playwright
+        # Limpieza estricta y garantizada de recursos Playwright para evitar procesos huérfanos
         if context:
             try:
                 await context.close()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(f"Aviso al cerrar context Playwright: {exc}")
         if browser:
             try:
                 await browser.close()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(f"Aviso al cerrar browser Playwright: {exc}")
         if playwright:
             try:
                 await playwright.stop()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(f"Aviso al detener playwright: {exc}")

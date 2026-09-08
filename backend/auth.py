@@ -60,3 +60,26 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Security(securi
             headers={"WWW-Authenticate": "Bearer"},
         )
     return user
+
+def require_roles(allowed_roles: list[str]):
+    def role_checker(current_user: dict = Depends(get_current_user)):
+        user_role = (current_user.get("rol") or "").upper()
+        allowed_upper = [r.upper() for r in allowed_roles]
+        if user_role not in allowed_upper:
+            if allowed_upper == ["ADMIN"]:
+                detail_msg = "Permiso denegado. Se requiere rol de Administrador."
+            elif "PM" not in allowed_upper:
+                detail_msg = "Permiso denegado. Los usuarios con rol PM solo tienen acceso al módulo de Solicitud LTI."
+            else:
+                detail_msg = f"Permiso denegado. Se requiere uno de los siguientes roles: {', '.join(allowed_roles)}"
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=detail_msg
+            )
+        return current_user
+    return role_checker
+
+require_admin = require_roles(["ADMIN"])
+require_lti_or_admin = require_roles(["LTI", "ADMIN"])
+require_non_pm = require_roles(["LTI", "ADMIN"])
+

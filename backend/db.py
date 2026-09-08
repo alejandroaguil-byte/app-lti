@@ -2,9 +2,12 @@ import pymssql
 import datetime
 from decimal import Decimal
 from typing import List, Union, Optional
+import logging
 from .config import DB_CONFIG
 
 import re
+
+logger = logging.getLogger("db")
 
 UNMATCHED_SOLICITANTE = "NO IDENTIFICADO. PROYECTO DEMO O NO HA LLEGADO PROYECTO A INSTALACIONES"
 
@@ -33,7 +36,7 @@ def format_numero_proyecto(num):
     return f"000{s}"
 
 def get_db_connection():
-    return pymssql.connect(
+    conn = pymssql.connect(
         server=DB_CONFIG['Server'],
         port=int(DB_CONFIG['Port']),
         user=DB_CONFIG['User'],
@@ -41,6 +44,12 @@ def get_db_connection():
         database=DB_CONFIG['Database'],
         as_dict=True
     )
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;")
+    except Exception:
+        pass
+    return conn
 
 def serialize_row(row):
     """Serializes datetime, Decimal, and None values for JSON compatibility."""
@@ -66,7 +75,7 @@ def serialize_rows(rows):
     return [serialize_row(r) for r in rows]
 
 def init_auth_tables():
-    """Ensures dbo.App_Usuarios table exists and has seed users."""
+    """Ensures dbo.App_Usuarios table exists with updated_at column."""
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
@@ -79,10 +88,18 @@ def init_auth_tables():
                     password_hash VARCHAR(255) NOT NULL,
                     nombre_completo VARCHAR(150) NOT NULL,
                     lt_asignado VARCHAR(150) NULL,
-                    rol VARCHAR(50) DEFAULT 'LIDER_TI',
-                    activo BIT DEFAULT 1,
-                    created_at DATETIME DEFAULT GETDATE()
+                    rol VARCHAR(50) NOT NULL DEFAULT 'PM',
+                    activo BIT NOT NULL DEFAULT 1,
+                    created_at DATETIME NOT NULL DEFAULT GETDATE(),
+                    updated_at DATETIME NOT NULL DEFAULT GETDATE()
                 );
+            END
+            ELSE
+            BEGIN
+                IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'App_Usuarios' AND COLUMN_NAME = 'updated_at')
+                BEGIN
+                    ALTER TABLE dbo.App_Usuarios ADD updated_at DATETIME NOT NULL DEFAULT GETDATE();
+                END
             END
             """)
             conn.commit()
@@ -90,12 +107,244 @@ def init_auth_tables():
         conn.close()
 
 def get_user_by_username(username):
+    """Obtiene usuario activo por username para autenticación."""
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
             cursor.execute("SELECT * FROM dbo.App_Usuarios WHERE username = %s AND activo = 1", (username,))
             user = cursor.fetchone()
             return serialize_row(user)
+    finally:
+        conn.close()
+
+def get_usuario_by_username(username):
+    """Obtiene usuario por username sin filtrar por activo."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM dbo.App_Usuarios WHERE username = %s", (username,))
+            user = cursor.fetchone()
+            return serialize_row(user)
+    finally:
+        conn.close()
+
+def get_all_usuarios(search=None, rol=None, activo=None):
+    """Listar usuarios con filtros opcionales de búsqueda, rol y estado."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            sql = """
+                SELECT id, username, nombre_completo, lt_asignado, rol, activo, created_at, updated_at
+                FROM dbo.App_Usuarios
+                WHERE 1=1
+            """
+            params = []
+            if search and search.strip():
+                term = f"%{search.strip()}%"
+                sql += " AND (username LIKE %s OR nombre_completo LIKE %s OR ISNULL(lt_asignado, '') LIKE %s)"
+                params.extend([term, term, term])
+
+            if rol and rol.strip():
+                sql += " AND rol = %s"
+                params.append(rol.strip().upper())
+
+            if activo is not None:
+                act_val = 1 if (activo is True or str(activo).lower() in ('1', 'true', 'yes')) else 0
+                sql += " AND activo = %s"
+                params.append(act_val)
+
+            sql += " ORDER BY nombre_completo ASC"
+            cursor.execute(sql, tuple(params))
+            rows = cursor.fetchall()
+            return serialize_rows(rows)
+    finally:
+        conn.close()
+
+def get_usuario_by_id(user_id: int):
+    """Obtiene los detalles de un usuario por su ID."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT id, username, nombre_completo, lt_asignado, rol, activo, created_at, updated_at
+                FROM dbo.App_Usuarios
+                WHERE id = %s
+            """, (user_id,))
+            user = cursor.fetchone()
+            return serialize_row(user)
+    finally:
+        conn.close()
+
+def create_usuario(
+    username: str,
+    password_hash: str,
+    nombre_completo: str,
+    lt_asignado: Optional[str] = None,
+    rol: str = "PM",
+    activo: bool = True
+) -> dict:
+    """Crea un nuevo usuario en dbo.App_Usuarios."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            # Chequear duplicado
+            cursor.execute("SELECT id FROM dbo.App_Usuarios WHERE username = %s", (username.strip().lower(),))
+            if cursor.fetchone():
+                return {"success": False, "error": "conflict", "message": f"El nombre de usuario '{username}' ya existe"}
+
+            cursor.execute("""
+                INSERT INTO dbo.App_Usuarios (username, password_hash, nombre_completo, lt_asignado, rol, activo, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, GETDATE(), GETDATE())
+            """, (
+                username.strip().lower(),
+                password_hash,
+                nombre_completo.strip(),
+                (lt_asignado.strip() if lt_asignado and str(lt_asignado).strip() else None),
+                rol.strip().upper(),
+                1 if activo else 0
+            ))
+            cursor.execute("SELECT id FROM dbo.App_Usuarios WHERE username = %s", (username.strip().lower(),))
+            row_id = cursor.fetchone()
+            new_id = int(row_id['id']) if row_id and row_id.get('id') else None
+
+            conn.commit()
+
+            created = get_usuario_by_id(new_id) if new_id else None
+            return {"success": True, "data": created}
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return {"success": False, "error": "db_error", "message": str(e)}
+    finally:
+        conn.close()
+
+def update_usuario(
+    user_id: int,
+    nombre_completo: str,
+    lt_asignado: Optional[str] = None,
+    rol: str = "PM",
+    activo: bool = True
+) -> dict:
+    """Actualiza datos de un usuario existente."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id FROM dbo.App_Usuarios WHERE id = %s", (user_id,))
+            if not cursor.fetchone():
+                return {"success": False, "error": "not_found", "message": f"Usuario ID {user_id} no encontrado"}
+
+            cursor.execute("""
+                UPDATE dbo.App_Usuarios
+                SET nombre_completo = %s,
+                    lt_asignado = %s,
+                    rol = %s,
+                    activo = %s,
+                    updated_at = GETDATE()
+                WHERE id = %s
+            """, (
+                nombre_completo.strip(),
+                (lt_asignado.strip() if lt_asignado and str(lt_asignado).strip() else None),
+                rol.strip().upper(),
+                1 if activo else 0,
+                user_id
+            ))
+            conn.commit()
+            return {"success": True, "data": get_usuario_by_id(user_id)}
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return {"success": False, "error": "db_error", "message": str(e)}
+    finally:
+        conn.close()
+
+def reset_user_password(user_id: int, new_password_hash: str) -> dict:
+    """Actualiza el hash de contraseña de un usuario."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id, username FROM dbo.App_Usuarios WHERE id = %s", (user_id,))
+            user = cursor.fetchone()
+            if not user:
+                return {"success": False, "error": "not_found", "message": f"Usuario ID {user_id} no encontrado"}
+
+            cursor.execute("""
+                UPDATE dbo.App_Usuarios
+                SET password_hash = %s,
+                    updated_at = GETDATE()
+                WHERE id = %s
+            """, (new_password_hash, user_id))
+            conn.commit()
+            return {"success": True, "id": user_id, "username": user.get('username')}
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return {"success": False, "error": "db_error", "message": str(e)}
+    finally:
+        conn.close()
+
+def toggle_user_status(user_id: int) -> dict:
+    """Alterna el estado activo/bloqueado de un usuario."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id, username, activo FROM dbo.App_Usuarios WHERE id = %s", (user_id,))
+            user = cursor.fetchone()
+            if not user:
+                return {"success": False, "error": "not_found", "message": f"Usuario ID {user_id} no encontrado"}
+
+            new_status = 0 if user.get('activo') in (1, True, b'\x01') else 1
+            cursor.execute("""
+                UPDATE dbo.App_Usuarios
+                SET activo = %s,
+                    updated_at = GETDATE()
+                WHERE id = %s
+            """, (new_status, user_id))
+            conn.commit()
+            return {
+                "success": True,
+                "id": user_id,
+                "username": user.get('username'),
+                "activo": bool(new_status)
+            }
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return {"success": False, "error": "db_error", "message": str(e)}
+    finally:
+        conn.close()
+
+def delete_usuario(user_id: int) -> dict:
+    """Elimina físicamente un usuario."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT id, username, nombre_completo FROM dbo.App_Usuarios WHERE id = %s", (user_id,))
+            user = cursor.fetchone()
+            if not user:
+                return {"success": False, "error": "not_found", "message": f"Usuario ID {user_id} no encontrado"}
+
+            cursor.execute("DELETE FROM dbo.App_Usuarios WHERE id = %s", (user_id,))
+            conn.commit()
+            return {
+                "success": True,
+                "id": user_id,
+                "username": user.get('username'),
+                "nombre_completo": user.get('nombre_completo')
+            }
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return {"success": False, "error": "db_error", "message": str(e)}
     finally:
         conn.close()
 
@@ -111,34 +360,47 @@ def get_lideres_list():
         "Solange Ortiz"
     ]
 
-def get_estados_list():
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute("""
-                SELECT DISTINCT Estado 
-                FROM dbo.Proyectos 
-                WHERE Estado IS NOT NULL 
-                  AND LTRIM(RTRIM(Estado)) <> ''
-                  AND (Tipo_Servicio IS NULL OR Tipo_Servicio <> 'Reunión')
-                ORDER BY Estado ASC
-            """)
-            estados_sp = [r['Estado'] for r in cursor.fetchall()]
+CANONICAL_ESTADOS_SHAREPOINT = [
+    "Generado",
+    "En revision",
+    "Atendido"
+]
 
+def get_estados_list() -> dict:
+    """
+    Retorna el catálogo canónico oficial de estados de proyectos SharePoint (dbo.Proyectos)
+    y la lista de estados dinámicos de solots SGA (dbo.CT_BACKLOG_OPERACIONES2).
+    
+    Para SharePoint, devuelve siempre los 3 estados oficiales del ciclo de vida:
+    ['Generado', 'En revision', 'Atendido'], evitando dependencias frágiles de los
+    registros transitorios existentes en la tabla.
+    """
+    estados_sp = list(CANONICAL_ESTADOS_SHAREPOINT)
+    estados_sga = []
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
             cursor.execute("""
                 SELECT DISTINCT ESTADO_OTP 
                 FROM dbo.CT_BACKLOG_OPERACIONES2 
-                WHERE ESTADO_OTP IS NOT NULL AND LTRIM(RTRIM(ESTADO_OTP)) <> ''
+                WHERE ESTADO_OTP IS NOT NULL 
+                  AND LTRIM(RTRIM(ESTADO_OTP)) <> ''
                 ORDER BY ESTADO_OTP ASC
             """)
             estados_sga = [r['ESTADO_OTP'] for r in cursor.fetchall()]
-
-            return {
-                "estados_sharepoint": estados_sp,
-                "estados_sga": estados_sga
-            }
+    except Exception as e:
+        logger.error(f"Error al obtener lista de estados SGA desde BD: {e}")
+        estados_sga = []
     finally:
-        conn.close()
+        if conn:
+            conn.close()
+
+    return {
+        "estados_sharepoint": estados_sp,
+        "estados_sga": estados_sga
+    }
 
 def get_proyectos(lt_filter=None, search=None, estado_sp=None, estado_sga=None):
     conn = get_db_connection()
@@ -149,7 +411,7 @@ def get_proyectos(lt_filter=None, search=None, estado_sp=None, estado_sga=None):
                     SELECT 
                         ID_Proyecto,
                         COUNT(1) AS total_solots
-                    FROM dbo.CT_BACKLOG_OPERACIONES2
+                    FROM dbo.CT_BACKLOG_OPERACIONES2 WITH (NOLOCK)
                     WHERE ID_Proyecto IS NOT NULL
                     GROUP BY ID_Proyecto
                 ),
@@ -157,7 +419,7 @@ def get_proyectos(lt_filter=None, search=None, estado_sp=None, estado_sga=None):
                     SELECT 
                         ID_Proyecto,
                         COUNT(1) AS total_tickets
-                    FROM dbo.registrosRF_SD_SM
+                    FROM dbo.registrosRF_SD_SM WITH (NOLOCK)
                     WHERE ID_Proyecto IS NOT NULL
                     GROUP BY ID_Proyecto
                 ),
@@ -165,7 +427,7 @@ def get_proyectos(lt_filter=None, search=None, estado_sp=None, estado_sga=None):
                     SELECT 
                         ID_Proyecto,
                         COUNT(1) AS total_rfcs
-                    FROM dbo.registrosSM_RFC
+                    FROM dbo.registrosSM_RFC WITH (NOLOCK)
                     WHERE ID_Proyecto IS NOT NULL
                     GROUP BY ID_Proyecto
                 ),
@@ -180,7 +442,7 @@ def get_proyectos(lt_filter=None, search=None, estado_sp=None, estado_sga=None):
                                 FECHA_INSERT DESC, 
                                 id DESC
                         ) as rn
-                    FROM dbo.CT_BACKLOG_OPERACIONES2
+                    FROM dbo.CT_BACKLOG_OPERACIONES2 WITH (NOLOCK)
                     WHERE ID_Proyecto IS NOT NULL 
                       AND PRO_ING_PROYECTO IS NOT NULL 
                       AND LTRIM(RTRIM(PRO_ING_PROYECTO)) <> ''
@@ -196,7 +458,7 @@ def get_proyectos(lt_filter=None, search=None, estado_sp=None, estado_sga=None):
                                 FECHA_INSERT DESC, 
                                 id DESC
                         ) as rn
-                    FROM dbo.CT_BACKLOG_OPERACIONES2
+                    FROM dbo.CT_BACKLOG_OPERACIONES2 WITH (NOLOCK)
                     WHERE Numero_Proyecto_Limpio IS NOT NULL 
                       AND LTRIM(RTRIM(Numero_Proyecto_Limpio)) <> ''
                       AND PRO_ING_PROYECTO IS NOT NULL 
@@ -213,7 +475,7 @@ def get_proyectos(lt_filter=None, search=None, estado_sp=None, estado_sga=None):
                                 FECHA_INSERT DESC, 
                                 id DESC
                         ) as rn
-                    FROM dbo.CT_BACKLOG_OPERACIONES2
+                    FROM dbo.CT_BACKLOG_OPERACIONES2 WITH (NOLOCK)
                     WHERE NRO_PROYECTO IS NOT NULL 
                       AND LTRIM(RTRIM(NRO_PROYECTO)) <> ''
                       AND PRO_ING_PROYECTO IS NOT NULL 
@@ -239,7 +501,7 @@ def get_proyectos(lt_filter=None, search=None, estado_sp=None, estado_sga=None):
                         si_otp.PRO_ING_PROYECTO, 
                         si_otp2.PRO_ING_PROYECTO
                     ) AS Solicitante
-                FROM dbo.Proyectos p
+                FROM dbo.Proyectos p WITH (NOLOCK)
                 LEFT JOIN SolotStats ss ON p.ID = ss.ID_Proyecto
                 LEFT JOIN TicketStats ts ON p.ID = ts.ID_Proyecto
                 LEFT JOIN RFCStats rs ON p.ID = rs.ID_Proyecto
@@ -267,7 +529,7 @@ def get_proyectos(lt_filter=None, search=None, estado_sp=None, estado_sga=None):
                 params.append(estado_sp)
 
             if estado_sga:
-                sql += " AND EXISTS (SELECT 1 FROM dbo.CT_BACKLOG_OPERACIONES2 b WHERE (b.ID_Proyecto = p.ID OR b.Numero_Proyecto_Limpio = p.Numero_Proyecto) AND b.ESTADO_OTP = %s)"
+                sql += " AND EXISTS (SELECT 1 FROM dbo.CT_BACKLOG_OPERACIONES2 b WITH (NOLOCK) WHERE (b.ID_Proyecto = p.ID OR b.Numero_Proyecto_Limpio = p.Numero_Proyecto) AND b.ESTADO_OTP = %s)"
                 params.append(estado_sga)
 
             if search:
@@ -383,7 +645,7 @@ def get_solots_by_proyecto(proyecto_id, numero_proyecto=None):
                     b.STATUS_SOLOT,
                     b.ASIGNADO_OTP,
                     b.GRUPO_ASIGNADO_OTP
-                FROM dbo.CT_BACKLOG_OPERACIONES2 b
+                FROM dbo.CT_BACKLOG_OPERACIONES2 b WITH (NOLOCK)
                 WHERE b.ID_Proyecto = %s
             """
             params = [proyecto_id]
@@ -417,7 +679,7 @@ def get_tickets_by_proyecto(proyecto_id, numero_proyecto=None):
                     sd.RF_ID,
                     sd.CURRENT_PHASE,
                     sd.SUBCATEGORY
-                FROM dbo.registrosRF_SD_SM sd
+                FROM dbo.registrosRF_SD_SM sd WITH (NOLOCK)
                 WHERE sd.ID_Proyecto = %s
             """
             params = [proyecto_id]
@@ -449,7 +711,7 @@ def get_rfcs_by_proyecto(proyecto_id, numero_proyecto=None):
                     rfc.ASSIGNED_TO,
                     rfc.COORDINATOR,
                     rfc.ORIG_DATE_ENTERED
-                FROM dbo.registrosSM_RFC rfc
+                FROM dbo.registrosSM_RFC rfc WITH (NOLOCK)
                 WHERE rfc.ID_Proyecto = %s
             """
             params = [proyecto_id]
@@ -469,7 +731,7 @@ def get_dashboard_kpis(lt_filter=None):
     try:
         with conn.cursor() as cursor:
             # 1. Total Proyectos
-            sql_proy = "SELECT COUNT(1) as total FROM dbo.Proyectos p WHERE (p.Tipo_Servicio IS NULL OR p.Tipo_Servicio <> 'Reunión')"
+            sql_proy = "SELECT COUNT(1) as total FROM dbo.Proyectos p WITH (NOLOCK) WHERE (p.Tipo_Servicio IS NULL OR p.Tipo_Servicio <> 'Reunión')"
             params_proy = []
             if lt_filter == "__UNASSIGNED__":
                 sql_proy += " AND (p.LT_Asignado IS NULL OR LTRIM(RTRIM(p.LT_Asignado)) = '' OR LOWER(LTRIM(RTRIM(p.LT_Asignado))) = 'sin asignar')"
@@ -480,7 +742,7 @@ def get_dashboard_kpis(lt_filter=None):
             total_proyectos = cursor.fetchone()['total']
 
             # 2. Proyectos En Curso (Estado = 'Generado')
-            sql_en_curso = "SELECT COUNT(1) as total FROM dbo.Proyectos p WHERE p.Estado = 'Generado' AND (p.Tipo_Servicio IS NULL OR p.Tipo_Servicio <> 'Reunión')"
+            sql_en_curso = "SELECT COUNT(1) as total FROM dbo.Proyectos p WITH (NOLOCK) WHERE p.Estado = 'Generado' AND (p.Tipo_Servicio IS NULL OR p.Tipo_Servicio <> 'Reunión')"
             params_ec = []
             if lt_filter == "__UNASSIGNED__":
                 sql_en_curso += " AND (p.LT_Asignado IS NULL OR LTRIM(RTRIM(p.LT_Asignado)) = '' OR LOWER(LTRIM(RTRIM(p.LT_Asignado))) = 'sin asignar')"
@@ -491,7 +753,7 @@ def get_dashboard_kpis(lt_filter=None):
             proyectos_en_curso = cursor.fetchone()['total']
 
             # 3. Proyectos Atendidos (Estado = 'Atendido')
-            sql_atendidos = "SELECT COUNT(1) as total FROM dbo.Proyectos p WHERE p.Estado = 'Atendido' AND (p.Tipo_Servicio IS NULL OR p.Tipo_Servicio <> 'Reunión')"
+            sql_atendidos = "SELECT COUNT(1) as total FROM dbo.Proyectos p WITH (NOLOCK) WHERE p.Estado = 'Atendido' AND (p.Tipo_Servicio IS NULL OR p.Tipo_Servicio <> 'Reunión')"
             params_at = []
             if lt_filter == "__UNASSIGNED__":
                 sql_atendidos += " AND (p.LT_Asignado IS NULL OR LTRIM(RTRIM(p.LT_Asignado)) = '' OR LOWER(LTRIM(RTRIM(p.LT_Asignado))) = 'sin asignar')"
@@ -504,7 +766,7 @@ def get_dashboard_kpis(lt_filter=None):
             # 4. Proyectos Pendientes de Asignar (LT_Asignado NULL o vacío global)
             sql_pendientes = """
                 SELECT COUNT(1) as total 
-                FROM dbo.Proyectos p 
+                FROM dbo.Proyectos p WITH (NOLOCK)
                 WHERE (p.LT_Asignado IS NULL OR LTRIM(RTRIM(p.LT_Asignado)) = '' OR LOWER(LTRIM(RTRIM(p.LT_Asignado))) = 'sin asignar')
                   AND (p.Tipo_Servicio IS NULL OR p.Tipo_Servicio <> 'Reunión')
             """
@@ -517,8 +779,8 @@ def get_dashboard_kpis(lt_filter=None):
             # 6. Total Tickets
             sql_tickets = """
                 SELECT COUNT(1) as total 
-                FROM dbo.registrosRF_SD_SM sd
-                INNER JOIN dbo.Proyectos p ON sd.ID_Proyecto = p.ID
+                FROM dbo.registrosRF_SD_SM sd WITH (NOLOCK)
+                INNER JOIN dbo.Proyectos p WITH (NOLOCK) ON sd.ID_Proyecto = p.ID
                 WHERE (p.Tipo_Servicio IS NULL OR p.Tipo_Servicio <> 'Reunión')
             """
             params_t = []
@@ -533,8 +795,8 @@ def get_dashboard_kpis(lt_filter=None):
             # 7. Total RFCs
             sql_rfcs = """
                 SELECT COUNT(1) as total 
-                FROM dbo.registrosSM_RFC rfc
-                INNER JOIN dbo.Proyectos p ON rfc.ID_Proyecto = p.ID
+                FROM dbo.registrosSM_RFC rfc WITH (NOLOCK)
+                INNER JOIN dbo.Proyectos p WITH (NOLOCK) ON rfc.ID_Proyecto = p.ID
                 WHERE (p.Tipo_Servicio IS NULL OR p.Tipo_Servicio <> 'Reunión')
             """
             params_r = []
@@ -954,11 +1216,25 @@ def create_solicitud_lti(
                 dt_to_insert,
                 (solicitante.strip() if solicitante else None)[:50] if solicitante else None
             ))
-            conn.commit()
 
             # 5. Obtener y retornar el registro insertado
             cursor.execute("SELECT * FROM dbo.Proyectos WHERE ID = %s", (next_id,))
             created_row = cursor.fetchone()
+            conn.commit()
+
+            if not created_row:
+                created_row = {
+                    "ID": next_id,
+                    "Cliente": cliente.strip()[:100],
+                    "Numero_Proyecto": formatted_num[:50],
+                    "LT_Asignado": lt_val,
+                    "Estado": "Generado",
+                    "Detalle": detalle.strip(),
+                    "Tipo_Servicio": "Otros",
+                    "Creado": dt_to_insert,
+                    "Solicitante": (solicitante.strip() if solicitante else None)[:50] if solicitante else None
+                }
+
             return {
                 "success": True,
                 "data": serialize_row(created_row)
@@ -1021,12 +1297,6 @@ def update_proyecto(
                 proyecto_id
             ))
             conn.commit()
-
-            # 3. Retornar el registro actualizado enriquecido
-            return {
-                "success": True,
-                "data": get_proyecto_by_id(proyecto_id)
-            }
     except Exception as e:
         try:
             conn.rollback()
@@ -1035,6 +1305,13 @@ def update_proyecto(
         return {"success": False, "error": "db_error", "message": str(e)}
     finally:
         conn.close()
+
+    # 3. Retornar el registro actualizado enriquecido tras liberar la transacción
+    updated_data = get_proyecto_by_id(proyecto_id)
+    return {
+        "success": True,
+        "data": updated_data
+    }
 
 def delete_proyecto(proyecto_id: int) -> dict:
     """Elimina físicamente un proyecto de dbo.Proyectos."""
