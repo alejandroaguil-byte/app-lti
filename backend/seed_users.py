@@ -5,10 +5,7 @@ import xml.etree.ElementTree as ET
 from typing import List, Dict, Optional
 
 from .config import DB_CONFIG, BASE_DIR
-from .auth import hash_password
 from .db import init_auth_tables, get_db_connection
-
-DEFAULT_PASSWORD = "Lti2026!"
 
 CANONICAL_LIDERES = {
     "Alejandro Aguilar": "Alejandro Aguilar",
@@ -18,50 +15,14 @@ CANONICAL_LIDERES = {
     "Solange Ortiz": "Solange Ortiz"
 }
 
-# Tabla de mapeo canónica oficial según SPECS-LTI-MOD-006
+# Usuarios iniciales canónicos con formato oficial del Portal de Acceso (nombre.apellido)
 USERS_CANONICAL_SEED = [
-    # 31 PMs
-    ("Albornoz Pacheco Cesar Augusto", "PM", "calbornoz", None),
-    ("Cardozo Garces Grace Alejandra", "PM", "gcardozo", None),
-    ("Castillo Calderon Jaime Carmelo", "PM", "jcastillo", None),
-    ("Castillo Meulén Maribel", "PM", "mcastillo", None),
-    ("Catalan Maldonado Paola Constanza", "PM", "pcatalan", None),
-    ("Cordova Concha Katherine Johana", "PM", "kcordova", None),
-    ("Curutchet Villegas Paulina Fernanda", "PM", "pcurutchet", None),
-    ("Díaz Urzúa Francisco Javier", "PM", "fdiaz", None),
-    ("Fuentes Riquelme Marcelo Antonio", "PM", "mfuentes", None),
-    ("Gonzalez Valenzuela Rodrigo Nolasco", "PM", "rgonzalez", None),
-    ("Gutierrez Sánchez Adrián Omar", "PM", "agutierrez", None),
-    ("Herrera Quiroz Fernando Adolfo", "PM", "fherrera", None),
-    ("Inayado Figueroa Paulina Alejandra", "PM", "pinayado", None),
-    ("Jose Gregorio Laboren Alvarez", "PM", "jlaboren", None),
-    ("Lagos Alvarez Rolando Pedro", "PM", "rlagos", None),
-    ("Lillo Bolivar Victoria Del Carmen", "PM", "vlillo", None),
-    ("Loubies Cordova Karina", "PM", "kloubies", None),
-    ("Perez Cerezo Oswaldo Vicente", "PM", "operez", None),
-    ("Perez Ojeda Jessica Walleska", "PM", "jperez", None),
-    ("Pincheira Medina Luis Eduardo", "PM", "lpincheira", None),
-    ("Pozo Galvez Gustavo Andres", "PM", "gpozo", None),
-    ("Reyes Sanhueza Elizabeth Valeska", "PM", "ereyes", None),
-    ("Riquelme Tobar Rodolfo Andres", "PM", "rriquelme", None),
-    ("Rodriguez Loyola Daniel Alexis", "PM", "drodriguez", None),
-    ("Romero Aguilar Richard Josue", "PM", "rromero", None),
-    ("Saavedra Sepulveda Jorge Antonio", "PM", "jsaavedra", None),
-    ("San Juan Gonzalez Davis Alfredo", "PM", "dsanjuan", None),
-    ("Takahashi Griffith Pablo Antonio", "PM", "ptakahashi", None),
-    ("Torreblanca Villalon Renato", "PM", "rtorreblanca", None),
-    ("Ulloa Alvarado Francisco Javier", "PM", "fulloa", None),
-    ("Villar Mohor Pablo Andrés", "PM", "pvillar", None),
-    # 2 ADMINs
-    ("Aguilar Morales Alejandro Javier", "ADMIN", "aaguilar", "Alejandro Aguilar"),
-    ("Castillo Campos Pablo Ignacio", "ADMIN", "pcastillo", None),
-    # 4 LTIs
-    ("Barrera Ramos Juan Francisco", "LTI", "jbarrera", "Juan Barrera"),
-    ("Paredez Saez Samuel Jacob", "LTI", "sparedes", "Samuel Paredes"),
-    ("Ortiz Virolde Solange Angélica", "LTI", "sortiz", "Solange Ortiz"),
-    ("Sandoval Cadiz Erwin Patricio", "LTI", "esandoval", "Erwin Sandoval"),
-    # Superadmin raíz
-    ("Administrador del Sistema", "ADMIN", "admin", None),
+    ("Alejandro Aguilar", "ADMIN", "alejandro.aguilar", "Alejandro Aguilar"),
+    ("Pablo Castillo", "ADMIN", "pablo.castillo", None),
+    ("Erwin Sandoval", "LTI", "erwin.sandoval", "Erwin Sandoval"),
+    ("Juan Barrera", "LTI", "juan.barrera", "Juan Barrera"),
+    ("Samuel Paredes", "LTI", "samuel.paredes", "Samuel Paredes"),
+    ("Solange Ortiz", "LTI", "solange.ortiz", "Solange Ortiz"),
 ]
 
 def normalize_ascii(text: str) -> str:
@@ -108,29 +69,26 @@ def read_users_from_excel(filepath: str) -> List[Dict[str, str]]:
         return []
 
 def seed_default_users():
-    """Inicializa y sincroniza idempotentemente los 38 usuarios en dbo.App_Usuarios."""
+    """Inicializa y sincroniza idempotentemente los usuarios canónicos en dbo.App_Usuarios."""
     init_auth_tables()
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            hashed_default = hash_password(DEFAULT_PASSWORD)
-            
-            # Buscar usuarios del seed canónico
             inserted_count = 0
             updated_count = 0
 
             for nombre, rol, username, lt_asignado in USERS_CANONICAL_SEED:
-                cursor.execute("SELECT id, username, rol, lt_asignado FROM dbo.App_Usuarios WHERE username = %s", (username,))
+                uname = username.strip().lower()
+                cursor.execute("SELECT id, username, rol, lt_asignado FROM dbo.App_Usuarios WHERE LOWER(username) = %s", (uname,))
                 existing = cursor.fetchone()
-                
+
                 if not existing:
                     cursor.execute("""
-                        INSERT INTO dbo.App_Usuarios (username, password_hash, nombre_completo, lt_asignado, rol, activo, created_at, updated_at)
-                        VALUES (%s, %s, %s, %s, %s, 1, GETDATE(), GETDATE())
-                    """, (username, hashed_default, nombre, lt_asignado, rol))
+                        INSERT INTO dbo.App_Usuarios (username, nombre_completo, lt_asignado, rol, activo, created_at, updated_at)
+                        VALUES (%s, %s, %s, %s, 1, GETDATE(), GETDATE())
+                    """, (uname, nombre, lt_asignado, rol))
                     inserted_count += 1
                 else:
-                    # Actualizar rol y lt_asignado si difieren (p. ej. migración de LIDER_TI a LTI/ADMIN)
                     cursor.execute("""
                         UPDATE dbo.App_Usuarios
                         SET nombre_completo = %s,
@@ -138,14 +96,12 @@ def seed_default_users():
                             lt_asignado = %s,
                             activo = 1,
                             updated_at = GETDATE()
-                        WHERE username = %s
-                    """, (nombre, rol, lt_asignado, username))
+                        WHERE LOWER(username) = %s
+                    """, (nombre, rol, lt_asignado, uname))
                     updated_count += 1
 
-            # Eliminar cuentas obsoletas de semillas antiguas ('LIDER_TI') que no están en el listado oficial
-            valid_usernames = [u[2] for u in USERS_CANONICAL_SEED]
-            placeholders = ', '.join(['%s'] * len(valid_usernames))
-            cursor.execute(f"DELETE FROM dbo.App_Usuarios WHERE username NOT IN ({placeholders})", tuple(valid_usernames))
+            # NOTA: Se eliminó definitivamente la sentencia destructiva DELETE FROM dbo.App_Usuarios
+            # para no alterar cuentas provistas vía JIT ni otros usuarios existentes.
 
             conn.commit()
             print(f"[SEED] Sincronización de usuarios completada: {inserted_count} insertados, {updated_count} actualizados.")

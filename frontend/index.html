@@ -11,47 +11,23 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Roboto:ital,wght@0,300;0,400;0,500;0,700;0,900;1,400;1,700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="/css/styles.css?v=5.0">
+  <link rel="stylesheet" href="css/styles.css?v=6.0">
 </head>
 <body>
 
   <!-- ========================================================================
-       VISTA DE AUTENTICACIÓN (LOGIN)
+       VERIFICACIÓN DE SESIÓN SSO (PORTAL DE ACCESO)
        ======================================================================== -->
-  <div id="auth-view" class="auth-wrapper" style="display: none;">
-    <div class="auth-card">
-      <div class="auth-header">
-        <div style="display: flex; justify-content: center; margin-bottom: 0.75rem;">
-          <div class="brand-logo" style="width: 52px; height: 52px; font-size: 1.5rem;">LTI</div>
-        </div>
-        <h1>App Líderes TI</h1>
-        <p>Ingresa tus credenciales para acceder a tus proyectos asignados</p>
+  <div id="auth-view" class="auth-wrapper" style="display: flex; align-items: center; justify-content: center; min-height: 100vh;">
+    <div class="auth-card" style="text-align: center; max-width: 440px; padding: 2.5rem; background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-lg); box-shadow: var(--shadow-md);">
+      <div style="display: flex; justify-content: center; margin-bottom: 1.25rem;">
+        <div class="brand-logo" style="width: 56px; height: 56px; font-size: 1.6rem; border-radius: 12px;">LTI</div>
       </div>
-
-      <form id="login-form">
-        <div class="form-group">
-          <label class="form-label" for="login-username">Usuario</label>
-          <input type="text" id="login-username" class="form-input" placeholder="Ej: esandoval o admin" required autocomplete="username">
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="login-password">Contraseña</label>
-          <input type="password" id="login-password" class="form-input" placeholder="••••••••" required autocomplete="current-password">
-        </div>
-
-        <div id="login-error" style="color: var(--status-danger-text); font-size: 0.85rem; margin-bottom: 1rem; text-align: center;"></div>
-
-        <button type="submit" id="login-submit-btn" class="btn btn-primary btn-block">
-          Iniciar Sesión
-        </button>
-      </form>
-
-      <div class="auth-help">
-        <strong>Acceso Rápido / Cuentas:</strong>
-        <p style="margin-top: 0.3rem;">• Líderes TI: usuario con inicial y apellido (ej: <code>esandoval</code>, <code>aaguilar</code>, <code>jbarrera</code>)</p>
-        <p>• Admin: <code>admin</code></p>
-        <p>• Contraseña inicial por defecto: <code>Lti2026!</code></p>
-      </div>
+      <h2 style="margin-bottom: 0.5rem; font-size: 1.4rem; color: var(--text-main);">App Líderes TI</h2>
+      <p style="color: var(--text-muted); font-size: 0.95rem; margin-bottom: 1.5rem;">
+        Comprobando sesión en Portal de Acceso...
+      </p>
+      <div class="spinner-inline" style="display: inline-block; width: 32px; height: 32px; border-width: 3px; border-color: var(--primary) transparent var(--primary) transparent;"></div>
     </div>
   </div>
 
@@ -943,14 +919,9 @@
             <div class="usuarios-header-info">
               <div class="usuarios-header-icon">👥</div>
               <div>
-                <h2 class="usuarios-title">Mantenedor de Usuarios y Permisos</h2>
-                <p class="usuarios-subtitle">Gestión centralizada de cuentas, roles (PM, LTI, ADMIN), contraseñas y accesos al sistema</p>
+                <h2 class="usuarios-title">Mantenedor de Usuarios y Roles</h2>
+                <p class="usuarios-subtitle">Gestión de roles locales (PM, LTI, ADMIN) y asignación de Líder TI. Cuentas y contraseñas centralizadas en el Portal de Acceso.</p>
               </div>
-            </div>
-            <div class="usuarios-header-actions">
-              <button type="button" id="btn-create-user-open" class="btn btn-primary">
-                ➕ Nuevo Usuario
-              </button>
             </div>
           </div>
 
@@ -1486,7 +1457,7 @@
         <!-- Encabezado Destructivo -->
         <div class="modal-header">
           <div class="modal-header-brand">
-            <div class="modal-icon-danger">🗑️</div>
+            <div class="modal-icon-danger modal-icon-delete">🗑️</div>
             <div>
               <h3 id="modal-delete-project-title" class="modal-title" style="color: var(--status-danger-text);">¿Eliminar Proyecto?</h3>
               <p class="modal-subtitle">Esta acción es irreversible</p>
@@ -1546,123 +1517,6 @@
     </div>
 
     <!-- ====================================================================
-         g) MODAL DE CREACIÓN DE USUARIO
-         ==================================================================== -->
-    <div id="create-user-modal" class="modal-backdrop" style="display: none;">
-      <div class="modal-dialog modal-dialog-lg" role="dialog" aria-modal="true" aria-labelledby="modal-create-user-title">
-        <div class="modal-header">
-          <div class="modal-header-brand">
-            <div class="modal-icon-edit" style="background: rgba(16, 185, 129, 0.15); color: #059669;">➕</div>
-            <div>
-              <h3 id="modal-create-user-title" class="modal-title">Nuevo Usuario</h3>
-              <p class="modal-subtitle">Registro de nueva cuenta en dbo.App_Usuarios</p>
-            </div>
-          </div>
-          <button type="button" class="modal-close-btn" id="btn-close-create-user-modal-icon" aria-label="Cerrar modal">&times;</button>
-        </div>
-
-        <div id="create-user-error-alert" class="solicitud-alert-banner alert-danger" style="display: none; margin: 1rem 1.5rem 0 1.5rem;">
-          <div class="alert-icon">❌</div>
-          <div class="alert-content">
-            <div class="alert-title">No se pudo crear el usuario</div>
-            <div class="alert-description" id="create-user-error-desc">Verifica los datos ingresados.</div>
-          </div>
-        </div>
-
-        <div class="modal-body">
-          <form id="create-user-form" onsubmit="event.preventDefault();">
-            <div class="solicitud-form-grid">
-              
-              <div class="form-group">
-                <label class="form-label" for="create-user-nombre">
-                  Nombre Completo <span class="form-required">*</span>
-                </label>
-                <div class="input-with-icon">
-                  <span class="input-icon">👤</span>
-                  <input type="text" id="create-user-nombre" class="form-input" placeholder="Ej: Perez Gonzalez Juan Carlos" required>
-                </div>
-                <span class="form-help-text">Nombre y apellidos institucionales del usuario.</span>
-              </div>
-
-              <div class="form-group">
-                <label class="form-label" for="create-user-username">
-                  Usuario (Username) <span class="form-required">*</span>
-                </label>
-                <div class="input-with-icon">
-                  <span class="input-icon">🆔</span>
-                  <input type="text" id="create-user-username" class="form-input" placeholder="Ej: jperez" required autocomplete="off">
-                </div>
-                <span class="form-help-text">Solo minúsculas, números, guiones y puntos (sin espacios ni tildes).</span>
-              </div>
-
-              <div class="form-group">
-                <label class="form-label" for="create-user-rol">
-                  Rol del Sistema <span class="form-required">*</span>
-                </label>
-                <div class="input-with-icon">
-                  <span class="input-icon">🛡️</span>
-                  <select id="create-user-rol" class="form-select" required>
-                    <option value="PM">PM (Project Manager - Solo Solicitud LTI)</option>
-                    <option value="LTI">LTI (Líder Técnico - Operativo)</option>
-                    <option value="ADMIN">ADMIN (Administrador del Sistema)</option>
-                  </select>
-                </div>
-                <span class="form-help-text">Define los privilegios de acceso en el sistema.</span>
-              </div>
-
-              <div class="form-group">
-                <label class="form-label" for="create-user-lt-asignado">
-                  Líder TI Vinculado (LT Asignado)
-                </label>
-                <div class="input-with-icon">
-                  <span class="input-icon">👔</span>
-                  <select id="create-user-lt-asignado" class="form-select">
-                    <option value="">— Ninguno / No Aplica —</option>
-                  </select>
-                </div>
-                <span class="form-help-text">Aplica si el usuario gestiona proyectos directamente.</span>
-              </div>
-
-              <div class="form-group">
-                <label class="form-label" for="create-user-password">
-                  Contraseña Inicial <span class="form-required">*</span>
-                </label>
-                <div class="input-with-icon">
-                  <span class="input-icon">🔑</span>
-                  <input type="password" id="create-user-password" class="form-input" value="Lti2026!" required>
-                </div>
-                <span class="form-help-text">Sugerida por defecto: <code>Lti2026!</code> (Mínimo 6 caracteres).</span>
-              </div>
-
-              <div class="form-group">
-                <label class="form-label" for="create-user-activo">
-                  Estado Inicial
-                </label>
-                <div class="input-with-icon">
-                  <span class="input-icon">🚦</span>
-                  <select id="create-user-activo" class="form-select">
-                    <option value="1">Activo (Permite iniciar sesión)</option>
-                    <option value="0">Bloqueado / Inactivo</option>
-                  </select>
-                </div>
-                <span class="form-help-text">Los usuarios bloqueados no pueden autenticarse.</span>
-              </div>
-
-            </div>
-          </form>
-        </div>
-
-        <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 0.75rem;">
-          <button type="button" id="btn-cancel-create-user-modal" class="btn btn-secondary">
-            Cancelar
-          </button>
-          <button type="button" id="btn-save-create-user-modal" class="btn btn-primary btn-execute">
-            <span id="create-user-spinner" class="spinner-inline" style="display: none;"></span>
-            <span>💾 Crear Usuario</span>
-          </button>
-        </div>
-      </div>
-    </div>
 
     <!-- ====================================================================
          h) MODAL DE EDICIÓN DE USUARIO
@@ -1776,67 +1630,7 @@
     </div>
 
     <!-- ====================================================================
-         i) MODAL DE RESETEO DE CONTRASEÑA DE USUARIO
-         ==================================================================== -->
-    <div id="reset-user-password-modal" class="modal-backdrop" style="display: none;">
-      <div class="modal-dialog modal-dialog-sm" role="dialog" aria-modal="true" aria-labelledby="modal-reset-user-title">
-        <div class="modal-header">
-          <div class="modal-header-brand">
-            <div class="modal-icon-edit" style="background: rgba(245, 158, 11, 0.15); color: #d97706;">🔑</div>
-            <div>
-              <h3 id="modal-reset-user-title" class="modal-title">Resetear Contraseña</h3>
-              <p class="modal-subtitle">Restablecimiento seguro de clave de acceso</p>
-            </div>
-          </div>
-          <button type="button" class="modal-close-btn" id="btn-close-reset-user-modal-icon" aria-label="Cerrar">&times;</button>
-        </div>
-
-        <div class="modal-body">
-          <input type="hidden" id="reset-user-id">
-
-          <div class="modal-summary-box" style="margin-bottom: 1.25rem;">
-            <div class="modal-summary-row">
-              <span class="modal-summary-label">Usuario:</span>
-              <span id="reset-user-username-display" class="modal-summary-val" style="font-family: var(--font-mono); font-weight: 700; color: var(--primary);">-</span>
-            </div>
-            <div class="modal-summary-row">
-              <span class="modal-summary-label">Nombre:</span>
-              <span id="reset-user-nombre-display" class="modal-summary-val" style="font-weight: 600;">-</span>
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" for="reset-user-new-password">
-              Nueva Contraseña (Opcional)
-            </label>
-            <div class="input-with-icon">
-              <span class="input-icon">🔒</span>
-              <input type="password" id="reset-user-new-password" class="form-input" placeholder="Dejar en blanco para usar Lti2026!">
-            </div>
-            <span class="form-help-text">Si se deja en blanco, se asignará automáticamente <code>Lti2026!</code>.</span>
-          </div>
-
-          <div style="margin-top: 0.75rem;">
-            <button type="button" id="btn-reset-user-default-pass" class="btn btn-secondary btn-block" style="font-size: 0.85rem;">
-              ⚡ Usar Clave por Defecto (<code>Lti2026!</code>)
-            </button>
-          </div>
-        </div>
-
-        <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 0.75rem;">
-          <button type="button" id="btn-cancel-reset-user-modal" class="btn btn-secondary">
-            Cancelar
-          </button>
-          <button type="button" id="btn-confirm-reset-user-modal" class="btn btn-primary btn-execute">
-            <span id="reset-user-spinner" class="spinner-inline" style="display: none;"></span>
-            <span>🔑 Confirmar Reseteo</span>
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- ====================================================================
-         j) MODAL DE CONFIRMACIÓN DE ELIMINACIÓN DE USUARIO
+         i) MODAL DE CONFIRMACIÓN DE ELIMINACIÓN DE VINCULACIÓN DE USUARIO
          ==================================================================== -->
     <div id="delete-user-modal" class="modal-backdrop" style="display: none;">
       <div class="modal-dialog modal-dialog-sm" role="dialog" aria-modal="true" aria-labelledby="modal-delete-user-title">
@@ -1844,8 +1638,8 @@
           <div class="modal-header-brand">
             <div class="modal-icon-danger">🗑️</div>
             <div>
-              <h3 id="modal-delete-user-title" class="modal-title" style="color: var(--status-danger-text);">¿Eliminar Usuario?</h3>
-              <p class="modal-subtitle">Esta acción es irreversible</p>
+              <h3 id="modal-delete-user-title" class="modal-title" style="color: var(--status-danger-text);">¿Eliminar de App LTI?</h3>
+              <p class="modal-subtitle">Eliminación de vinculación local de usuario</p>
             </div>
           </div>
           <button type="button" class="modal-close-btn" id="btn-close-delete-user-modal-icon" aria-label="Cerrar">&times;</button>
@@ -1853,7 +1647,7 @@
 
         <div class="modal-body">
           <p class="modal-description" style="font-size: 0.95rem; margin-bottom: 1rem;">
-            ¿Estás seguro de que deseas eliminar permanentemente a este usuario de la base de datos?
+            ¿Estás seguro de que deseas eliminar la vinculación de este usuario en App LTI?
           </p>
 
           <div class="modal-summary-box" style="border-left: 4px solid var(--status-danger-text); background-color: var(--bg-surface-secondary);">
@@ -1873,9 +1667,9 @@
           </div>
 
           <div class="solicitud-alert-banner alert-warning" style="margin-top: 1rem; padding: 0.75rem;">
-            <div class="alert-icon" style="font-size: 1.2rem;">⚠️</div>
+            <div class="alert-icon" style="font-size: 1.2rem;">ℹ️</div>
             <div class="alert-content" style="font-size: 0.85rem;">
-              El usuario será eliminado de <code>dbo.App_Usuarios</code>. No se puede recuperar.
+              El registro de roles y líder asignado será eliminado de App LTI. <strong>La cuenta del usuario en el Portal de Acceso NO será eliminada.</strong>
             </div>
           </div>
         </div>
@@ -1886,7 +1680,7 @@
           </button>
           <button type="button" id="btn-confirm-delete-user-modal" class="btn btn-danger btn-execute">
             <span id="delete-user-spinner" class="spinner-inline" style="display: none;"></span>
-            <span>🗑️ Sí, Eliminar Usuario</span>
+            <span>🗑️ Eliminar de App LTI</span>
           </button>
         </div>
       </div>
@@ -1897,7 +1691,7 @@
   <div id="toast-container" class="toast-container"></div>
 
   <!-- Scripts -->
-  <script src="/js/auth.js?v=5.0"></script>
-  <script src="/js/app.js?v=5.0"></script>
+  <script src="js/auth.js?v=6.0"></script>
+  <script src="js/app.js?v=6.0"></script>
 </body>
 </html>

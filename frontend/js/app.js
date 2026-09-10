@@ -37,15 +37,21 @@ const App = {
   isUserSubmitting: false,
   userToDeleteId: null,
 
-  init() {
+  async init() {
     this.initTheme();
     this.bindEvents();
     
-    if (Auth.isAuthenticated()) {
-      this.showAppView();
-      this.loadInitialData();
-    } else {
-      this.showAuthView();
+    try {
+      const user = await Auth.getMe();
+      if (user) {
+        this.showAppView();
+        await this.loadInitialData();
+      } else {
+        Auth.redirectToLogin();
+      }
+    } catch (err) {
+      console.warn('[SSO] No autenticado:', err);
+      Auth.redirectToLogin();
     }
   },
 
@@ -100,33 +106,6 @@ const App = {
     const navUsuariosBtn = document.getElementById('nav-btn-usuarios');
     if (navUsuariosBtn) {
       navUsuariosBtn.addEventListener('click', () => this.switchModule('usuarios'));
-    }
-
-    // Login Form
-    const loginForm = document.getElementById('login-form');
-    if (loginForm) {
-      loginForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const username = document.getElementById('login-username').value.trim();
-        const password = document.getElementById('login-password').value;
-        const errEl = document.getElementById('login-error');
-        const btn = document.getElementById('login-submit-btn');
-
-        errEl.textContent = '';
-        btn.disabled = true;
-        btn.textContent = 'Iniciando sesión...';
-
-        try {
-          await Auth.login(username, password);
-          this.showAppView();
-          await this.loadInitialData();
-        } catch (err) {
-          errEl.textContent = err.message || 'Error de conexión';
-        } finally {
-          btn.disabled = false;
-          btn.textContent = 'Iniciar Sesión';
-        }
-      });
     }
 
     // Logout Button
@@ -562,31 +541,6 @@ const App = {
       });
     }
 
-    const btnCreateUserOpen = document.getElementById('btn-create-user-open');
-    if (btnCreateUserOpen) {
-      btnCreateUserOpen.addEventListener('click', () => this.openCreateUserModal());
-    }
-
-    // Create User Modal
-    const btnCloseCreateUserIcon = document.getElementById('btn-close-create-user-modal-icon');
-    if (btnCloseCreateUserIcon) {
-      btnCloseCreateUserIcon.addEventListener('click', () => this.closeCreateUserModal());
-    }
-    const btnCancelCreateUser = document.getElementById('btn-cancel-create-user-modal');
-    if (btnCancelCreateUser) {
-      btnCancelCreateUser.addEventListener('click', () => this.closeCreateUserModal());
-    }
-    const btnSaveCreateUser = document.getElementById('btn-save-create-user-modal');
-    if (btnSaveCreateUser) {
-      btnSaveCreateUser.addEventListener('click', () => this.submitCreateUserForm());
-    }
-    const createUserModal = document.getElementById('create-user-modal');
-    if (createUserModal) {
-      createUserModal.addEventListener('click', (e) => {
-        if (e.target === createUserModal) this.closeCreateUserModal();
-      });
-    }
-
     // Edit User Modal
     const btnCloseEditUserIcon = document.getElementById('btn-close-edit-user-modal-icon');
     if (btnCloseEditUserIcon) {
@@ -604,33 +558,6 @@ const App = {
     if (editUserModal) {
       editUserModal.addEventListener('click', (e) => {
         if (e.target === editUserModal) this.closeEditUserModal();
-      });
-    }
-
-    // Reset User Password Modal
-    const btnCloseResetUserIcon = document.getElementById('btn-close-reset-user-modal-icon');
-    if (btnCloseResetUserIcon) {
-      btnCloseResetUserIcon.addEventListener('click', () => this.closeResetUserPasswordModal());
-    }
-    const btnCancelResetUser = document.getElementById('btn-cancel-reset-user-modal');
-    if (btnCancelResetUser) {
-      btnCancelResetUser.addEventListener('click', () => this.closeResetUserPasswordModal());
-    }
-    const btnConfirmResetUser = document.getElementById('btn-confirm-reset-user-modal');
-    if (btnConfirmResetUser) {
-      btnConfirmResetUser.addEventListener('click', () => this.submitResetUserPasswordForm());
-    }
-    const btnResetDefaultPass = document.getElementById('btn-reset-user-default-pass');
-    if (btnResetDefaultPass) {
-      btnResetDefaultPass.addEventListener('click', () => {
-        const passInput = document.getElementById('reset-user-new-password');
-        if (passInput) passInput.value = 'Lti2026!';
-      });
-    }
-    const resetUserModal = document.getElementById('reset-user-password-modal');
-    if (resetUserModal) {
-      resetUserModal.addEventListener('click', (e) => {
-        if (e.target === resetUserModal) this.closeResetUserPasswordModal();
       });
     }
 
@@ -677,17 +604,9 @@ const App = {
         if (delModal && delModal.style.display !== 'none') {
           this.closeDeleteProjectModal();
         }
-        const createUsrModal = document.getElementById('create-user-modal');
-        if (createUsrModal && createUsrModal.style.display !== 'none') {
-          this.closeCreateUserModal();
-        }
         const editUsrModal = document.getElementById('edit-user-modal');
         if (editUsrModal && editUsrModal.style.display !== 'none') {
           this.closeEditUserModal();
-        }
-        const resetUsrModal = document.getElementById('reset-user-password-modal');
-        if (resetUsrModal && resetUsrModal.style.display !== 'none') {
-          this.closeResetUserPasswordModal();
         }
         const delUsrModal = document.getElementById('delete-user-modal');
         if (delUsrModal && delUsrModal.style.display !== 'none') {
@@ -711,7 +630,10 @@ const App = {
   // --------------------------------------------------------------------------
   switchModule(moduleName) {
     const user = Auth.getUser();
-    const rol = (user && user.rol) ? user.rol.toUpperCase() : 'PM';
+    let rol = (user && user.rol) ? user.rol.toUpperCase() : 'PM';
+    if (!user?.rol && (user?.adminLevel >= 2 || user?.is_super_admin)) {
+      rol = 'ADMIN';
+    }
 
     // Restricciones de navegación por rol
     if (rol === 'PM') {
@@ -791,7 +713,11 @@ const App = {
     const navSolicitud = document.getElementById('nav-btn-solicitud-lti');
     const navUsuarios = document.getElementById('nav-btn-usuarios');
 
-    const rolUpper = (rol || '').toUpperCase();
+    const user = Auth.getUser();
+    let rolUpper = (rol || '').toUpperCase();
+    if (!rolUpper && (user?.adminLevel >= 2 || user?.is_super_admin)) {
+      rolUpper = 'ADMIN';
+    }
 
     if (rolUpper === 'PM') {
       if (navProjects) navProjects.style.display = 'none';
@@ -833,7 +759,7 @@ const App = {
       }
       const userRole = document.getElementById('user-role-badge');
       if (userRole) {
-        const rol = (user.rol || 'PM').toUpperCase();
+        const rol = (user.rol || ((user.adminLevel >= 2 || user.is_super_admin) ? 'ADMIN' : 'PM')).toUpperCase();
         if (rol === 'ADMIN') {
           userRole.textContent = 'Administrador';
           userRole.className = 'badge badge-role-admin';
@@ -849,7 +775,8 @@ const App = {
     }
 
     let initialModule = 'projects';
-    if (user && user.rol === 'PM') {
+    const effectiveRol = (user && user.rol) ? user.rol.toUpperCase() : ((user?.adminLevel >= 2 || user?.is_super_admin) ? 'ADMIN' : 'PM');
+    if (effectiveRol === 'PM') {
       initialModule = 'solicitud-lti';
     }
     this.switchModule(initialModule);
@@ -892,6 +819,7 @@ const App = {
       this.loadKPIs()
     ]);
     await this.loadProjects();
+    this.isInitialized = true;
   },
 
   async loadLideres() {
@@ -3345,13 +3273,10 @@ const App = {
               <button type="button" class="btn-action-user-edit" onclick="App.openEditUserModal(${u.id})" title="Editar usuario" aria-label="Editar Usuario">
                 ✏️
               </button>
-              <button type="button" class="btn-action-user-key" onclick="App.openResetUserPasswordModal(${u.id})" title="Resetear contraseña" aria-label="Resetear Contraseña">
-                🔑
-              </button>
               <button type="button" class="btn-action-user-toggle" onclick="App.toggleUserStatus(${u.id})" title="${toggleTitle}" aria-label="${toggleTitle}" ${(isSelf || isRootAdmin) ? 'disabled style="opacity: 0.4; cursor: not-allowed;"' : ''}>
                 ${toggleIcon}
               </button>
-              <button type="button" class="btn-action-user-delete" onclick="App.openDeleteUserModal(${u.id})" title="Eliminar usuario" aria-label="Eliminar Usuario" ${(isSelf || isRootAdmin) ? 'disabled style="opacity: 0.4; cursor: not-allowed;"' : ''}>
+              <button type="button" class="btn-action-user-delete" onclick="App.openDeleteUserModal(${u.id})" title="Eliminar de App LTI" aria-label="Eliminar de App LTI" ${(isSelf || isRootAdmin) ? 'disabled style="opacity: 0.4; cursor: not-allowed;"' : ''}>
                 🗑️
               </button>
             </div>
@@ -3359,108 +3284,6 @@ const App = {
         </tr>
       `;
     }).join('');
-  },
-
-  openCreateUserModal() {
-    const modal = document.getElementById('create-user-modal');
-    if (!modal) return;
-
-    const errAlert = document.getElementById('create-user-error-alert');
-    if (errAlert) errAlert.style.display = 'none';
-
-    document.getElementById('create-user-nombre').value = '';
-    document.getElementById('create-user-username').value = '';
-    document.getElementById('create-user-password').value = 'Lti2026!';
-    document.getElementById('create-user-rol').value = 'PM';
-    document.getElementById('create-user-activo').value = '1';
-
-    const selectLt = document.getElementById('create-user-lt-asignado');
-    if (selectLt) {
-      selectLt.innerHTML = '<option value="">— Ninguno / No Aplica —</option>';
-      this.lideresList.forEach(lt => {
-        const opt = document.createElement('option');
-        opt.value = lt;
-        opt.textContent = lt;
-        selectLt.appendChild(opt);
-      });
-    }
-
-    modal.style.display = 'flex';
-  },
-
-  closeCreateUserModal() {
-    const modal = document.getElementById('create-user-modal');
-    if (modal) modal.style.display = 'none';
-  },
-
-  async submitCreateUserForm() {
-    if (this.isUserSubmitting) return;
-
-    const nombre = document.getElementById('create-user-nombre')?.value.trim();
-    const username = document.getElementById('create-user-username')?.value.trim();
-    const password = document.getElementById('create-user-password')?.value;
-    const rol = document.getElementById('create-user-rol')?.value;
-    const ltAsignado = document.getElementById('create-user-lt-asignado')?.value.trim() || null;
-    const activo = document.getElementById('create-user-activo')?.value === '1';
-
-    const errAlert = document.getElementById('create-user-error-alert');
-    const errDesc = document.getElementById('create-user-error-desc');
-    const spinner = document.getElementById('create-user-spinner');
-    const btn = document.getElementById('btn-save-create-user-modal');
-
-    if (!nombre || !username || !password || !rol) {
-      if (errAlert && errDesc) {
-        errDesc.textContent = 'Todos los campos obligatorios (*) deben ser completados.';
-        errAlert.style.display = 'flex';
-      }
-      return;
-    }
-
-    if (password.length < 6) {
-      if (errAlert && errDesc) {
-        errDesc.textContent = 'La contraseña debe tener al menos 6 caracteres.';
-        errAlert.style.display = 'flex';
-      }
-      return;
-    }
-
-    this.isUserSubmitting = true;
-    if (btn) btn.disabled = true;
-    if (spinner) spinner.style.display = 'inline-block';
-    if (errAlert) errAlert.style.display = 'none';
-
-    try {
-      const res = await Auth.fetchWithAuth('/api/usuarios', {
-        method: 'POST',
-        body: JSON.stringify({
-          nombre_completo: nombre,
-          username: username,
-          password: password,
-          rol: rol,
-          lt_asignado: ltAsignado,
-          activo: activo
-        })
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: 'Error al crear usuario' }));
-        throw new Error(err.detail || 'Error al crear usuario');
-      }
-
-      const newUser = await res.json();
-      this.closeCreateUserModal();
-      this.showToast(`Usuario '${newUser.username}' creado exitosamente`, 'success');
-      await this.loadUsuarios();
-    } catch (err) {
-      if (errAlert && errDesc) {
-        errDesc.textContent = err.message || 'Error al procesar la solicitud.';
-        errAlert.style.display = 'flex';
-      }
-    } finally {
-      this.isUserSubmitting = false;
-      if (btn) btn.disabled = false;
-      if (spinner) spinner.style.display = 'none';
-    }
   },
 
   async openEditUserModal(userId) {
@@ -3583,60 +3406,6 @@ const App = {
     }
   },
 
-  openResetUserPasswordModal(userId) {
-    const modal = document.getElementById('reset-user-password-modal');
-    if (!modal) return;
-
-    const user = this.usuariosData.find(u => String(u.id) === String(userId));
-    if (!user) return;
-
-    document.getElementById('reset-user-id').value = user.id;
-    document.getElementById('reset-user-username-display').textContent = user.username;
-    document.getElementById('reset-user-nombre-display').textContent = user.nombre_completo;
-    document.getElementById('reset-user-new-password').value = '';
-
-    modal.style.display = 'flex';
-  },
-
-  closeResetUserPasswordModal() {
-    const modal = document.getElementById('reset-user-password-modal');
-    if (modal) modal.style.display = 'none';
-  },
-
-  async submitResetUserPasswordForm() {
-    const userId = document.getElementById('reset-user-id')?.value;
-    const newPass = document.getElementById('reset-user-new-password')?.value.trim();
-    const spinner = document.getElementById('reset-user-spinner');
-    const btn = document.getElementById('btn-confirm-reset-user-modal');
-
-    if (!userId) return;
-
-    if (btn) btn.disabled = true;
-    if (spinner) spinner.style.display = 'inline-block';
-
-    try {
-      const res = await Auth.fetchWithAuth(`/api/usuarios/${userId}/reset-password`, {
-        method: 'POST',
-        body: JSON.stringify({
-          new_password: newPass || 'Lti2026!'
-        })
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: 'Error al resetear contraseña' }));
-        throw new Error(err.detail || 'Error al resetear contraseña');
-      }
-
-      this.closeResetUserPasswordModal();
-      this.showToast('Contraseña restablecida exitosamente', 'success');
-    } catch (err) {
-      this.showToast(`Error: ${err.message}`, 'danger');
-    } finally {
-      if (btn) btn.disabled = false;
-      if (spinner) spinner.style.display = 'none';
-    }
-  },
-
   async toggleUserStatus(userId) {
     try {
       const res = await Auth.fetchWithAuth(`/api/usuarios/${userId}/toggle-status`, {
@@ -3716,7 +3485,7 @@ const App = {
       }
 
       this.closeDeleteUserModal();
-      this.showToast('Usuario eliminado permanentemente', 'success');
+      this.showToast('Vinculación de usuario eliminada de App LTI', 'success');
       await this.loadUsuarios();
     } catch (err) {
       this.showToast(`Error: ${err.message}`, 'danger');

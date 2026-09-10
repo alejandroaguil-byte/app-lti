@@ -85,7 +85,8 @@ Aplicación web desarrollada para que los **Líderes TI** realicen el seguimient
 
 ## 🛠️ Stack Tecnológico
 
-- **Backend**: Python 3.12 + FastAPI + Uvicorn + Playwright Async + PyMSSQL + PyJWT + Bcrypt + SMTPLib (STARTTLS).
+- **Backend**: Python 3.12 + FastAPI + Uvicorn + Playwright Async + PyMSSQL + PyJWT + SMTPLib (STARTTLS).
+- **Autenticación**: Single Sign-On (SSO) corporativo vía Portal de Acceso (Cookies HttpOnly `access_token` / `refresh_token`, firma HS256).
 - **Base de Datos**: Microsoft SQL Server (`Sharepoint_Proyectos`).
 - **Frontend**: SPA con HTML5 Semántico, Vanilla JavaScript y CSS3 nativo con variables de diseño.
 
@@ -97,20 +98,20 @@ Aplicación web desarrollada para que los **Líderes TI** realicen el seguimient
 app-lti/
 ├── backend/
 │   ├── main.py              # API FastAPI, rutas REST, streaming y servidor de estáticos
-│   ├── db.py                # Conexión MSSQL, serialización y consultas optimizadas
-│   ├── auth.py              # Autenticación JWT y hashing de claves
-│   ├── config.py            # Carga de credenciales (.env) y configuración global
+│   ├── db.py                # Conexión MSSQL, serialización, consultas y aprovisionamiento JIT
+│   ├── auth.py              # Verificación de JWT SSO del Portal, cookies HttpOnly y cálculo de roles
+│   ├── config.py            # Carga de variables (.env) y configuración global
 │   ├── email_service.py     # Servicio de envío de correos vía Office 365 SMTP + STARTTLS
-│   ├── seed_users.py        # Poblador de usuarios iniciales en dbo.App_Usuarios
+│   ├── seed_users.py        # Poblador idempotente de roles para líderes y administradores
 │   └── ticket_automation.py # Automatización Playwright Async + SSE para Service Manager
 ├── frontend/
-│   ├── index.html           # Estructura principal, consola de logs y modales de éxito/correo
+│   ├── index.html           # Estructura principal sin login propio, adaptada a sesión SSO
 │   ├── css/
 │   │   └── styles.css       # Sistema de diseño, consola terminal, dropzone y temas claro/oscuro
 │   └── js/
 │       ├── app.js           # Lógica de renderizado, streaming SSE, modales, clipboard y email
-│       └── auth.js          # Control de sesión y peticiones autenticadas
-├── .env.example             # Plantilla de variables de entorno (SMTP, BD, JWT)
+│       └── auth.js          # Manejo de sesión SSO por cookies con auto-refresh (/api/auth/refresh)
+├── .env.example             # Plantilla de variables de entorno (SMTP, BD, PORTAL_JWT_SECRET)
 ├── requirements.txt         # Dependencias Python
 ├── run.sh                   # Script de inicio rápido del servidor
 └── README.md                # Documentación
@@ -142,7 +143,12 @@ DB_PORT=1433
 DB_USER=sa
 DB_PASSWORD=
 DB_NAME=Sharepoint_Proyectos
-JWT_SECRET=app-lti-super-secret-key-2026-claro
+
+# ==============================================================================
+# INTEGRACIÓN SSO PORTAL DE ACCESO (HS256)
+# ==============================================================================
+PORTAL_JWT_SECRET=tu-portal-jwt-secret-aqui
+JWT_ACCESS_SECRET=tu-portal-jwt-secret-aqui
 ```
 
 > [!NOTE]
@@ -151,9 +157,9 @@ JWT_SECRET=app-lti-super-secret-key-2026-claro
 
 ---
 
-## 🚀 Cómo Iniciar la Aplicación (Entorno Local)
+## 🚀 Cómo Iniciar la Aplicación (Entorno Local `bobbadeveloper`)
 
-Ejecuta el script de inicio en la terminal:
+Ejecuta el script de inicio en la terminal de desarrollo local:
 
 ```bash
 cd /home/bobbasystem/Desarrollos/app-lti
@@ -162,65 +168,49 @@ cd /home/bobbasystem/Desarrollos/app-lti
 
 El servidor iniciará en: **`http://localhost:8000`**
 
+> [!CAUTION]
+> ### Regla Estricta de Entorno
+> La implementación y verificación activa se realiza **exclusivamente en `bobbadeveloper`** (`/home/bobbasystem/Desarrollos/app-lti`). Está estrictamente prohibido ejecutar `deploy_to_iacdi.sh` o realizar cambios directos en el servidor `iacdi` sin autorización explícita.
+
 ---
 
-## 🌐 Despliegue y Operación en Servidor IACDI vía Tailscale
+## 🌐 Topología y Acceso vía Portal de Acceso (Producción `iacdi`)
 
-La plataforma se encuentra publicada y lista para desarrollo continuo en el servidor institucional **`iacdi`**, accesible dentro de la red privada **Tailscale**:
+En el entorno integrado, App LTI corre detrás del reverse proxy Nginx del **Portal de Acceso** (`~/portal-acceso`), configurado bajo el mismo origen seguro:
 
-- **URL de Acceso Web:** **`http://100.82.24.75:8000`**
-- **Host SSH Remoto:** `iacdi` (`100.82.24.75`, usuario `iacdi`)
+- **Ruta Oficial de Acceso:** **`https://200.14.222.162/app-lti/`**
+- **Slug de Herramienta en Portal:** `app-lti`
+- **Host SSH Remoto (Producción):** `iacdi` (`100.82.24.75`, usuario `iacdi`)
 - **Directorio Remoto:** `/home/iacdi/Desarrollos/app-lti`
 - **Base de Datos:** Microsoft SQL Server `192.168.10.6:1433` (`Sharepoint_Proyectos`)
 
-### Sincronización Rápida desde Estación de Desarrollo:
-```bash
-./deploy_to_iacdi.sh
-```
-
-### Control del Servicio Systemd de Usuario en `iacdi`:
-```bash
-# Conectar por SSH
-ssh iacdi
-
-# Consultar estado del servicio
-systemctl --user status app-lti.service
-
-# Reiniciar servicio
-systemctl --user restart app-lti.service
-
-# Monitorear logs en tiempo real
-journalctl --user -u app-lti -f
-```
-
 ---
 
-## 🔐 Control de Acceso Basado en Roles (RBAC) & Cuentas
+## 🔐 Control de Acceso Basado en Roles (RBAC) & SSO del Portal
 
-El sistema cuenta con un esquema de seguridad RBAC con tres perfiles:
+App LTI utiliza autenticación federada **Single Sign-On (SSO)** mediante las cookies seguras HttpOnly (`access_token`, `refresh_token`) emitidas por el **Portal de Acceso**.
 
-1. **PM (Project Manager):**
-   - Acceso exclusivo al módulo **📝 Solicitud LTI**.
-   - Los módulos operativos y de gestión permanecen ocultos y protegidos.
-2. **LTI (Líder Técnico de Integración):**
-   - Acceso completo a los módulos operativos: **📊 Seguimiento Proyectos**, **🔎 Búsqueda Directa en Tablas**, **🤖 Generador de Tickets** y **📝 Solicitud LTI**.
-   - En Seguimiento de Proyectos puede consultar, filtrar, realizar Drill Down y **✏️ Editar** proyectos.
-   - **No puede eliminar proyectos** (acción restringida a Administradores).
-3. **ADMIN (Administrador):**
-   - Acceso total e irrestricto a todos los módulos.
-   - Habilitado para **🗑️ Eliminar Proyectos** y para acceder al **👥 Mantenedor de Usuarios**.
+### 1. Formato Canónico de Cuentas
+- Desaparecen las cuentas hardcodeadas anteriores.
+- Se utiliza el formato corporativo oficial del Portal: **`nombre.apellido`** en minúsculas (ejemplos: `alejandro.aguilar`, `solange.ortiz`, `juan.barrera`, `samuel.paredes`, `erwin.sandoval`).
+- **Aprovisionamiento Just-In-Time (JIT):** Cuando un usuario con sesión válida en el Portal accede por primera vez a App LTI, el sistema lo registra automáticamente en `dbo.App_Usuarios`, permitiendo que el Administrador de App LTI configure su rol operativo y Líder TI asignado sin necesidad de crear cuentas manuales.
 
-### Cuentas Iniciales Pobladas desde `csv/Listado_Permisos_Usuarios.xlsx`:
-- **31 Project Managers (PM):** `calbornoz`, `gcardozo`, `jcastillo`, `mcastillo`, `pcatalan`, `kcordova`, `pcurutchet`, `fdiaz`, `mfuentes`, `rgonzalez`, `agutierrez`, `fherrera`, `pinayado`, `jlaboren`, `rlagos`, `vlillo`, `kloubies`, `operez`, `jperez`, `lpincheira`, `gpozo`, `ereyes`, `rriquelme`, `drodriguez`, `rromero`, `jsaavedra`, `dsanjuan`, `ptakahashi`, `rtorreblanca`, `fulloa`, `pvillar`.
-- **4 Líderes Técnicos (LTI):** `jbarrera`, `sparedes`, `sortiz`, `esandoval`.
-- **2 Administradores (ADMIN):** `aaguilar`, `pcastillo`.
-- **1 Superadministrador Raíz:** `admin`.
-- **Contraseña Inicial por Defecto:** `Lti2026!`
+### 2. Mapeo de `toolAccess` del Portal y Permisos Efectivos
+
+El token JWT del Portal define la capacidad de escritura de la sesión:
+- **Portal `"operador"` (o Super Admin `adminLevel >= 2`):** Permite ejecutar operaciones según el rol registrado en App LTI (`ADMIN` o `LTI`), habilitando edición de proyectos, creación de tickets Service Manager y gestión de solicitudes.
+- **Portal `"lectura"` o sin asignación:** Restringe forzosamente la sesión al perfil **`PM` (Solo Lectura / Solicitud LTI)**, impidiendo cualquier acción de escritura o acceso al mantenedor de usuarios, independientemente del rol local.
+- **Bloqueo Local:** Si el usuario tiene `activo = 0` en `dbo.App_Usuarios`, el backend deniega el acceso con `403 Forbidden`.
+
+### 3. Centralización de Gestión de Identidades
+- **Alta de cuentas y contraseñas:** Centralizadas al 100% en el Portal de Acceso. App LTI no almacena `password_hash` ni expone formularios de creación de cuentas o reseteo de claves.
+- **Mantenedor Local de App LTI (`👥 Usuarios`):** Exclusivo para administradores locales, permitiendo asignar el rol del negocio (`PM`, `LTI`, `ADMIN`), vincular el Líder TI responsable (`lt_asignado`) y alternar el estado activo/bloqueado.
 
 ---
 
 ## 📚 Documentación y Especificaciones Técnicas (SPECS)
 
+- [SPECS_INTEGRACION_SSO_PORTAL_ACCESO.md](file:///home/bobbasystem/Desarrollos/app-lti/SPECS_INTEGRACION_SSO_PORTAL_ACCESO.md): **(v2.0.0 Ratificada)** Especificación técnica definitiva de integración Single Sign-On (SSO) con el Portal de Acceso, cookies HttpOnly, mapeo de `toolAccess`, formato canónico `nombre.apellido`, aprovisionamiento JIT y arquitectura desacoplada sin contraseñas locales.
 - [SPECS_DESPLIEGUE_IACDI_TAILSCALE.md](file:///home/bobbasystem/Desarrollos/app-lti/SPECS_DESPLIEGUE_IACDI_TAILSCALE.md): (v1.0.0) Especificación técnica y de infraestructura para el despliegue, configuración del servicio systemd de usuario con Linger, entorno de desarrollo continuo y conectividad en servidor `iacdi` (IP Tailscale `100.82.24.75:8000`, enlace MSSQL `192.168.10.6:1433`).
 - [SPECS_FILTRO_ESTADOS_SHAREPOINT.md](file:///home/bobbasystem/Desarrollos/app-lti/SPECS_FILTRO_ESTADOS_SHAREPOINT.md): (v1.0.0) Especificación técnica de Catálogo Canónico y Corrección del Filtro de Estados SharePoint (`Generado`, `En revision`, `Atendido`), desacople de consultas dependientes de BD y renderizado defensivo con fallback en UI.
 - [SPECS_TICKET_GENERATOR_CAMPOS_DINAMICOS.md](file:///home/bobbasystem/Desarrollos/app-lti/SPECS_TICKET_GENERATOR_CAMPOS_DINAMICOS.md): (v1.0.0) Especificación técnica de Catálogo Dinámico de Contactos (5 líderes), Catálogo de Grupos de Asignación (11 torres), Normalización de Impacto y Urgencia con Service Manager, Limpieza de Valores de Prueba Hardcodeados y Placeholders Guiados.

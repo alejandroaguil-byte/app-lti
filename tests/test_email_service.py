@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 
 from backend.main import app
-from backend.auth import create_access_token
+from tests.conftest import create_access_token
 from backend.email_service import (
     parse_and_validate_recipients,
     build_mime_message,

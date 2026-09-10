@@ -23,6 +23,7 @@ import time
 import subprocess
 import requests
 import pytest
+from tests.conftest import create_portal_jwt
 
 REMOTE_HOST = "iacdi"
 TAILSCALE_IP = "100.82.24.75"
@@ -238,58 +239,52 @@ def test_tc_dep_06_spa_frontend_resources_delivery():
 
 def test_tc_dep_07_jwt_authentication_flows():
     """
-    TC-DEP-07: Probar flujos de autenticación en la API desplegada en iacdi.
-    - Login con credenciales inválidas -> 401 Unauthorized.
-    - Login con credenciales válidas (admin / Lti2026!) -> 200 OK y token JWT emitido.
-    - Verificación del token en /api/auth/me -> 200 OK y perfil del usuario autenticado.
-    - Login con perfil PM (calbornoz / Lti2026!) -> 200 OK y verificación de rol.
-    - Login con perfil LTI (jbarrera / Lti2026!) -> 200 OK y verificación de rol.
+    TC-DEP-07: Probar flujos de autenticación SSO Portal JWT en la API desplegada en iacdi.
+    - Petición sin token -> 401 Unauthorized.
+    - Token con firma incorrecta -> 401 Unauthorized.
+    - Token SSO Admin válido (alejandro.aguilar) -> 200 OK y rol ADMIN.
+    - Token SSO PM válido (camila.albornoz) -> 200 OK y rol PM.
+    - Token SSO LTI válido (juan.barrera) -> 200 OK y rol LTI.
+    - Endpoint retirado /api/auth/login -> 405 Method Not Allowed.
     """
-    # 1. Credenciales inválidas
-    res_bad = requests.post(
-        f"{REMOTE_BASE_URL}/api/auth/login",
-        json={"username": "admin", "password": "BadPassword123!"},
-        timeout=5
-    )
+    # 1. Petición sin token
+    res_no_token = requests.get(f"{REMOTE_BASE_URL}/api/auth/me", timeout=5)
+    assert res_no_token.status_code == 401, f"Se esperaba 401 pero se obtuvo {res_no_token.status_code}"
+
+    # 2. Token con firma incorrecta
+    headers_bad = {"Authorization": "Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOjE1fQ.InvalidSignature"}
+    res_bad = requests.get(f"{REMOTE_BASE_URL}/api/auth/me", headers=headers_bad, timeout=5)
     assert res_bad.status_code == 401, f"Se esperaba 401 pero se obtuvo {res_bad.status_code}"
 
-    # 2. Login Admin válido
-    res_admin = requests.post(
-        f"{REMOTE_BASE_URL}/api/auth/login",
-        json={"username": "admin", "password": "Lti2026!"},
-        timeout=5
-    )
-    assert res_admin.status_code == 200, f"Login admin falló: {res_admin.status_code} {res_admin.text}"
-    token_admin = res_admin.json().get("access_token")
-    assert token_admin, "No se recibió access_token en respuesta de login"
-
-    # 3. Validar /api/auth/me con token admin
+    # 3. Token Admin válido
+    token_admin = create_portal_jwt(username="alejandro.aguilar", admin_level=2, tool_access={"app-lti": "operador"})
     headers_admin = {"Authorization": f"Bearer {token_admin}"}
     res_me = requests.get(f"{REMOTE_BASE_URL}/api/auth/me", headers=headers_admin, timeout=5)
     assert res_me.status_code == 200
     user_me = res_me.json()
-    assert user_me["username"] == "admin"
+    assert user_me["username"] == "alejandro.aguilar"
     assert user_me["rol"] == "ADMIN"
+    assert user_me["is_super_admin"] is True
 
-    # 4. Login PM
-    res_pm = requests.post(
-        f"{REMOTE_BASE_URL}/api/auth/login",
-        json={"username": "calbornoz", "password": "Lti2026!"},
-        timeout=5
-    )
+    # 4. Token PM válido
+    token_pm = create_portal_jwt(username="camila.albornoz", admin_level=0, tool_access={"app-lti": "lectura"})
+    headers_pm = {"Authorization": f"Bearer {token_pm}"}
+    res_pm = requests.get(f"{REMOTE_BASE_URL}/api/auth/me", headers=headers_pm, timeout=5)
     assert res_pm.status_code == 200
-    assert res_pm.json().get("user", {}).get("rol") == "PM"
+    assert res_pm.json()["rol"] == "PM"
 
-    # 5. Login LTI
-    res_lti = requests.post(
-        f"{REMOTE_BASE_URL}/api/auth/login",
-        json={"username": "jbarrera", "password": "Lti2026!"},
-        timeout=5
-    )
+    # 5. Token LTI válido
+    token_lti = create_portal_jwt(username="juan.barrera", admin_level=1, tool_access={"app-lti": "operador"})
+    headers_lti = {"Authorization": f"Bearer {token_lti}"}
+    res_lti = requests.get(f"{REMOTE_BASE_URL}/api/auth/me", headers=headers_lti, timeout=5)
     assert res_lti.status_code == 200
-    assert res_lti.json().get("user", {}).get("rol") == "LTI"
+    assert res_lti.json()["rol"] == "LTI"
 
-    print("\n[TC-DEP-07] Flujos de autenticación JWT (Admin, PM, LTI y rechazo de inválidos) validados al 100%")
+    # 6. Endpoint de login retirado
+    res_retired = requests.post(f"{REMOTE_BASE_URL}/api/auth/login", json={"username": "admin", "password": "x"}, timeout=5)
+    assert res_retired.status_code in (404, 405)
+
+    print("\n[TC-DEP-07] Flujos de autenticación SSO Portal JWT (Admin, PM, LTI, rechazo de inválidos y retiro de login local) validados al 100%")
 
 
 # ==============================================================================
@@ -305,13 +300,8 @@ def test_tc_dep_08_authenticated_operational_endpoints():
     - GET /api/estados -> 200 OK con estados de SharePoint (< 2.0s).
     - GET /api/usuarios -> 200 OK (solo admin) con listado de usuarios (< 2.0s).
     """
-    # Obtener token admin
-    res_admin = requests.post(
-        f"{REMOTE_BASE_URL}/api/auth/login",
-        json={"username": "admin", "password": "Lti2026!"},
-        timeout=5
-    )
-    token = res_admin.json()["access_token"]
+    # Obtener token admin SSO
+    token = create_portal_jwt(username="alejandro.aguilar", admin_level=2, tool_access={"app-lti": "operador"})
     headers = {"Authorization": f"Bearer {token}"}
 
     test_endpoints = [

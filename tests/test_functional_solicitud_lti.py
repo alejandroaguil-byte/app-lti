@@ -16,6 +16,7 @@ Casos de Prueba:
 9. Suite de Validación de Endpoints Backend (FastAPI + JWT)
 """
 
+import os
 import re
 import time
 import uuid
@@ -24,24 +25,23 @@ import datetime
 import requests
 from playwright.sync_api import Page, expect
 from backend.db import get_db_connection, create_solicitud_lti
+from tests.conftest import create_access_token
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = os.getenv("BASE_URL", "http://100.82.24.75:8000")
 
 
-def helper_login(page: Page, username: str = "aaguilar", password: str = "Lti2026!"):
-    """Helper para autenticar en el portal con credenciales válidas."""
+def helper_login(page: Page, username: str = "alejandro.aguilar", password: str = None):
+    """Helper para autenticar en el portal con credenciales SSO válidas."""
+    token = create_access_token({"sub": username, "rol": "ADMIN"})
+    page.context.add_cookies([{
+        "name": "access_token",
+        "value": token,
+        "url": BASE_URL,
+    }])
     page.goto(f"{BASE_URL}/")
-    page.wait_for_selector("#auth-view", state="attached")
-    
-    # Si ya está autenticado, continuar
-    if page.locator("#app-view").is_visible():
-        return
-
-    page.fill("#login-username", username)
-    page.fill("#login-password", password)
-    page.click("#login-submit-btn")
-    page.wait_for_selector("#app-view", state="visible", timeout=10000)
-    page.wait_for_selector("#nav-btn-solicitud-lti", state="visible", timeout=5000)
+    page.wait_for_selector("#app-view", state="visible", timeout=25000)
+    page.wait_for_function("() => window.App && window.App.isInitialized === true", timeout=25000)
+    page.wait_for_selector("#nav-btn-solicitud-lti", state="visible", timeout=10000)
 
 
 def test_01_login_and_navigation_solicitud_lti(page: Page):
@@ -212,14 +212,10 @@ def test_05_anti_duplicate_control(page: Page):
     - Verificar sugerencias en el mensaje (editar DETALLE).
     - Verificar botón 'Ver Proyecto en Seguimiento' y su acción.
     """
-    helper_login(page)
-    page.click("#nav-btn-solicitud-lti")
-    page.click("#btn-reset-solicitud")
-
     import uuid
     unique_ts = f"{int(time.time() * 1000) % 10000000}-{uuid.uuid4().hex[:6]}"
     existing_proj = f"000DUP{unique_ts}"
-    create_solicitud_lti(
+    res_init = create_solicitud_lti(
         cliente="ILUSTRE MUNICIPALIDAD DE QUINTA NORMAL",
         numero_proyecto=existing_proj,
         lt_asignado="Alejandro Aguilar",
@@ -227,6 +223,11 @@ def test_05_anti_duplicate_control(page: Page):
         fecha_solicitud=datetime.date.today().isoformat(),
         detalle="Proyecto base preexistente para prueba anti-duplicado"
     )
+    assert res_init.get("success"), f"Error creando proyecto previo: {res_init}"
+
+    helper_login(page)
+    page.click("#nav-btn-solicitud-lti")
+    page.click("#btn-reset-solicitud")
 
     page.fill("#solicitud-nro-proyecto", existing_proj)
     page.wait_for_timeout(300)
@@ -252,11 +253,12 @@ def test_05_anti_duplicate_control(page: Page):
     # Probar botón 'Ver Proyecto en Seguimiento'
     view_dup_btn = page.locator("#btn-view-duplicate-project")
     expect(view_dup_btn).to_be_visible()
+    view_dup_btn.scroll_into_view_if_needed()
     view_dup_btn.click()
 
     # Debe navegar al módulo de Seguimiento Proyectos y abrir el drilldown
-    expect(page.locator("#module-projects-container")).to_be_visible()
-    expect(page.locator("#project-drilldown-section")).to_be_visible(timeout=10000)
+    expect(page.locator("#module-projects-container")).to_be_visible(timeout=10000)
+    expect(page.locator("#project-drilldown-section")).to_be_visible(timeout=15000)
     expect(page.locator("#dd-proj-num")).to_contain_text(existing_proj, timeout=10000)
 
 

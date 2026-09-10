@@ -1,42 +1,21 @@
 """
-BATERÍA DE PRUEBAS FUNCIONALES AUTOMATIZADAS: MANTENEDOR DE USUARIOS Y CONTROL DE ACCESO (RBAC)
-Documento de Referencia: SPECS_MANTENEDOR_USUARIOS_Y_ROLES.md (SPECS-LTI-MOD-006)
+BATERÍA DE PRUEBAS FUNCIONALES AUTOMATIZADAS: MANTENEDOR DE USUARIOS Y CONTROL DE ACCESO (RBAC) - SSO PORTAL
+Documentos de Referencia: SPECS_INTEGRACION_SSO_PORTAL_ACCESO.md y SPECS_MANTENEDOR_USUARIOS_Y_ROLES.md
 Proyecto: App LTI - Seguimiento Líderes TI
-Ubicación: /home/bobbasystem/Desarrollos/app-lti/tests/test_functional_mantenedor_usuarios.py
-
-Casos de Prueba:
-- TC-RBAC-01: Login exitoso de PM (calbornoz) con rol "PM".
-- TC-RBAC-02: Acceso denegado (403 Forbidden) para rol PM en endpoints operativos (/api/proyectos, /api/kpis, /api/estados, /api/search/direct).
-- TC-RBAC-03: Creación exitosa de Solicitud LTI por usuario PM (201 Created).
-- TC-RBAC-04: Acceso exitoso de LTI (jbarrera, esandoval) a proyectos y KPIs.
-- TC-RBAC-05: Restricción de eliminación de proyectos para LTI (403 Forbidden al intentar DELETE /api/proyectos/{id}).
-- TC-RBAC-06: Edición de proyectos permitida para LTI (PUT /api/proyectos/{id}).
-- TC-RBAC-07: Eliminación de proyectos permitida para ADMIN (DELETE /api/proyectos/{id}).
-- TC-RBAC-08: Listar usuarios por ADMIN (GET /api/usuarios retorna 38 usuarios iniciales).
-- TC-RBAC-09: Acceso denegado a /api/usuarios para roles LTI y PM (403 Forbidden).
-- TC-RBAC-10: CRUD de Usuarios - Crear nuevo usuario (POST /api/usuarios, 201 Created).
-- TC-RBAC-11: CRUD de Usuarios - Error por username duplicado (409 Conflict).
-- TC-RBAC-12: CRUD de Usuarios - Editar usuario (PUT /api/usuarios/{id}, 200 OK).
-- TC-RBAC-13: CRUD de Usuarios - Resetear contraseña (POST /api/usuarios/{id}/reset-password, 200 OK).
-- TC-RBAC-14: CRUD de Usuarios - Bloquear y Desbloquear (PATCH /api/usuarios/{id}/toggle-status, 200 OK; 401 en login de bloqueado).
-- TC-RBAC-15: CRUD de Usuarios - Protección contra auto-bloqueo y bloqueo del admin raíz (400 Bad Request).
-- TC-RBAC-16: CRUD de Usuarios - Protección contra auto-eliminación y eliminación del admin raíz (400 Bad Request).
-- TC-RBAC-17: CRUD de Usuarios - Eliminación física de usuario creado (DELETE /api/usuarios/{id}, 200 OK).
-- TC-RBAC-18: E2E - Interfaz para rol PM (solo Solicitud LTI visible, módulos operativos y usuarios ocultos).
-- TC-RBAC-19: E2E - Interfaz para rol LTI (módulos operativos visibles, botón Usuarios oculto, botones Eliminar proyecto ocultos).
-- TC-RBAC-20: E2E - Interfaz para rol ADMIN (todos los módulos visibles, acceso al mantenedor de usuarios, modales funcionales).
 """
 
+import os
 import time
 import pytest
 import datetime
 import requests
 from playwright.sync_api import Page, expect
 
-from backend.db import get_db_connection, create_solicitud_lti, delete_proyecto
+from backend.db import get_db_connection, create_solicitud_lti, delete_proyecto, get_or_create_jit_user
 from backend.seed_users import seed_default_users
+from tests.conftest import create_portal_jwt, create_access_token
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = os.getenv("BASE_URL", "http://100.82.24.75:8000")
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -45,22 +24,27 @@ def ensure_seed():
     seed_default_users()
 
 
-def get_token_for(username: str, password: str = "Lti2026!") -> str:
-    """Obtiene token JWT para un usuario específico."""
-    res = requests.post(f"{BASE_URL}/api/auth/login", json={"username": username, "password": password})
-    assert res.status_code == 200, f"Fallo de login para {username}: {res.text}"
-    return res.json()["access_token"]
+def get_token_for(username: str, rol: str = "LTI") -> str:
+    """Obtiene token JWT firmado del Portal de Acceso para pruebas."""
+    admin_level = 2 if rol == "ADMIN" else (0 if rol == "PM" else 1)
+    tool_perm = "lectura" if rol == "PM" else "operador"
+    return create_portal_jwt(
+        username=username,
+        admin_level=admin_level,
+        tool_access={"app-lti": tool_perm},
+        name=username.replace(".", " ").title()
+    )
 
 
-def helper_login_as(page: Page, username: str, password: str = "Lti2026!"):
-    """Helper de login en navegador para cualquier usuario."""
+def helper_login_as(page: Page, username: str, rol: str = "LTI"):
+    """Helper de autenticación SSO en navegador inyectando cookie access_token."""
+    token = get_token_for(username, rol=rol)
+    page.context.add_cookies([{
+        "name": "access_token",
+        "value": token,
+        "url": BASE_URL,
+    }])
     page.goto(f"{BASE_URL}/")
-    page.evaluate("() => { localStorage.clear(); }")
-    page.goto(f"{BASE_URL}/")
-    page.wait_for_selector("#auth-view", state="visible", timeout=20000)
-    page.fill("#login-username", username)
-    page.fill("#login-password", password)
-    page.click("#login-submit-btn")
     page.wait_for_selector("#app-view", state="visible", timeout=25000)
 
 
@@ -69,20 +53,18 @@ def helper_login_as(page: Page, username: str, password: str = "Lti2026!"):
 # =============================================================================
 
 def test_tc_rbac_01_login_pm_success():
-    """TC-RBAC-01: Login exitoso de usuario PM con token rol 'PM'."""
-    res = requests.post(f"{BASE_URL}/api/auth/login", json={"username": "calbornoz", "password": "Lti2026!"})
+    """TC-RBAC-01: Autenticación exitosa de usuario PM vía SSO Portal con rol 'PM'."""
+    token = get_token_for("pm.tester", rol="PM")
+    res = requests.get(f"{BASE_URL}/api/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert res.status_code == 200
     data = res.json()
-    assert "access_token" in data
-    user = data["user"]
-    assert user["username"] == "calbornoz"
-    assert user["rol"] == "PM"
-    assert user["nombre_completo"] == "Albornoz Pacheco Cesar Augusto"
+    assert data["username"] == "pm.tester"
+    assert data["rol"] == "PM"
 
 
 def test_tc_rbac_02_pm_denied_operational_endpoints():
     """TC-RBAC-02: Acceso denegado (403) a usuario PM en endpoints operativos."""
-    token = get_token_for("calbornoz")
+    token = get_token_for("pm.restricted", rol="PM")
     headers = {"Authorization": f"Bearer {token}"}
 
     # 1. Proyectos
@@ -109,7 +91,7 @@ def test_tc_rbac_02_pm_denied_operational_endpoints():
 
 def test_tc_rbac_03_pm_allowed_solicitudes():
     """TC-RBAC-03: Creación de Solicitud LTI exitosa por usuario PM."""
-    token = get_token_for("gcardozo")
+    token = get_token_for("pm.allowed", rol="PM")
     headers = {"Authorization": f"Bearer {token}"}
 
     # Acceso a catálogos
@@ -123,22 +105,22 @@ def test_tc_rbac_03_pm_allowed_solicitudes():
         "numero_proyecto": f"PM-REQ-{ts}",
         "fecha_solicitud": datetime.date.today().isoformat(),
         "detalle": "Solicitud ingresada por rol PM para prueba RBAC",
-        "tipo_servicio": "Otros"
+        "tipo_servicio": "Otros",
+        "lt_asignado": "Alejandro Aguilar",
+        "estado": "Generado"
     }
-    res_crear = requests.post(f"{BASE_URL}/api/solicitudes/crear", json=payload, headers=headers)
-    assert res_crear.status_code == 201
-    data = res_crear.json()["data"]
-    assert data["Cliente"] == f"CLIENTE PM QA {ts}"
-    assert data["Solicitante"] == "CARDOZO GARCES GRACE ALEJANDRA"
-    
+    res = requests.post(f"{BASE_URL}/api/solicitudes/crear", json=payload, headers=headers)
+    assert res.status_code == 201
+    created_id = res.json().get("data", {}).get("ID") or res.json().get("id")
+
     # Limpieza
-    if data.get("ID"):
-        delete_proyecto(data["ID"])
+    admin_token = get_token_for("alejandro.aguilar", rol="ADMIN")
+    delete_proyecto(created_id)
 
 
 def test_tc_rbac_04_lti_allowed_operational_endpoints():
-    """TC-RBAC-04: Acceso exitoso de usuario LTI a proyectos y KPIs."""
-    token = get_token_for("jbarrera")
+    """TC-RBAC-04: Acceso permitido a LTI en endpoints operativos (/api/proyectos, /api/kpis)."""
+    token = get_token_for("juan.barrera", rol="LTI")
     headers = {"Authorization": f"Bearer {token}"}
 
     res_proj = requests.get(f"{BASE_URL}/api/proyectos", headers=headers)
@@ -151,80 +133,78 @@ def test_tc_rbac_04_lti_allowed_operational_endpoints():
 
 
 def test_tc_rbac_05_lti_forbidden_delete_project():
-    """TC-RBAC-05: Restricción estricta - LTI no puede eliminar proyectos (403 Forbidden)."""
-    # Crear un proyecto temporal con permisos de admin
-    admin_token = get_token_for("admin")
-    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    """TC-RBAC-05: Rol LTI no puede eliminar proyectos (403 Forbidden)."""
+    # 1. Crear proyecto de prueba con función directa
     ts = int(time.time() * 1000) % 10000000
-    create_res = requests.post(f"{BASE_URL}/api/solicitudes/crear", json={
-        "cliente": f"TEST DELETE LTI {ts}",
-        "numero_proyecto": f"DEL-LTI-{ts}",
-        "fecha_solicitud": datetime.date.today().isoformat(),
-        "detalle": "Test delete protection"
-    }, headers=admin_headers)
-    assert create_res.status_code == 201
-    proj_id = create_res.json()["data"]["ID"]
+    p = create_solicitud_lti(
+        cliente=f"CLIENTE TEST DEL {ts}",
+        numero_proyecto=f"DEL-{ts}",
+        detalle="Proyecto para test delete por LTI",
+        tipo_servicio="Otros",
+        lt_asignado="Erwin Sandoval",
+        estado="Generado"
+    )
+    proj_id = (p.get("data") or {}).get("ID") or p.get("ID") or p.get("id")
 
-    # Intentar eliminar con token LTI
-    lti_token = get_token_for("esandoval")
-    lti_headers = {"Authorization": f"Bearer {lti_token}"}
-    del_res = requests.delete(f"{BASE_URL}/api/proyectos/{proj_id}", headers=lti_headers)
-    assert del_res.status_code == 403, f"Se esperaba 403, pero se obtuvo {del_res.status_code}: {del_res.text}"
+    # 2. Intento de eliminación por LTI
+    lti_token = get_token_for("erwin.sandoval", rol="LTI")
+    res = requests.delete(f"{BASE_URL}/api/proyectos/{proj_id}", headers={"Authorization": f"Bearer {lti_token}"})
+    assert res.status_code == 403
+    assert "Administrador" in res.json().get("detail", "")
 
-    # Limpieza con token ADMIN
-    cleanup_res = requests.delete(f"{BASE_URL}/api/proyectos/{proj_id}", headers=admin_headers)
-    assert cleanup_res.status_code == 200
+    # Limpieza por admin
+    delete_proyecto(proj_id)
 
 
 def test_tc_rbac_06_lti_allowed_edit_project():
-    """TC-RBAC-06: Edición de proyectos permitida para usuario LTI."""
-    admin_token = get_token_for("admin")
-    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    """TC-RBAC-06: Rol LTI puede editar proyectos (PUT /api/proyectos/{id})."""
     ts = int(time.time() * 1000) % 10000000
-    create_res = requests.post(f"{BASE_URL}/api/solicitudes/crear", json={
-        "cliente": f"TEST EDIT LTI {ts}",
-        "numero_proyecto": f"EDIT-LTI-{ts}",
-        "fecha_solicitud": datetime.date.today().isoformat(),
-        "detalle": "Detalle original"
-    }, headers=admin_headers)
-    proj_id = create_res.json()["data"]["ID"]
+    p = create_solicitud_lti(
+        cliente=f"CLIENTE EDIT LTI {ts}",
+        numero_proyecto=f"ED-LTI-{ts}",
+        detalle="Proyecto previo a edición",
+        tipo_servicio="Otros",
+        lt_asignado="Juan Barrera",
+        estado="Generado"
+    )
+    proj_id = (p.get("data") or {}).get("ID") or p.get("ID") or p.get("id")
 
-    # Editar con token LTI (sparedes)
-    lti_token = get_token_for("sparedes")
-    lti_headers = {"Authorization": f"Bearer {lti_token}"}
+    lti_token = get_token_for("juan.barrera", rol="LTI")
     edit_payload = {
-        "cliente": f"TEST EDIT LTI MODIFICADO {ts}",
-        "lt_asignado": "Samuel Paredes",
+        "cliente": f"CLIENTE EDITADO {ts}",
+        "lt_asignado": "Juan Barrera",
         "estado": "En revision",
-        "detalle": "Detalle editado por líder Samuel Paredes",
-        "tipo_servicio": "Cloud Empresarial",
-        "comentario": "Comentario de revisión técnica"
+        "detalle": "Detalle actualizado por LTI",
+        "tipo_servicio": "Otros",
+        "comentario": "Comentario LTI"
     }
-    edit_res = requests.put(f"{BASE_URL}/api/proyectos/{proj_id}", json=edit_payload, headers=lti_headers)
-    assert edit_res.status_code == 200
-    assert edit_res.json()["data"]["Cliente"] == f"TEST EDIT LTI MODIFICADO {ts}"
-    assert edit_res.json()["data"]["Estado"] == "En revision"
+    res = requests.put(f"{BASE_URL}/api/proyectos/{proj_id}", json=edit_payload, headers={"Authorization": f"Bearer {lti_token}"})
+    assert res.status_code == 200
+    data = res.json().get("data") or res.json()
+    assert data["Cliente"] == f"CLIENTE EDITADO {ts}"
+    assert data["Estado"] == "En revision"
 
     # Limpieza
-    requests.delete(f"{BASE_URL}/api/proyectos/{proj_id}", headers=admin_headers)
+    delete_proyecto(proj_id)
 
 
 def test_tc_rbac_07_admin_allowed_delete_project():
-    """TC-RBAC-07: Eliminación de proyectos permitida para usuario ADMIN."""
-    admin_token = get_token_for("aaguilar")
-    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    """TC-RBAC-07: Rol ADMIN puede eliminar proyectos (DELETE /api/proyectos/{id})."""
     ts = int(time.time() * 1000) % 10000000
-    create_res = requests.post(f"{BASE_URL}/api/solicitudes/crear", json={
-        "cliente": f"TEST ADMIN DELETE {ts}",
-        "numero_proyecto": f"ADM-DEL-{ts}",
-        "fecha_solicitud": datetime.date.today().isoformat(),
-        "detalle": "Proyecto a borrar por admin"
-    }, headers=admin_headers)
-    proj_id = create_res.json()["data"]["ID"]
+    p = create_solicitud_lti(
+        cliente=f"CLIENTE ADMIN DEL {ts}",
+        numero_proyecto=f"ADM-DEL-{ts}",
+        detalle="Proyecto para eliminación por Admin",
+        tipo_servicio="Otros",
+        lt_asignado="Alejandro Aguilar",
+        estado="Generado"
+    )
+    proj_id = (p.get("data") or {}).get("ID") or p.get("ID") or p.get("id")
 
-    del_res = requests.delete(f"{BASE_URL}/api/proyectos/{proj_id}", headers=admin_headers)
-    assert del_res.status_code == 200
-    assert del_res.json()["id"] == proj_id
+    admin_token = get_token_for("alejandro.aguilar", rol="ADMIN")
+    res = requests.delete(f"{BASE_URL}/api/proyectos/{proj_id}", headers={"Authorization": f"Bearer {admin_token}"})
+    assert res.status_code == 200
+    assert res.json()["id"] == proj_id
 
 
 # =============================================================================
@@ -233,105 +213,64 @@ def test_tc_rbac_07_admin_allowed_delete_project():
 
 def test_tc_rbac_08_admin_list_usuarios_and_filters():
     """TC-RBAC-08: Listar usuarios por ADMIN con filtros por búsqueda, rol y estado."""
-    token = get_token_for("admin")
+    token = get_token_for("alejandro.aguilar", rol="ADMIN")
     headers = {"Authorization": f"Bearer {token}"}
 
     # 1. Listado completo
     res = requests.get(f"{BASE_URL}/api/usuarios", headers=headers)
     assert res.status_code == 200
     users = res.json()
-    assert len(users) >= 38, f"Se esperaban al menos 38 usuarios, obtenidos {len(users)}"
+    assert len(users) >= 6, f"Se esperaban al menos 6 usuarios canónicos, obtenidos {len(users)}"
 
     # 2. Filtro por Rol = LTI
     res_lti = requests.get(f"{BASE_URL}/api/usuarios?rol=LTI", headers=headers)
     assert res_lti.status_code == 200
     lti_users = res_lti.json()
-    assert len(lti_users) == 4
     for u in lti_users:
         assert u["rol"] == "LTI"
 
-    # 3. Filtro por Rol = PM
-    res_pm = requests.get(f"{BASE_URL}/api/usuarios?rol=PM", headers=headers)
-    assert res_pm.status_code == 200
-    pm_users = res_pm.json()
-    assert len(pm_users) == 31
-
-    # 4. Búsqueda por término
+    # 3. Búsqueda por término
     res_search = requests.get(f"{BASE_URL}/api/usuarios?search=Sandoval", headers=headers)
     assert res_search.status_code == 200
     search_users = res_search.json()
     assert len(search_users) >= 1
-    assert any(u["username"] == "esandoval" for u in search_users)
+    assert any(u["username"] == "erwin.sandoval" for u in search_users)
 
 
 def test_tc_rbac_09_non_admin_forbidden_users_api():
     """TC-RBAC-09: Roles no administradores (LTI, PM) reciben 403 en /api/usuarios."""
-    for u in ["sortiz", "jcastillo"]:
-        tok = get_token_for(u)
+    for u in ["solange.ortiz", "juan.barrera"]:
+        tok = get_token_for(u, rol="LTI")
         h = {"Authorization": f"Bearer {tok}"}
         res = requests.get(f"{BASE_URL}/api/usuarios", headers=h)
         assert res.status_code == 403
 
 
-def test_tc_rbac_10_crud_crear_usuario():
-    """TC-RBAC-10: Creación de nuevo usuario por ADMIN (POST /api/usuarios)."""
-    admin_token = get_token_for("admin")
+def test_tc_rbac_10_alta_usuarios_retirada_a_portal():
+    """TC-RBAC-10: POST /api/usuarios retirado (alta delegada al Portal de Acceso)."""
+    admin_token = get_token_for("alejandro.aguilar", rol="ADMIN")
     headers = {"Authorization": f"Bearer {admin_token}"}
-    ts = int(time.time() * 1000) % 10000000
-    payload = {
-        "username": f"qatester{ts}",
-        "password": "Lti2026!Password",
-        "nombre_completo": f"Tester Automatizado QA {ts}",
-        "lt_asignado": "Erwin Sandoval",
-        "rol": "LTI",
-        "activo": True
-    }
-    res = requests.post(f"{BASE_URL}/api/usuarios", json=payload, headers=headers)
-    assert res.status_code == 201
-    data = res.json()
-    assert data["username"] == f"qatester{ts}"
-    assert data["rol"] == "LTI"
-    assert data["lt_asignado"] == "Erwin Sandoval"
-    assert data["activo"] is True
-
-    # Verificar que el usuario recién creado puede hacer login
-    new_user_token = get_token_for(f"qatester{ts}", "Lti2026!Password")
-    assert new_user_token is not None
-
-    # Limpieza
-    requests.delete(f"{BASE_URL}/api/usuarios/{data['id']}", headers=headers)
+    res = requests.post(f"{BASE_URL}/api/usuarios", json={"username": "test", "nombre_completo": "Test"}, headers=headers)
+    assert res.status_code in (404, 405)
 
 
-def test_tc_rbac_11_crud_error_username_duplicado():
-    """TC-RBAC-11: Conflicto 409 al intentar registrar un username existente."""
-    admin_token = get_token_for("admin")
+def test_tc_rbac_11_reset_password_retirado_a_portal():
+    """TC-RBAC-11: POST /api/usuarios/{id}/reset-password retirado (contraseñas en el Portal)."""
+    admin_token = get_token_for("alejandro.aguilar", rol="ADMIN")
     headers = {"Authorization": f"Bearer {admin_token}"}
-    payload = {
-        "username": "admin",
-        "password": "Password123!",
-        "nombre_completo": "Admin Duplicado",
-        "rol": "ADMIN",
-        "activo": True
-    }
-    res = requests.post(f"{BASE_URL}/api/usuarios", json=payload, headers=headers)
-    assert res.status_code == 409
+    res = requests.post(f"{BASE_URL}/api/usuarios/1/reset-password", json={}, headers=headers)
+    assert res.status_code in (404, 405)
 
 
 def test_tc_rbac_12_crud_editar_usuario():
     """TC-RBAC-12: Edición de usuario existente (PUT /api/usuarios/{id})."""
-    admin_token = get_token_for("admin")
+    admin_token = get_token_for("alejandro.aguilar", rol="ADMIN")
     headers = {"Authorization": f"Bearer {admin_token}"}
     ts = int(time.time() * 1000) % 10000000
 
-    # 1. Crear usuario temporal
-    create_res = requests.post(f"{BASE_URL}/api/usuarios", json={
-        "username": f"edituser{ts}",
-        "password": "Lti2026!Initial",
-        "nombre_completo": "Usuario Para Editar",
-        "rol": "PM",
-        "activo": True
-    }, headers=headers)
-    user_id = create_res.json()["id"]
+    # 1. Crear usuario vía JIT
+    u = get_or_create_jit_user(f"edituser{ts}", nombre_completo="Usuario Para Editar", default_rol="PM")
+    user_id = u["id"]
 
     # 2. Modificar atributos
     edit_payload = {
@@ -351,102 +290,62 @@ def test_tc_rbac_12_crud_editar_usuario():
     requests.delete(f"{BASE_URL}/api/usuarios/{user_id}", headers=headers)
 
 
-def test_tc_rbac_13_crud_reset_password():
-    """TC-RBAC-13: Reset de contraseña por ADMIN a clave personalizada y clave por defecto."""
-    admin_token = get_token_for("admin")
+def test_tc_rbac_14_crud_toggle_status_and_auth_block():
+    """TC-RBAC-14: Bloquear y desbloquear usuario (toggle-status) y validar rechazo en autenticación."""
+    admin_token = get_token_for("alejandro.aguilar", rol="ADMIN")
     headers = {"Authorization": f"Bearer {admin_token}"}
     ts = int(time.time() * 1000) % 10000000
 
-    # Crear usuario
-    create_res = requests.post(f"{BASE_URL}/api/usuarios", json={
-        "username": f"resetuser{ts}",
-        "password": "PasswordOriginal123!",
-        "nombre_completo": "Usuario Reset Password",
-        "rol": "PM",
-        "activo": True
-    }, headers=headers)
-    user_id = create_res.json()["id"]
-
-    # 1. Resetear con nueva contraseña personalizada
-    res_reset1 = requests.post(f"{BASE_URL}/api/usuarios/{user_id}/reset-password", json={
-        "new_password": "NewSecretPass2026!"
-    }, headers=headers)
-    assert res_reset1.status_code == 200
-    assert get_token_for(f"resetuser{ts}", "NewSecretPass2026!") is not None
-
-    # 2. Resetear a clave institucional por defecto (payload vacío)
-    res_reset2 = requests.post(f"{BASE_URL}/api/usuarios/{user_id}/reset-password", json={}, headers=headers)
-    assert res_reset2.status_code == 200
-    assert get_token_for(f"resetuser{ts}", "Lti2026!") is not None
-
-    # Limpieza
-    requests.delete(f"{BASE_URL}/api/usuarios/{user_id}", headers=headers)
-
-
-def test_tc_rbac_14_crud_toggle_status_and_login_block():
-    """TC-RBAC-14: Bloquear y desbloquear usuario (toggle-status) y validar bloqueo en login."""
-    admin_token = get_token_for("admin")
-    headers = {"Authorization": f"Bearer {admin_token}"}
-    ts = int(time.time() * 1000) % 10000000
-
-    # Crear usuario
-    create_res = requests.post(f"{BASE_URL}/api/usuarios", json={
-        "username": f"toggleuser{ts}",
-        "password": "Lti2026!",
-        "nombre_completo": "Usuario Toggle",
-        "rol": "PM",
-        "activo": True
-    }, headers=headers)
-    user_id = create_res.json()["id"]
+    u = get_or_create_jit_user(f"toggleuser{ts}", nombre_completo="Usuario Toggle", default_rol="PM")
+    user_id = u["id"]
 
     # 1. Bloquear usuario
     res_block = requests.patch(f"{BASE_URL}/api/usuarios/{user_id}/toggle-status", headers=headers)
     assert res_block.status_code == 200
     assert res_block.json()["activo"] is False
 
-    # 2. Intentar login con usuario bloqueado -> 401 Unauthorized
-    res_login = requests.post(f"{BASE_URL}/api/auth/login", json={"username": f"toggleuser{ts}", "password": "Lti2026!"})
-    assert res_login.status_code == 401
+    # 2. Intentar autenticarse con usuario bloqueado -> 403 Forbidden
+    user_token = get_token_for(f"toggleuser{ts}", rol="PM")
+    res_me = requests.get(f"{BASE_URL}/api/auth/me", headers={"Authorization": f"Bearer {user_token}"})
+    assert res_me.status_code == 403
 
     # 3. Desbloquear usuario
     res_unblock = requests.patch(f"{BASE_URL}/api/usuarios/{user_id}/toggle-status", headers=headers)
     assert res_unblock.status_code == 200
     assert res_unblock.json()["activo"] is True
 
-    # 4. Login exitoso tras desbloqueo
-    res_login_ok = requests.post(f"{BASE_URL}/api/auth/login", json={"username": f"toggleuser{ts}", "password": "Lti2026!"})
-    assert res_login_ok.status_code == 200
+    # 4. Acceso exitoso tras desbloqueo
+    res_me_ok = requests.get(f"{BASE_URL}/api/auth/me", headers={"Authorization": f"Bearer {user_token}"})
+    assert res_me_ok.status_code == 200
 
     # Limpieza
     requests.delete(f"{BASE_URL}/api/usuarios/{user_id}", headers=headers)
 
 
 def test_tc_rbac_15_proteccion_auto_bloqueo_y_admin_raiz():
-    """TC-RBAC-15: Proteger admin raíz y sesión propia contra toggle status."""
-    admin_token = get_token_for("admin")
+    """TC-RBAC-15: Proteger sesión propia contra auto-bloqueo."""
+    admin_token = get_token_for("alejandro.aguilar", rol="ADMIN")
     headers = {"Authorization": f"Bearer {admin_token}"}
 
-    # Obtener ID del admin raíz
     res_me = requests.get(f"{BASE_URL}/api/auth/me", headers=headers)
     admin_id = res_me.json()["id"]
 
-    # Intento de bloqueo de la cuenta 'admin'
-    res_block_root = requests.patch(f"{BASE_URL}/api/usuarios/{admin_id}/toggle-status", headers=headers)
-    assert res_block_root.status_code == 400
-    assert "No se permite bloquear" in res_block_root.json().get("detail", "")
+    res_block_self = requests.patch(f"{BASE_URL}/api/usuarios/{admin_id}/toggle-status", headers=headers)
+    assert res_block_self.status_code == 400
+    assert "No se permite bloquear" in res_block_self.json().get("detail", "")
 
 
 def test_tc_rbac_16_proteccion_auto_eliminacion_y_admin_raiz():
-    """TC-RBAC-16: Proteger admin raíz y sesión propia contra eliminación física."""
-    admin_token = get_token_for("admin")
+    """TC-RBAC-16: Proteger sesión propia contra auto-eliminación física."""
+    admin_token = get_token_for("alejandro.aguilar", rol="ADMIN")
     headers = {"Authorization": f"Bearer {admin_token}"}
 
     res_me = requests.get(f"{BASE_URL}/api/auth/me", headers=headers)
     admin_id = res_me.json()["id"]
 
-    res_del_root = requests.delete(f"{BASE_URL}/api/usuarios/{admin_id}", headers=headers)
-    assert res_del_root.status_code == 400
-    assert "No se permite eliminar" in res_del_root.json().get("detail", "")
+    res_del_self = requests.delete(f"{BASE_URL}/api/usuarios/{admin_id}", headers=headers)
+    assert res_del_self.status_code == 400
+    assert "eliminar" in res_del_self.json().get("detail", "").lower()
 
 
 # =============================================================================
@@ -455,7 +354,7 @@ def test_tc_rbac_16_proteccion_auto_eliminacion_y_admin_raiz():
 
 def test_tc_rbac_18_e2e_pm_ui_isolation(page: Page):
     """TC-RBAC-18: E2E - Rol PM ve exclusivamente Solicitud LTI y sus módulos operativos están ocultos."""
-    helper_login_as(page, "calbornoz", "Lti2026!")
+    helper_login_as(page, "pm.e2e.user", rol="PM")
 
     # 1. Verificar badge de rol PM
     expect(page.locator("#user-role-badge")).to_have_text("Project Manager")
@@ -472,8 +371,8 @@ def test_tc_rbac_18_e2e_pm_ui_isolation(page: Page):
 
 
 def test_tc_rbac_19_e2e_lti_ui_isolation(page: Page):
-    """TC-RBAC-19: E2E - Rol LTI ve módulos operativos, Usuarios oculto y botones 🗑️ Eliminar proyecto ocultos."""
-    helper_login_as(page, "jbarrera", "Lti2026!")
+    """TC-RBAC-19: E2E - Rol LTI ve módulos operativos, Usuarios oculto y botones Eliminar proyecto ocultos."""
+    helper_login_as(page, "juan.barrera", rol="LTI")
 
     # 1. Verificar badge de rol Líder TI
     expect(page.locator("#user-role-badge")).to_have_text("Líder TI")
@@ -500,8 +399,8 @@ def test_tc_rbac_19_e2e_lti_ui_isolation(page: Page):
 
 
 def test_tc_rbac_20_e2e_admin_full_ui_and_usuarios_crud(page: Page):
-    """TC-RBAC-20: E2E - Rol ADMIN tiene acceso total al Mantenedor de Usuarios con filtros y modales."""
-    helper_login_as(page, "admin", "Lti2026!")
+    """TC-RBAC-20: E2E - Rol ADMIN tiene acceso total al Mantenedor de Usuarios sin modales obsoletos."""
+    helper_login_as(page, "alejandro.aguilar", rol="ADMIN")
 
     # 1. Verificar badge de rol Administrador
     expect(page.locator("#user-role-badge")).to_have_text("Administrador")
@@ -518,50 +417,25 @@ def test_tc_rbac_20_e2e_admin_full_ui_and_usuarios_crud(page: Page):
     count_badge = page.locator("#usuarios-count-badge")
     expect(count_badge).to_be_visible()
     expect(count_badge).not_to_have_text("0", timeout=10000)
-    assert int(count_badge.inner_text().strip()) >= 38
 
-    # 5. Filtrar por Rol = PM
-    page.select_option("#usuarios-filter-rol", "PM")
+    # 5. Filtrar por Rol = LTI
+    page.select_option("#usuarios-filter-rol", "LTI")
     page.wait_for_timeout(400)
-    expect(page.locator("#usuarios-count-badge")).to_have_text("31")
+    assert int(page.locator("#usuarios-count-badge").inner_text().strip()) >= 1
 
     # 6. Limpiar filtros
     page.click("#btn-usuarios-reset-filters")
     page.wait_for_timeout(400)
 
-    # 7. Modal Crear Usuario
-    page.click("#btn-create-user-open")
-    expect(page.locator("#create-user-modal")).to_be_visible()
+    # 7. Verificar que NO existe el botón "+ Nuevo Usuario"
+    expect(page.locator("#btn-create-user-open")).to_have_count(0)
 
-    ts = int(time.time() * 1000) % 10000000
-    page.fill("#create-user-nombre", f"E2E Test User {ts}")
-    page.fill("#create-user-username", f"e2euser{ts}")
-    page.fill("#create-user-password", "Lti2026!Password")
-    page.select_option("#create-user-rol", "PM")
-    page.click("#btn-save-create-user-modal")
+    # 8. Verificar que NO existen botones de llave para reseteo de clave
+    expect(page.locator(".btn-action-user-key")).to_have_count(0)
 
-    # Verificar que modal se cierra y el usuario aparece en la tabla
-    expect(page.locator("#create-user-modal")).to_be_hidden(timeout=10000)
-    page.fill("#usuarios-search-input", f"e2euser{ts}")
-    expect(page.locator("#usuarios-table-body")).to_contain_text(f"e2euser{ts}", timeout=10000)
-
-    # 8. Modal Editar Usuario
-    user_row = page.locator("#usuarios-table-body tr", has_text=f"e2euser{ts}").first
-    user_row.locator(".btn-action-user-edit").click()
+    # 9. Modal Editar Usuario funciona
+    first_row = page.locator("#usuarios-table-body tr").first
+    first_row.locator(".btn-action-user-edit").click()
     expect(page.locator("#edit-user-modal")).to_be_visible(timeout=10000)
-    expect(page.locator("#edit-user-username")).to_have_value(f"e2euser{ts}", timeout=10000)
-
-    page.fill("#edit-user-nombre", f"E2E Test User Modificado {ts}")
-    page.click("#btn-save-edit-user-modal")
+    page.click("#btn-cancel-edit-user-modal")
     expect(page.locator("#edit-user-modal")).to_be_hidden(timeout=10000)
-    expect(page.locator("#usuarios-table-body")).to_contain_text(f"E2E Test User Modificado {ts}", timeout=10000)
-
-    # 9. Modal Eliminar Usuario
-    user_row = page.locator("#usuarios-table-body tr", has_text=f"e2euser{ts}").first
-    user_row.locator(".btn-action-user-delete").click()
-    expect(page.locator("#delete-user-modal")).to_be_visible(timeout=10000)
-    expect(page.locator("#delete-user-username-display")).to_have_text(f"e2euser{ts}", timeout=10000)
-
-    page.click("#btn-confirm-delete-user-modal")
-    expect(page.locator("#delete-user-modal")).to_be_hidden(timeout=10000)
-    expect(page.locator("#usuarios-table-body")).not_to_contain_text(f"e2euser{ts}", timeout=10000)

@@ -10,11 +10,8 @@ from pydantic import BaseModel
 
 logger = logging.getLogger("main")
 
-from .config import BASE_DIR
+from .config import BASE_DIR, CORS_ORIGINS
 from .auth import (
-    hash_password,
-    verify_password,
-    create_access_token,
     get_current_user,
     require_admin,
     require_lti_or_admin,
@@ -25,9 +22,7 @@ from .db import (
     get_usuario_by_username,
     get_all_usuarios,
     get_usuario_by_id,
-    create_usuario,
     update_usuario,
-    reset_user_password,
     toggle_user_status,
     delete_usuario,
     get_lideres_list,
@@ -63,26 +58,26 @@ async def lifespan(app: FastAPI):
         print(f"[ERROR] Error al inicializar tablas y usuarios: {e}")
     yield
 
-app = FastAPI(title="App LTI - Seguimiento Líderes TI", version="1.4.0", lifespan=lifespan)
+app = FastAPI(title="App LTI - Seguimiento Líderes TI", version="2.0.0", lifespan=lifespan)
 
-# Enable CORS for development
+# Enable CORS with credentials for SSO Portal de Acceso and local environments
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+@app.middleware("http")
+async def add_no_cache_headers(request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+    return response
+
 # Schemas
-class LoginRequest(BaseModel):
-    username: str
-    password: str
-
-class ChangePasswordRequest(BaseModel):
-    current_password: str
-    new_password: str
-
 class TicketCreationRequest(BaseModel):
     contacto: str = "ALEJANDRO JAVIER AGUILAR MORALES"
     titulo: str
@@ -113,86 +108,25 @@ class ProyectoUpdateRequest(BaseModel):
     tipo_servicio: Optional[str] = "Otros"
     comentario: Optional[str] = None
 
-class UserCreateRequest(BaseModel):
-    username: str
-    password: str
-    nombre_completo: str
-    lt_asignado: Optional[str] = None
-    rol: str = "PM"
-    activo: Optional[bool] = True
-
 class UserUpdateRequest(BaseModel):
     nombre_completo: str
     lt_asignado: Optional[str] = None
     rol: str
     activo: bool = True
 
-class UserResetPasswordRequest(BaseModel):
-    new_password: Optional[str] = None
 
-
-# Auth Endpoints
-@app.post("/api/auth/login")
-def login(req: LoginRequest):
-    user = get_user_by_username(req.username.strip())
-    if not user or not verify_password(req.password, user["password_hash"]):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Usuario o contraseña incorrectos"
-        )
-    
-    token_data = {
-        "sub": user["username"],
-        "nombre_completo": user["nombre_completo"],
-        "lt_asignado": user["lt_asignado"],
-        "rol": user["rol"]
-    }
-    token = create_access_token(token_data)
-    
-    return {
-        "access_token": token,
-        "token_type": "bearer",
-        "user": {
-            "id": user["id"],
-            "username": user["username"],
-            "nombre_completo": user["nombre_completo"],
-            "lt_asignado": user["lt_asignado"],
-            "rol": user["rol"]
-        }
-    }
-
+# Auth Endpoints (SSO Portal de Acceso)
 @app.get("/api/auth/me")
 def get_me(current_user: dict = Depends(get_current_user)):
     return {
         "id": current_user["id"],
         "username": current_user["username"],
         "nombre_completo": current_user["nombre_completo"],
-        "lt_asignado": current_user["lt_asignado"],
-        "rol": current_user["rol"]
+        "lt_asignado": current_user.get("lt_asignado"),
+        "rol": current_user["rol"],
+        "is_super_admin": current_user.get("is_super_admin", False),
+        "portal_access": current_user.get("portal_access", "lectura")
     }
-
-@app.post("/api/auth/change-password")
-def change_password(req: ChangePasswordRequest, current_user: dict = Depends(get_current_user)):
-    user = get_user_by_username(current_user["username"])
-    if not user or not verify_password(req.current_password, user["password_hash"]):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="La contraseña actual es incorrecta"
-        )
-    
-    new_hash = hash_password(req.new_password)
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute(
-                "UPDATE dbo.App_Usuarios SET password_hash = %s WHERE id = %s",
-                (new_hash, current_user["id"])
-            )
-            conn.commit()
-    finally:
-        conn.close()
-        
-    return {"message": "Contraseña actualizada exitosamente"}
 
 # Business Endpoints
 @app.get("/api/lideres")
@@ -418,57 +352,6 @@ def get_usuario(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
     return user
 
-@app.post("/api/usuarios", status_code=status.HTTP_201_CREATED)
-def crear_nuevo_usuario(
-    req: UserCreateRequest,
-    current_user: dict = Depends(require_admin)
-):
-    import re
-    username = (req.username or "").strip().lower()
-    nombre_completo = (req.nombre_completo or "").strip()
-    password = req.password or ""
-    rol = (req.rol or "PM").strip().upper()
-    lt_asignado = (req.lt_asignado or "").strip() or None
-    activo = bool(req.activo) if req.activo is not None else True
-
-    if not username or not nombre_completo or not password:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Los campos 'username', 'nombre_completo' y 'password' son obligatorios"
-        )
-    if len(password) < 6:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="La contraseña debe tener al menos 6 caracteres"
-        )
-    if rol not in ("PM", "LTI", "ADMIN"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El rol debe ser PM, LTI o ADMIN"
-        )
-
-    if not re.match(r'^[a-z0-9_.-]+$', username):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El username solo puede contener letras minúsculas, números, puntos y guiones"
-        )
-
-    pwd_hash = hash_password(password)
-    result = create_usuario(
-        username=username,
-        password_hash=pwd_hash,
-        nombre_completo=nombre_completo,
-        lt_asignado=lt_asignado,
-        rol=rol,
-        activo=activo
-    )
-    if not result.get("success"):
-        if result.get("error") == "conflict":
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=result.get("message"))
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.get("message", "Error al crear usuario"))
-
-    return result.get("data")
-
 @app.put("/api/usuarios/{user_id}")
 def actualizar_usuario_endpoint(
     user_id: int,
@@ -504,31 +387,6 @@ def actualizar_usuario_endpoint(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.get("message", "Error al actualizar usuario"))
 
     return result.get("data")
-
-@app.post("/api/usuarios/{user_id}/reset-password")
-def reset_password_endpoint(
-    user_id: int,
-    req: Optional[UserResetPasswordRequest] = None,
-    current_user: dict = Depends(require_admin)
-):
-    new_pass = (req.new_password.strip() if req and req.new_password and req.new_password.strip() else "Lti2026!")
-    if len(new_pass) < 6:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="La contraseña debe tener al menos 6 caracteres"
-        )
-    new_hash = hash_password(new_pass)
-    result = reset_user_password(user_id, new_hash)
-    if not result.get("success"):
-        if result.get("error") == "not_found":
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.get("message", "Error al resetear contraseña"))
-
-    return {
-        "message": "Contraseña restablecida exitosamente",
-        "id": user_id,
-        "default_used": (new_pass == "Lti2026!")
-    }
 
 @app.patch("/api/usuarios/{user_id}/toggle-status")
 def toggle_status_endpoint(

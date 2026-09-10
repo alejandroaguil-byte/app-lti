@@ -10,7 +10,7 @@ from backend.db import (
 )
 from backend.main import app
 from fastapi.testclient import TestClient
-from backend.auth import create_access_token
+from tests.conftest import create_access_token
 
 client = TestClient(app)
 

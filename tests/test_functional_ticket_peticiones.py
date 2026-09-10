@@ -28,7 +28,7 @@ from backend.ticket_automation import (
     DEFAULT_SUBAREA,
     DEFAULT_DETALLE,
 )
-from backend.auth import create_access_token
+from tests.conftest import create_access_token
 
 
 @pytest.fixture
@@ -552,22 +552,20 @@ async def test_stream_ticket_creation_cleanup_on_cancellation():
 # ==============================================================================
 from playwright.sync_api import Page, expect
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = os.getenv("BASE_URL", "http://100.82.24.75:8000")
 
 
-def helper_login(page: Page, username: str = "aaguilar", password: str = "Lti2026!"):
-    """Helper para autenticar en el portal con credenciales válidas."""
+def helper_login(page: Page, username: str = "alejandro.aguilar", password: str = None):
+    """Helper para autenticar en el portal con credenciales SSO válidas."""
+    token = create_access_token({"sub": username, "rol": "ADMIN"})
+    page.context.add_cookies([{
+        "name": "access_token",
+        "value": token,
+        "url": BASE_URL,
+    }])
     page.goto(f"{BASE_URL}/")
-    page.wait_for_selector("#auth-view", state="attached")
-
-    if page.locator("#app-view").is_visible():
-        return
-
-    page.fill("#login-username", username)
-    page.fill("#login-password", password)
-    page.click("#login-submit-btn")
-    page.wait_for_selector("#app-view", state="visible", timeout=10000)
-    page.wait_for_selector("#nav-btn-tickets", state="visible", timeout=5000)
+    page.wait_for_selector("#app-view", state="visible", timeout=25000)
+    page.wait_for_selector("#nav-btn-tickets", state="visible", timeout=10000)
 
 
 def test_e2e_01_navigation_and_form_defaults(page: Page):

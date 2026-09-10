@@ -75,7 +75,7 @@ def serialize_rows(rows):
     return [serialize_row(r) for r in rows]
 
 def init_auth_tables():
-    """Ensures dbo.App_Usuarios table exists with updated_at column."""
+    """Ensures dbo.App_Usuarios table exists with updated_at column and nullable password_hash."""
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
@@ -85,7 +85,6 @@ def init_auth_tables():
                 CREATE TABLE dbo.App_Usuarios (
                     id INT IDENTITY(1,1) PRIMARY KEY,
                     username VARCHAR(100) NOT NULL UNIQUE,
-                    password_hash VARCHAR(255) NOT NULL,
                     nombre_completo VARCHAR(150) NOT NULL,
                     lt_asignado VARCHAR(150) NULL,
                     rol VARCHAR(50) NOT NULL DEFAULT 'PM',
@@ -100,6 +99,10 @@ def init_auth_tables():
                 BEGIN
                     ALTER TABLE dbo.App_Usuarios ADD updated_at DATETIME NOT NULL DEFAULT GETDATE();
                 END
+                IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'App_Usuarios' AND COLUMN_NAME = 'password_hash' AND IS_NULLABLE = 'NO')
+                BEGIN
+                    ALTER TABLE dbo.App_Usuarios ALTER COLUMN password_hash VARCHAR(255) NULL;
+                END
             END
             """)
             conn.commit()
@@ -108,10 +111,12 @@ def init_auth_tables():
 
 def get_user_by_username(username):
     """Obtiene usuario activo por username para autenticación."""
+    if not username:
+        return None
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT * FROM dbo.App_Usuarios WHERE username = %s AND activo = 1", (username,))
+            cursor.execute("SELECT * FROM dbo.App_Usuarios WHERE LOWER(username) = LOWER(%s) AND activo = 1", (username.strip(),))
             user = cursor.fetchone()
             return serialize_row(user)
     finally:
@@ -119,12 +124,80 @@ def get_user_by_username(username):
 
 def get_usuario_by_username(username):
     """Obtiene usuario por username sin filtrar por activo."""
+    if not username:
+        return None
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT * FROM dbo.App_Usuarios WHERE username = %s", (username,))
+            cursor.execute("SELECT * FROM dbo.App_Usuarios WHERE LOWER(username) = LOWER(%s)", (username.strip(),))
             user = cursor.fetchone()
             return serialize_row(user)
+    finally:
+        conn.close()
+
+def get_or_create_jit_user(
+    username: str,
+    nombre_completo: Optional[str] = None,
+    default_rol: str = "PM"
+) -> dict:
+    """Busca por LOWER(username) y si no existe lo inserta con activo=1 y rol=default_rol (JIT Provisioning)."""
+    if not username:
+        return None
+    uname = username.strip().lower()
+    full_name = (nombre_completo.strip() if nombre_completo and str(nombre_completo).strip() else uname.replace(".", " ").title())
+
+    canonical_lt = None
+    lideres_map = {
+        "alejandro.aguilar": "Alejandro Aguilar",
+        "aaguilar": "Alejandro Aguilar",
+        "erwin.sandoval": "Erwin Sandoval",
+        "esandoval": "Erwin Sandoval",
+        "juan.barrera": "Juan Barrera",
+        "jbarrera": "Juan Barrera",
+        "samuel.paredes": "Samuel Paredes",
+        "sparedes": "Samuel Paredes",
+        "solange.ortiz": "Solange Ortiz",
+        "sortiz": "Solange Ortiz",
+    }
+    if uname in lideres_map:
+        canonical_lt = lideres_map[uname]
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT id, username, nombre_completo, lt_asignado, rol, activo, created_at, updated_at
+                FROM dbo.App_Usuarios
+                WHERE LOWER(username) = %s
+            """, (uname,))
+            existing = cursor.fetchone()
+            if existing:
+                return serialize_row(existing)
+
+            # Insertar nuevo usuario JIT
+            cursor.execute("""
+                INSERT INTO dbo.App_Usuarios (username, nombre_completo, lt_asignado, rol, activo, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, 1, GETDATE(), GETDATE())
+            """, (
+                uname,
+                full_name,
+                canonical_lt,
+                (default_rol.strip().upper() if default_rol else "PM")
+            ))
+            cursor.execute("""
+                SELECT id, username, nombre_completo, lt_asignado, rol, activo, created_at, updated_at
+                FROM dbo.App_Usuarios
+                WHERE LOWER(username) = %s
+            """, (uname,))
+            created = cursor.fetchone()
+            conn.commit()
+            return serialize_row(created)
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise e
     finally:
         conn.close()
 
@@ -175,51 +248,6 @@ def get_usuario_by_id(user_id: int):
     finally:
         conn.close()
 
-def create_usuario(
-    username: str,
-    password_hash: str,
-    nombre_completo: str,
-    lt_asignado: Optional[str] = None,
-    rol: str = "PM",
-    activo: bool = True
-) -> dict:
-    """Crea un nuevo usuario en dbo.App_Usuarios."""
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            # Chequear duplicado
-            cursor.execute("SELECT id FROM dbo.App_Usuarios WHERE username = %s", (username.strip().lower(),))
-            if cursor.fetchone():
-                return {"success": False, "error": "conflict", "message": f"El nombre de usuario '{username}' ya existe"}
-
-            cursor.execute("""
-                INSERT INTO dbo.App_Usuarios (username, password_hash, nombre_completo, lt_asignado, rol, activo, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, GETDATE(), GETDATE())
-            """, (
-                username.strip().lower(),
-                password_hash,
-                nombre_completo.strip(),
-                (lt_asignado.strip() if lt_asignado and str(lt_asignado).strip() else None),
-                rol.strip().upper(),
-                1 if activo else 0
-            ))
-            cursor.execute("SELECT id FROM dbo.App_Usuarios WHERE username = %s", (username.strip().lower(),))
-            row_id = cursor.fetchone()
-            new_id = int(row_id['id']) if row_id and row_id.get('id') else None
-
-            conn.commit()
-
-            created = get_usuario_by_id(new_id) if new_id else None
-            return {"success": True, "data": created}
-    except Exception as e:
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-        return {"success": False, "error": "db_error", "message": str(e)}
-    finally:
-        conn.close()
-
 def update_usuario(
     user_id: int,
     nombre_completo: str,
@@ -227,7 +255,7 @@ def update_usuario(
     rol: str = "PM",
     activo: bool = True
 ) -> dict:
-    """Actualiza datos de un usuario existente."""
+    """Actualiza datos de un usuario existente sin contraseñas."""
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
@@ -252,33 +280,6 @@ def update_usuario(
             ))
             conn.commit()
             return {"success": True, "data": get_usuario_by_id(user_id)}
-    except Exception as e:
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-        return {"success": False, "error": "db_error", "message": str(e)}
-    finally:
-        conn.close()
-
-def reset_user_password(user_id: int, new_password_hash: str) -> dict:
-    """Actualiza el hash de contraseña de un usuario."""
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT id, username FROM dbo.App_Usuarios WHERE id = %s", (user_id,))
-            user = cursor.fetchone()
-            if not user:
-                return {"success": False, "error": "not_found", "message": f"Usuario ID {user_id} no encontrado"}
-
-            cursor.execute("""
-                UPDATE dbo.App_Usuarios
-                SET password_hash = %s,
-                    updated_at = GETDATE()
-                WHERE id = %s
-            """, (new_password_hash, user_id))
-            conn.commit()
-            return {"success": True, "id": user_id, "username": user.get('username')}
     except Exception as e:
         try:
             conn.rollback()
@@ -403,6 +404,8 @@ def get_estados_list() -> dict:
     }
 
 def get_proyectos(lt_filter=None, search=None, estado_sp=None, estado_sga=None):
+    if lt_filter in (None, '', '__ALL__'):
+        lt_filter = None
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
@@ -727,6 +730,8 @@ def get_rfcs_by_proyecto(proyecto_id, numero_proyecto=None):
         conn.close()
 
 def get_dashboard_kpis(lt_filter=None):
+    if lt_filter in (None, '', '__ALL__'):
+        lt_filter = None
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:

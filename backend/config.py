@@ -47,8 +47,18 @@ def load_db_config():
 
 DB_CONFIG = load_db_config()
 JWT_SECRET = os.getenv('JWT_SECRET', 'app-lti-super-secret-key-2026-claro')
+JWT_ACCESS_SECRET = os.getenv('JWT_ACCESS_SECRET') or os.getenv('PORTAL_JWT_SECRET') or JWT_SECRET
+PORTAL_JWT_SECRET = JWT_ACCESS_SECRET
+PORTAL_BASE_URL = os.getenv('PORTAL_BASE_URL', 'https://200.14.222.162')
 JWT_ALGORITHM = 'HS256'
 JWT_EXPIRATION_HOURS = 24
+
+CORS_ORIGINS = [
+    'https://200.14.222.162',
+    'http://localhost:8000',
+    'http://127.0.0.1:8000',
+    'http://100.82.24.75:8000',
+]
 
 def _get_int_env(key: str, default: int) -> int:
     val = os.getenv(key)

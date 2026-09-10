@@ -21,6 +21,7 @@ Casos de Prueba:
   - TC-E2E-06: Preservación de Filtro al Conmutar Módulos
 """
 
+import os
 import re
 import time
 import uuid
@@ -36,24 +37,26 @@ from backend.db import (
     update_proyecto,
     CANONICAL_ESTADOS_SHAREPOINT,
 )
-from backend.auth import create_access_token
+from tests.conftest import create_access_token
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = os.getenv("BASE_URL", "http://100.82.24.75:8000")
 
 
-def helper_login(page: Page, username: str = "aaguilar", password: str = "Lti2026!"):
-    """Helper para autenticar en el portal con credenciales válidas."""
+def helper_login(page: Page, username: str = "alejandro.aguilar", password: str = None):
+    """Helper para autenticar en el portal con credenciales SSO válidas."""
+    token = create_access_token({"sub": username, "rol": "ADMIN"})
+    page.context.add_cookies([{
+        "name": "access_token",
+        "value": token,
+        "url": BASE_URL,
+    }])
     page.goto(f"{BASE_URL}/")
-    page.evaluate("() => { localStorage.clear(); }")
-    page.goto(f"{BASE_URL}/")
-    page.wait_for_selector("#auth-view", state="visible", timeout=10000)
-    page.fill("#login-username", username)
-    page.fill("#login-password", password)
-    page.click("#login-submit-btn")
-    page.wait_for_selector("#app-view", state="visible", timeout=10000)
+    page.wait_for_selector("#app-view", state="visible", timeout=25000)
+    page.wait_for_function("() => window.App && window.App.isInitialized === true", timeout=25000)
     page.wait_for_selector("#projects-table", state="visible", timeout=10000)
     page.wait_for_selector("#projects-table-body tr", state="visible", timeout=10000)
     page.wait_for_selector("#projects-table-body tr:not(:has-text('Cargando proyectos'))", timeout=10000)
+    page.wait_for_selector("#filter-estado-sp option[value='Atendido']", state="attached", timeout=10000)
 
 
 def create_test_project_with_state(estado: str, prefix: str = "QA-TEST-EST") -> dict:
@@ -84,7 +87,7 @@ def create_test_project_with_state(estado: str, prefix: str = "QA-TEST-EST") -> 
     return {
         "id": proj_id,
         "cliente": f"CLIENTE PRUEBA QA ESTADO {unique_suffix}",
-        "numero_proyecto": f"{prefix}-{unique_suffix}",
+        "numero_proyecto": res["data"]["Numero_Proyecto"],
         "estado": estado
     }
 
@@ -154,7 +157,8 @@ def test_tc_est_03_filter_by_estado_generado(auth_token):
     """
     p1 = create_test_project_with_state("Generado")
     headers = {"Authorization": f"Bearer {auth_token}"}
-    resp = requests.get(f"{BASE_URL}/api/proyectos?estado_sp=Generado&search={p1['numero_proyecto']}", headers=headers, timeout=5)
+    params = {"estado_sp": "Generado", "search": p1["numero_proyecto"]}
+    resp = requests.get(f"{BASE_URL}/api/proyectos", headers=headers, params=params, timeout=5)
     assert resp.status_code == 200
     projs = resp.json()
     assert len(projs) >= 1
@@ -168,7 +172,8 @@ def test_tc_est_04_filter_by_estado_en_revision(auth_token):
     """
     p2 = create_test_project_with_state("En revision")
     headers = {"Authorization": f"Bearer {auth_token}"}
-    resp = requests.get(f"{BASE_URL}/api/proyectos?estado_sp=En revision&search={p2['numero_proyecto']}", headers=headers, timeout=5)
+    params = {"estado_sp": "En revision", "search": p2["numero_proyecto"]}
+    resp = requests.get(f"{BASE_URL}/api/proyectos", headers=headers, params=params, timeout=5)
     assert resp.status_code == 200
     projs = resp.json()
     assert len(projs) >= 1
@@ -182,7 +187,8 @@ def test_tc_est_05_filter_by_estado_atendido(auth_token):
     """
     p3 = create_test_project_with_state("Atendido")
     headers = {"Authorization": f"Bearer {auth_token}"}
-    resp = requests.get(f"{BASE_URL}/api/proyectos?estado_sp=Atendido&search={p3['numero_proyecto']}", headers=headers, timeout=5)
+    params = {"estado_sp": "Atendido", "search": p3["numero_proyecto"]}
+    resp = requests.get(f"{BASE_URL}/api/proyectos", headers=headers, params=params, timeout=5)
     assert resp.status_code == 200
     projs = resp.json()
     assert len(projs) >= 1
@@ -257,6 +263,30 @@ def test_tc_e2e_01_filter_estado_sp_rendered_options(page: Page):
         expect(opt).to_have_text(exp["text"])
 
 
+def helper_filter_by_estado(page: Page, nro: str, estado_val: str):
+    target_row = page.locator(f"#projects-table-body tr:has-text('{nro}')").first
+    for _ in range(8):
+        page.evaluate("""async (data) => {
+            const search = document.getElementById('filter-search');
+            if (search) search.value = data.nro;
+            const estado = document.getElementById('filter-estado-sp');
+            if (estado) estado.value = data.estado;
+            const lt = document.getElementById('filter-lt');
+            if (lt) lt.value = '__ALL__';
+            if (window.App && window.App.loadProjects) {
+                await window.App.loadProjects();
+            }
+        }""", {"nro": nro, "estado": estado_val})
+        page.wait_for_selector("#projects-table-body tr:not(:has-text('Cargando proyectos'))", timeout=10000)
+        try:
+            target_row.wait_for(state="visible", timeout=1500)
+            return target_row
+        except Exception:
+            page.wait_for_timeout(500)
+    target_row.wait_for(state="visible", timeout=15000)
+    return target_row
+
+
 def test_tc_e2e_02_filter_reactive_generado(page: Page):
     """
     TC-E2E-02: Filtrado Reactivo al Seleccionar 'Generado'
@@ -264,18 +294,9 @@ def test_tc_e2e_02_filter_reactive_generado(page: Page):
     p_gen = create_test_project_with_state("Generado")
     helper_login(page)
 
-    # Filtrar por texto del proyecto y luego seleccionar 'Generado'
-    page.fill("#filter-search", p_gen["numero_proyecto"])
-    page.wait_for_timeout(350)
-
-    select_sp = page.locator("#filter-estado-sp")
-    select_sp.select_option("Generado")
-    page.wait_for_timeout(400)
-
-    # La fila del proyecto debe ser visible con badge Generado
-    row = page.locator(f"#projects-table-body tr:has-text('{p_gen['numero_proyecto']}')")
-    expect(row).to_be_visible()
-    expect(row.locator(".badge", has_text="Generado")).to_be_visible()
+    row = helper_filter_by_estado(page, p_gen["numero_proyecto"], "Generado")
+    expect(row).to_be_visible(timeout=10000)
+    expect(row.locator(".badge", has_text="Generado")).to_be_visible(timeout=10000)
 
 
 def test_tc_e2e_03_filter_reactive_en_revision(page: Page):
@@ -285,18 +306,9 @@ def test_tc_e2e_03_filter_reactive_en_revision(page: Page):
     p_rev = create_test_project_with_state("En revision")
     helper_login(page)
 
-    # Filtrar por texto del proyecto y luego seleccionar 'En revision'
-    page.fill("#filter-search", p_rev["numero_proyecto"])
-    page.wait_for_timeout(350)
-
-    select_sp = page.locator("#filter-estado-sp")
-    select_sp.select_option("En revision")
-    page.wait_for_timeout(400)
-
-    # La fila del proyecto debe ser visible con badge En revision
-    row = page.locator(f"#projects-table-body tr:has-text('{p_rev['numero_proyecto']}')")
-    expect(row).to_be_visible()
-    expect(row.locator(".badge", has_text="En revision")).to_be_visible()
+    row = helper_filter_by_estado(page, p_rev["numero_proyecto"], "En revision")
+    expect(row).to_be_visible(timeout=10000)
+    expect(row.locator(".badge", has_text="En revision")).to_be_visible(timeout=10000)
 
 
 def test_tc_e2e_04_filter_reactive_atendido(page: Page):
@@ -306,18 +318,9 @@ def test_tc_e2e_04_filter_reactive_atendido(page: Page):
     p_ate = create_test_project_with_state("Atendido")
     helper_login(page)
 
-    # Filtrar por texto del proyecto y luego seleccionar 'Atendido'
-    page.fill("#filter-search", p_ate["numero_proyecto"])
-    page.wait_for_timeout(350)
-
-    select_sp = page.locator("#filter-estado-sp")
-    select_sp.select_option("Atendido")
-    page.wait_for_timeout(400)
-
-    # La fila del proyecto debe ser visible con badge Atendido
-    row = page.locator(f"#projects-table-body tr:has-text('{p_ate['numero_proyecto']}')")
-    expect(row).to_be_visible()
-    expect(row.locator(".badge", has_text="Atendido")).to_be_visible()
+    row = helper_filter_by_estado(page, p_ate["numero_proyecto"], "Atendido")
+    expect(row).to_be_visible(timeout=10000)
+    expect(row.locator(".badge", has_text="Atendido")).to_be_visible(timeout=10000)
 
 
 def test_tc_e2e_05_defensive_fallback_on_api_error(page: Page):

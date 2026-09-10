@@ -12,6 +12,7 @@ Cobertura de Tareas:
 - Tarea 5: Ocultación del campo LT Asignado en Solicitud LTI, persistencia con LT_Asignado = NULL y flujo end-to-end de asignación posterior.
 """
 
+import os
 import re
 import time
 import datetime
@@ -19,24 +20,23 @@ import pytest
 import requests
 from playwright.sync_api import Page, expect
 from backend.db import get_db_connection, get_lideres_list, get_dashboard_kpis
-from backend.auth import create_access_token
+from tests.conftest import create_access_token
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = os.getenv("BASE_URL", "http://100.82.24.75:8000")
 
 
-def helper_login(page: Page, username: str = "aaguilar", password: str = "Lti2026!"):
-    """Helper para autenticar en el portal con credenciales válidas."""
+def helper_login(page: Page, username: str = "alejandro.aguilar", password: str = None):
+    """Helper para autenticar en el portal con credenciales SSO válidas."""
+    token = create_access_token({"sub": username, "rol": "ADMIN"})
+    page.context.add_cookies([{
+        "name": "access_token",
+        "value": token,
+        "url": BASE_URL,
+    }])
     page.goto(f"{BASE_URL}/")
-    page.wait_for_selector("#auth-view", state="attached")
-    
-    if page.locator("#app-view").is_visible():
-        return
-
-    page.fill("#login-username", username)
-    page.fill("#login-password", password)
-    page.click("#login-submit-btn")
-    page.wait_for_selector("#app-view", state="visible", timeout=10000)
-    page.wait_for_selector("#nav-btn-projects", state="visible", timeout=5000)
+    page.wait_for_selector("#app-view", state="visible", timeout=25000)
+    page.wait_for_function("() => window.App && window.App.isInitialized === true", timeout=25000)
+    page.wait_for_selector("#nav-btn-projects", state="visible", timeout=10000)
 
 
 # ==============================================================================
@@ -448,6 +448,7 @@ def test_t5_02_solicitud_creation_persists_lt_null(page: Page, auth_token: str):
     # Esperar modal de éxito
     success_modal = page.locator("#solicitud-success-modal")
     expect(success_modal).to_be_visible(timeout=8000)
+    expect(page.locator("#solicitud-success-id")).not_to_have_text("0", timeout=8000)
 
     # Validar campos del modal
     created_id_str = page.locator("#solicitud-success-id").inner_text().strip()
@@ -502,32 +503,35 @@ def test_t5_03_end_to_end_lifecycle_creation_filter_and_assignment(page: Page, a
     page.click("#btn-submit-solicitud")
 
     expect(page.locator("#solicitud-success-modal")).to_be_visible(timeout=8000)
+    expect(page.locator("#solicitud-success-id")).not_to_have_text("0", timeout=8000)
     created_id_str = page.locator("#solicitud-success-id").inner_text().strip()
     created_id = int(created_id_str)
 
     # 2. Navegar a Seguimiento Proyectos con botón del modal
     page.click("#btn-solicitud-go-to-projects")
     expect(page.locator("#module-projects-container")).to_be_visible()
+    page.wait_for_selector("#projects-table-body tr:not(:has-text('Cargando proyectos'))", timeout=15000)
 
     # 3. Validar incremento en KPI Pendientes (+1)
     val_pendientes_el = page.locator("#kpi-val-pendientes-asignar")
     # Esperar que se actualice el DOM con el nuevo conteo
-    expect(val_pendientes_el).to_have_text(str(initial_pendientes + 1), timeout=5000)
+    expect(val_pendientes_el).to_have_text(str(initial_pendientes + 1), timeout=10000)
 
     # 4. Clic en Tarjeta KPI 'Pendientes de Asignar'
     kpi_card = page.locator("#kpi-card-pendientes")
     kpi_card.click()
-    page.wait_for_timeout(500)
-
     expect(page.locator("#filter-lt")).to_have_value("__UNASSIGNED__")
+    page.wait_for_selector("#projects-table-body tr:not(:has-text('Cargando proyectos'))", timeout=15000)
 
     # 5. Localizar fila del proyecto recién creado en la tabla
     row = page.locator(f"#projects-table-body tr").filter(has_text=proj_code).first
-    expect(row).to_be_visible(timeout=5000)
+    expect(row).to_be_visible(timeout=10000)
 
     # 6. Clic en botón Editar de esa fila
     edit_btn = row.locator(".btn-action-edit")
-    edit_btn.click()
+    edit_btn.scroll_into_view_if_needed()
+    with page.expect_response(lambda r: f"/api/proyectos/{created_id}" in r.url and r.status == 200, timeout=10000):
+        edit_btn.click()
 
     expect(page.locator("#edit-project-modal")).to_be_visible(timeout=10000)
     expect(page.locator("#edit-project-id")).to_have_value(str(created_id), timeout=10000)
