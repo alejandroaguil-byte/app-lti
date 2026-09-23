@@ -111,6 +111,12 @@
             <span class="health-toggle-label" id="health-toggle-label">Salud: ON</span>
           </button>
 
+          <!-- Botón Kill-Switch / Toggle de Diagnóstico Ejecutivo en 1 Clic -->
+          <button id="diag-toggle-btn" class="btn-subbar-toggle" title="Activar o desactivar Diagnóstico Ejecutivo en 1 Clic" aria-label="Toggle Diagnóstico Ejecutivo">
+            <span class="diagnosis-toggle-icon">⚡</span>
+            <span class="diagnosis-toggle-label" id="diagnosis-toggle-label">Diagnóstico: ON</span>
+          </button>
+
           <span id="user-role-badge" class="badge badge-info">Líder</span>
           <button id="theme-toggle-btn" class="btn-icon-subbar" title="Cambiar Modo Claro / Oscuro" aria-label="Cambiar tema">
             <span id="theme-icon">🌙</span>
@@ -303,6 +309,9 @@
                 <!-- Indicador de Salud Operacional (Controlado por Kill-Switch) -->
                 <div id="dd-health-status" style="display: none;"></div>
                 <div class="drilldown-action-toolbar">
+                  <button type="button" id="btn-drilldown-diagnostico" class="btn btn-warning-outline btn-sm btn-diagnostico-action" title="Generar Diagnóstico Ejecutivo en 1 Clic" style="display: none;">
+                    <span class="btn-icon">⚡</span> Diagnóstico Ejecutivo
+                  </button>
                   <button type="button" id="btn-dd-edit-project" class="btn btn-secondary btn-sm" title="Editar este proyecto">
                     ✏️ Editar
                   </button>
@@ -1763,6 +1772,133 @@
           </button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       MODAL: DIAGNÓSTICO EJECUTIVO EN 1 CLIC (HALO CLARO)
+       ==================================================================== -->
+  <div id="modal-executive-diagnosis" class="modal-backdrop" style="display: none;" tabindex="-1">
+    <div class="modal-dialog modal-dialog-xl" role="dialog" aria-modal="true" aria-labelledby="modal-diag-title" tabindex="-1">
+      
+      <!-- Modal Header -->
+      <div class="modal-header">
+        <div class="modal-header-brand">
+          <div class="modal-icon-diag">⚡</div>
+          <div>
+            <h3 id="modal-diag-title" class="modal-title">Diagnóstico Ejecutivo en 1 Clic</h3>
+            <p class="modal-subtitle" id="modal-diag-subtitle">Análisis operacional en tiempo real de Solots, Tickets y RFCs</p>
+          </div>
+        </div>
+        <button type="button" class="modal-close-btn" id="btn-close-diag-modal" aria-label="Cerrar modal">&times;</button>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="modal-body diag-modal-body">
+        
+        <!-- Estado de Carga (Spinner) -->
+        <div id="diag-loading-state" class="diag-loading-box">
+          <div class="spinner-claro"></div>
+          <p>Analizando Solots, tickets y estado operacional del proyecto...</p>
+        </div>
+
+        <!-- Contenido del Diagnóstico -->
+        <div id="diag-content-wrapper" style="display: none;">
+          
+          <!-- Ficha Resumen Ejecutivo -->
+          <div class="diag-summary-card">
+            <div class="diag-summary-grid">
+              <div class="diag-field">
+                <span class="diag-label">Cliente</span>
+                <strong class="diag-val" id="diag-val-cliente">-</strong>
+              </div>
+              <div class="diag-field">
+                <span class="diag-label">N° Proyecto</span>
+                <strong class="diag-val font-mono" id="diag-val-num">-</strong>
+              </div>
+              <div class="diag-field">
+                <span class="diag-label">Líder TI</span>
+                <span class="diag-val" id="diag-val-lt">-</span>
+              </div>
+              <div class="diag-field">
+                <span class="diag-label">Solicitante</span>
+                <span class="diag-val" id="diag-val-solicitante">-</span>
+              </div>
+              <div class="diag-field">
+                <span class="diag-label">Salud Operacional</span>
+                <div id="diag-val-salud-badge">-</div>
+              </div>
+              <div class="diag-field">
+                <span class="diag-label">Antigüedad</span>
+                <span class="diag-val" id="diag-val-antiguedad">0 días</span>
+              </div>
+            </div>
+
+            <!-- Barra de Avance de Solots -->
+            <div class="diag-progress-box">
+              <div class="diag-progress-labels">
+                <span>Avance de Solots de Operaciones</span>
+                <strong id="diag-progress-pct">0%</strong>
+              </div>
+              <div class="diag-progress-bar-track">
+                <div class="diag-progress-bar-fill" id="diag-progress-bar-fill" style="width: 0%;"></div>
+              </div>
+              <div class="diag-progress-meta" id="diag-progress-meta">
+                0 de 0 Solots ejecutadas
+              </div>
+            </div>
+          </div>
+
+          <!-- Sección: Cuellos de Botella -->
+          <div class="diag-section">
+            <div class="diag-section-header">
+              <h4>🚨 Cuellos de Botella Detectados</h4>
+              <span class="diag-badge-count" id="diag-count-cuellos">0</span>
+            </div>
+            <div id="diag-cuellos-container" class="diag-cards-list">
+              <!-- Renderizado dinámico -->
+            </div>
+          </div>
+
+          <!-- Sección: Recomendaciones de Escalamiento -->
+          <div class="diag-section">
+            <div class="diag-section-header">
+              <h4>🎯 Acciones Recomendadas de Escalamiento</h4>
+              <span class="diag-badge-count count-blue" id="diag-count-recs">0</span>
+            </div>
+            <div id="diag-recs-container" class="diag-recs-list">
+              <!-- Renderizado dinámico -->
+            </div>
+          </div>
+
+          <!-- Sección: Minuta Ejecutiva Generada -->
+          <div class="diag-section">
+            <div class="diag-section-header">
+              <h4>📝 Minuta Ejecutiva Lista para Compartir</h4>
+              <span class="diag-minuta-hint">Texto formateado para portapapeles y correo</span>
+            </div>
+            <pre class="diag-minuta-preview" id="diag-minuta-text"></pre>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="modal-footer diag-modal-footer">
+        <div class="diag-footer-left">
+          <button type="button" id="btn-copy-diag-minuta" class="btn btn-secondary">
+            <span class="btn-icon">📋</span> Copiar Minuta
+          </button>
+          <button type="button" id="btn-email-diag-minuta" class="btn btn-warning">
+            <span class="btn-icon">📧</span> Enviar Minuta por Correo
+          </button>
+        </div>
+        <button type="button" id="btn-close-diag-footer" class="btn btn-outline">
+          Cerrar
+        </button>
+      </div>
+
     </div>
   </div>
 

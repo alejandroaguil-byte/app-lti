@@ -42,7 +42,8 @@ from .db import (
     check_proyecto_exists,
     create_solicitud_lti,
     update_proyecto,
-    delete_proyecto
+    delete_proyecto,
+    get_diagnostico_proyecto
 )
 from .seed_users import seed_default_users
 from .ticket_automation import stream_ticket_creation
@@ -230,6 +231,23 @@ def get_rfcs(
     
     rfcs = get_rfcs_by_proyecto(proyecto_id, proyecto.get("Numero_Proyecto"))
     return rfcs
+
+@app.get("/api/proyectos/{proyecto_id}/diagnostico")
+def obtener_diagnostico_proyecto(
+    proyecto_id: int,
+    current_user: dict = Depends(require_lti_or_admin)
+):
+    """
+    Genera en tiempo real el diagnóstico ejecutivo operacional de un proyecto (1 Clic).
+    Analiza solots, tickets, RFCs y formula cuellos de botella y recomendaciones.
+    """
+    diagnostico = get_diagnostico_proyecto(proyecto_id)
+    if not diagnostico:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Proyecto con ID {proyecto_id} no fue encontrado."
+        )
+    return diagnostico
 
 @app.put("/api/proyectos/{proyecto_id}")
 def actualizar_proyecto(

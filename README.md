@@ -95,6 +95,16 @@ Diseñada con la identidad visual corporativa de Claro Chile (cabecera instituci
    - **Indicador en Drill Down**: Visualización destacada de la salud en la cabecera del proyecto y resumen en la ficha técnica.
    - **Interruptor de Apagado Rápido (Kill-Switch Mandatorio)**: Control toggle en la sub-barra (`🚦 Salud: ON / OFF`) y variable global (`window.HALO_CONFIG.ENABLE_HEALTH_SCORE`), con persistencia en `localStorage`. Si se desactiva, la funcionalidad se oculta por completo sin dejar rastros en la interfaz, volviendo de manera limpia a las 8 columnas y diseño estándar original.
 
+8. **Diagnóstico Ejecutivo en 1 Clic & Kill-Switch (v1.4.0)**:
+   - **Análisis Operacional Instantáneo**: Endpoint de alto rendimiento `GET /api/proyectos/{id}/diagnostico` que procesa en tiempo real las Solots de operaciones (`dbo.CT_BACKLOG_OPERACIONES2`), tickets de incidentes (`dbo.registrosRF_SD_SM`) y RFCs (`dbo.registrosSM_RFC`).
+   - **Detección Automática de Cuellos de Botella**: Identificación de bloqueos operacionales clasificados por severidad (Crítica, Alta, Media), calculando días de atraso de Solots e individualizando las **Torres de Soporte Responsables** (ej. `Torre Linux`, `Torre Microsoft`, `ProvisionConectividadTI`) de tickets detenidos sin resolución.
+   - **Recomendaciones de Escalamiento Accionables**: Generación algorítmica de planes de acción inmediatos priorizados (Urgente, Alta, Media) con sugerencia de canal y destinatario clave.
+   - **Minuta Ejecutiva Multiformato & Acciones 1 Clic**:
+     * Visor con minuta ejecutiva formateada lista para ser compartida.
+     * Botón **"📋 Copiar Minuta"**: Copia inmediata al portapapeles con feedback visual en el botón y alerta Toast.
+     * Botón **"📧 Enviar Minuta por Correo"**: Apertura directa del modal de notificación SMTP Office 365 prellenado con el diagnóstico y asunto formal del proyecto.
+   - **Mecanismo de Desactivación Rápida (Kill-Switch)**: Botón toggle en sub-barra (`⚡ Diagnóstico: ON / OFF`), configuración maestra `window.HALO_CONFIG.ENABLE_EXECUTIVE_DIAGNOSIS` y persistencia en `localStorage` (`halo_executive_diagnosis_enabled`). Al apagarse, desaparece limpiamente de la tabla y del Drill Down con política de cero rastros.
+
 ---
 
 ## 🛠️ Stack Tecnológico
@@ -224,6 +234,7 @@ El token JWT del Portal define la capacidad de escritura de la sesión:
 
 ## 📚 Documentación y Especificaciones Técnicas (SPECS)
 
+- [SPECS_DIAGNOSTICO_EJECUTIVO.md](file:///home/bobbasystem/Desarrollos/app-lti/SPECS_DIAGNOSTICO_EJECUTIVO.md): **(v1.0.0 Ratificada)** Especificación técnica integral de la Funcionalidad 2: 'Diagnóstico Ejecutivo en 1 Clic' y Kill-Switch Desactivador. Motor operacional en tiempo real (`/api/proyectos/{id}/diagnostico`), detección multivariable de cuellos de botella (Solots vencidas y tickets detenidos identificando torres de soporte responsables), recomendaciones de escalamiento priorizadas, minuta multiformato (Texto, MD, HTML), modal interactivo con copiado al portapapeles y envío directo por correo Office 365 SMTP, y mecanismo Kill-Switch con fallback cero rastros para `bobbadeveloper` e `iacdi`.
 - [SPECS_SEMAFORO_SALUD_PROYECTOS.md](file:///home/bobbasystem/Desarrollos/app-lti/SPECS_SEMAFORO_SALUD_PROYECTOS.md): **(v1.0.0 Ratificada)** Especificación técnica del Semáforo de Salud del Proyecto (Project Health Score), reglas operacionales de clasificación (🟢 Saludable, 🟡 En Riesgo, 🔴 Crítico, ⚪ Sin Datos), badges con tooltip explicativo, KPIs de salud interactivos con filtrado directo en tabla, indicador en Drill Down y mecanismo mandatorio de desactivación rápida (Kill-Switch / Feature Toggle) con fallback limpio cero rastros.
 - [SPECS_REDISENO_PORTAL_HALO.md](file:///home/bobbasystem/Desarrollos/app-lti/SPECS_REDISENO_PORTAL_HALO.md): **(v1.0.0 Ratificada)** Especificación técnica de Homologación e Integración Visual al Diseño Corporativo HALO (Claro Chile), tokens `#B52217` / `#DA291C` / `#0097A9`, isotipo SVG oficial, arquitectura desacoplada de doble barra (`.app-header` y `.nav-subbar`), soporte dual Claro/Oscuro y sincronización con servidor `iacdi`.
 - [SPECS_INTEGRACION_SSO_PORTAL_ACCESO.md](file:///home/bobbasystem/Desarrollos/app-lti/SPECS_INTEGRACION_SSO_PORTAL_ACCESO.md): **(v2.0.0 Ratificada)** Especificación técnica definitiva de integración Single Sign-On (SSO) con el Portal de Acceso, cookies HttpOnly, mapeo de `toolAccess`, formato canónico `nombre.apellido`, aprovisionamiento JIT y arquitectura desacoplada sin contraseñas locales.

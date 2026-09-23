@@ -7,11 +7,15 @@ window.HALO_CONFIG = window.HALO_CONFIG || {};
 if (window.HALO_CONFIG.ENABLE_HEALTH_SCORE === undefined) {
   window.HALO_CONFIG.ENABLE_HEALTH_SCORE = true;
 }
+if (window.HALO_CONFIG.ENABLE_EXECUTIVE_DIAGNOSIS === undefined) {
+  window.HALO_CONFIG.ENABLE_EXECUTIVE_DIAGNOSIS = true;
+}
 
 const CANONICAL_ESTADOS_SHAREPOINT = ['Generado', 'En revision', 'Atendido'];
 
 const App = {
   currentProject: null,
+  currentDiagnosticoData: null,
   projectsData: [],
   lideresList: [],
   estadosSharepoint: [],
@@ -47,6 +51,7 @@ const App = {
   async init() {
     this.initTheme();
     this.initHealthScore();
+    this.initExecutiveDiagnosis();
     this.bindEvents();
     
     try {
@@ -298,6 +303,259 @@ const App = {
   },
 
   // --------------------------------------------------------------------------
+  // EXECUTIVE DIAGNOSIS / FEATURE TOGGLE (KILL-SWITCH)
+  // --------------------------------------------------------------------------
+  initExecutiveDiagnosis() {
+    this.applyExecutiveDiagnosisState(false);
+  },
+
+  isExecutiveDiagnosisActive() {
+    // 1. Si la configuración maestra en código está en false, se apaga obligatoriamente
+    if (window.HALO_CONFIG && window.HALO_CONFIG.ENABLE_EXECUTIVE_DIAGNOSIS === false) {
+      return false;
+    }
+    // 2. Si el usuario definió una preferencia en localStorage, se respeta
+    const userPref = localStorage.getItem('halo_executive_diagnosis_enabled');
+    if (userPref !== null) {
+      return userPref === 'true';
+    }
+    // 3. Fallback por defecto: Habilitado (true)
+    return true;
+  },
+
+  toggleExecutiveDiagnosis() {
+    const current = this.isExecutiveDiagnosisActive();
+    const next = !current;
+    localStorage.setItem('halo_executive_diagnosis_enabled', next ? 'true' : 'false');
+    this.applyExecutiveDiagnosisState(true);
+    const msg = next ? '⚡ Diagnóstico Ejecutivo activado' : '⚡ Diagnóstico Ejecutivo desactivado';
+    this.showToast(msg, 'info');
+  },
+
+  applyExecutiveDiagnosisState(triggerRender = true) {
+    const active = this.isExecutiveDiagnosisActive();
+    const toggleBtn = document.getElementById('diag-toggle-btn') || document.getElementById('executive-diagnosis-toggle-btn');
+    const toggleLabel = document.getElementById('diagnosis-toggle-label');
+    const btnDdDiag = document.getElementById('btn-drilldown-diagnostico') || document.getElementById('btn-dd-diagnostico');
+
+    if (toggleBtn) {
+      if (active) {
+        toggleBtn.classList.remove('is-off');
+        toggleBtn.title = 'Desactivar Diagnóstico Ejecutivo en 1 Clic';
+        if (toggleLabel) toggleLabel.textContent = 'Diagnóstico: ON';
+      } else {
+        toggleBtn.classList.add('is-off');
+        toggleBtn.title = 'Activar Diagnóstico Ejecutivo en 1 Clic';
+        if (toggleLabel) toggleLabel.textContent = 'Diagnóstico: OFF';
+      }
+    }
+
+    if (btnDdDiag) {
+      btnDdDiag.style.display = active ? 'inline-flex' : 'none';
+    }
+
+    // Re-renderizar tabla para ocultar/mostrar iconos rápidos en columna de acciones
+    if (triggerRender && this.projectsData && this.projectsData.length > 0) {
+      this.renderProjectsTable(this.getFilteredProjects());
+    }
+  },
+
+  async openDiagnosticoModal(proyectoId) {
+    if (!this.isExecutiveDiagnosisActive()) return;
+
+    const modal = document.getElementById('modal-executive-diagnosis') || document.getElementById('executive-diagnosis-modal');
+    if (!modal) return;
+
+    const loadingState = document.getElementById('diag-loading-state');
+    const contentWrapper = document.getElementById('diag-content-wrapper');
+
+    modal.style.display = 'flex';
+    if (loadingState) loadingState.style.display = 'flex';
+    if (contentWrapper) contentWrapper.style.display = 'none';
+
+    try {
+      const response = await Auth.fetchWithAuth(`/api/proyectos/${proyectoId}/diagnostico`);
+      if (!response.ok) {
+        throw new Error(`HTTP error ${response.status}`);
+      }
+      const data = await response.json();
+      this.currentDiagnosticoData = data;
+      this.renderDiagnosticoContent(data);
+      if (loadingState) loadingState.style.display = 'none';
+      if (contentWrapper) contentWrapper.style.display = 'block';
+    } catch (error) {
+      console.error('Error al obtener diagnóstico ejecutivo:', error);
+      this.showToast('No fue posible generar el diagnóstico del proyecto.', 'danger');
+      modal.style.display = 'none';
+      this.currentDiagnosticoData = null;
+    }
+  },
+
+  openExecutiveDiagnosis(proyectoId) {
+    return this.openDiagnosticoModal(proyectoId);
+  },
+
+  closeDiagnosticoModal() {
+    const modal = document.getElementById('modal-executive-diagnosis') || document.getElementById('executive-diagnosis-modal');
+    if (modal) modal.style.display = 'none';
+    this.currentDiagnosticoData = null;
+  },
+
+  renderDiagnosticoContent(data) {
+    if (!data) return;
+
+    const elCliente = document.getElementById('diag-val-cliente');
+    if (elCliente) elCliente.textContent = data.cliente || '-';
+
+    const elNum = document.getElementById('diag-val-num');
+    if (elNum) elNum.textContent = this.formatNumeroProyecto(data.numero_proyecto) || '-';
+
+    const elLt = document.getElementById('diag-val-lt');
+    if (elLt) elLt.textContent = data.lt_asignado || 'Sin Asignar';
+
+    const elSol = document.getElementById('diag-val-solicitante');
+    if (elSol) elSol.textContent = this.formatSolicitante(data.solicitante);
+
+    const elAnt = document.getElementById('diag-val-antiguedad');
+    if (elAnt) elAnt.textContent = `${data.antiguedad_dias} días`;
+
+    // Salud Badge
+    const saludBadgeContainer = document.getElementById('diag-val-salud-badge');
+    if (saludBadgeContainer && data.salud) {
+      saludBadgeContainer.innerHTML = this.renderHealthBadge(data.salud);
+    }
+
+    // Barra de Avance de Solots
+    const ro = data.resumen_operacional || {};
+    const pct = ro.porcentaje_avance_solots !== undefined ? ro.porcentaje_avance_solots : 0;
+    const barFill = document.getElementById('diag-progress-bar-fill');
+    const barPct = document.getElementById('diag-progress-pct');
+    const meta = document.getElementById('diag-progress-meta');
+    if (barFill) barFill.style.width = `${pct}%`;
+    if (barPct) barPct.textContent = `${pct}%`;
+    if (meta) {
+      meta.textContent = `${ro.solots_ejecutadas || 0} de ${ro.total_solots || 0} Solots ejecutadas (${ro.solots_vencidas || 0} vencidas)`;
+    }
+
+    // Cuellos de Botella
+    const cuellosContainer = document.getElementById('diag-cuellos-container');
+    const countCuellos = document.getElementById('diag-count-cuellos');
+    const cuellosList = data.cuellos_de_botella || [];
+    if (countCuellos) countCuellos.textContent = cuellosList.length;
+
+    if (cuellosContainer) {
+      if (cuellosList.length === 0) {
+        cuellosContainer.innerHTML = `
+          <div class="diag-empty-banner">
+            <span>✅ No se detectaron cuellos de botella ni bloqueos operacionales en este proyecto.</span>
+          </div>`;
+      } else {
+        cuellosContainer.innerHTML = cuellosList.map(cb => {
+          const sev = (cb.severidad || 'media').toLowerCase();
+          return `
+            <div class="diag-card diag-severity-${sev}">
+              <div class="diag-card-header">
+                <span class="diag-severity-pill pill-${sev}">${this.escapeHtml(cb.severidad || 'MEDIA')}</span>
+                <strong class="diag-card-id">${this.escapeHtml(cb.identificador || '')}</strong>
+                <span class="diag-card-area">📍 ${this.escapeHtml(cb.responsable_area || 'Operaciones')}</span>
+              </div>
+              <p class="diag-card-desc">${this.escapeHtml(cb.descripcion || '')}</p>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+    // Recomendaciones de Escalamiento
+    const recsContainer = document.getElementById('diag-recs-container');
+    const countRecs = document.getElementById('diag-count-recs');
+    const recsList = data.recomendaciones_escalamiento || [];
+    if (countRecs) countRecs.textContent = recsList.length;
+
+    if (recsContainer) {
+      if (recsList.length === 0) {
+        recsContainer.innerHTML = `
+          <div class="diag-empty-banner">
+            <span>ℹ️ Sin recomendaciones adicionales de escalamiento.</span>
+          </div>`;
+      } else {
+        recsContainer.innerHTML = recsList.map(r => {
+          const prio = (r.prioridad || 'media').toLowerCase();
+          return `
+            <div class="diag-rec-item priority-${prio}">
+              <div class="diag-rec-num">${r.orden || 1}</div>
+              <div class="diag-rec-body">
+                <div class="diag-rec-top">
+                  <span class="diag-priority-pill pill-${prio}">${this.escapeHtml(r.prioridad || 'MEDIA')}</span>
+                  <span class="diag-rec-dest">Escalar a: <strong>${this.escapeHtml(r.destinatario_escalamiento || 'Responsable')}</strong></span>
+                </div>
+                <p class="diag-rec-action">${this.escapeHtml(r.accion || '')}</p>
+                <div class="diag-rec-canal">Canal recomendado: <em>${this.escapeHtml(r.canal_sugerido || '')}</em></div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+    // Minuta Texto
+    const minutaPre = document.getElementById('diag-minuta-text');
+    if (minutaPre) {
+      minutaPre.textContent = data.minuta_ejecutiva?.texto_plano || '';
+    }
+  },
+
+  async copyDiagnosticoMinuta() {
+    if (!this.currentDiagnosticoData || !this.currentDiagnosticoData.minuta_ejecutiva) return;
+    const texto = this.currentDiagnosticoData.minuta_ejecutiva.texto_plano;
+    const btn = document.getElementById('btn-copy-diag-minuta');
+
+    try {
+      const ok = await this.copyTextToClipboard(texto);
+      if (ok) {
+        if (btn) {
+          const orig = btn.innerHTML;
+          btn.innerHTML = '<span class="btn-icon">✓</span> ¡Minuta Copiada!';
+          btn.classList.add('btn-success');
+          setTimeout(() => {
+            btn.innerHTML = orig;
+            btn.classList.remove('btn-success');
+          }, 2500);
+        }
+        this.showToast('✓ Minuta ejecutiva copiada al portapapeles con éxito.', 'success');
+      } else {
+        this.showToast('No se pudo copiar automáticamente. Por favor seleccione y copie el texto.', 'warning');
+      }
+    } catch (err) {
+      console.error('Error al copiar al portapapeles:', err);
+      this.showToast('No se pudo copiar automáticamente. Por favor seleccione y copie el texto.', 'warning');
+    }
+  },
+
+  copyExecutiveMinute() {
+    return this.copyDiagnosticoMinuta();
+  },
+
+  emailDiagnosticoMinuta() {
+    if (!this.currentDiagnosticoData || !this.currentDiagnosticoData.minuta_ejecutiva) return;
+    const d = this.currentDiagnosticoData;
+
+    this.closeDiagnosticoModal();
+
+    this.openEmailTicketModal({
+      to: 'alejandro.aguilarm@clarovtr.cl',
+      subject: d.minuta_ejecutiva.asunto_sugerido,
+      body: d.minuta_ejecutiva.texto_plano,
+      ticketBadge: d.numero_proyecto || 'PROYECTO',
+      peticionBadge: 'DIAGNÓSTICO'
+    });
+  },
+
+  sendExecutiveMinuteEmail() {
+    return this.emailDiagnosticoMinuta();
+  },
+
+  // --------------------------------------------------------------------------
   // EVENT BINDINGS
   // --------------------------------------------------------------------------
   bindEvents() {
@@ -372,6 +630,12 @@ const App = {
     const healthToggleBtn = document.getElementById('health-score-toggle-btn');
     if (healthToggleBtn) {
       healthToggleBtn.addEventListener('click', () => this.toggleHealthScore());
+    }
+
+    // Executive Diagnosis Toggle Button
+    const diagToggleBtn = document.getElementById('diag-toggle-btn') || document.getElementById('executive-diagnosis-toggle-btn');
+    if (diagToggleBtn) {
+      diagToggleBtn.addEventListener('click', () => this.toggleExecutiveDiagnosis());
     }
 
     // Health Score KPI Cards Interactive Filtering
@@ -693,7 +957,42 @@ const App = {
       });
     }
 
-    // Drill Down Edit / Delete Toolbar Buttons
+    // Drill Down Edit / Delete / Diagnosis Toolbar Buttons
+    const btnDdDiag = document.getElementById('btn-drilldown-diagnostico') || document.getElementById('btn-dd-diagnostico');
+    if (btnDdDiag) {
+      btnDdDiag.addEventListener('click', () => {
+        if (this.currentProject) {
+          this.openDiagnosticoModal(this.currentProject.ID);
+        }
+      });
+    }
+
+    // Executive Diagnosis Modal Buttons
+    const closeDiagIcon = document.getElementById('btn-close-diag-modal');
+    if (closeDiagIcon) {
+      closeDiagIcon.addEventListener('click', () => this.closeDiagnosticoModal());
+    }
+    const closeDiagFooter = document.getElementById('btn-close-diag-footer');
+    if (closeDiagFooter) {
+      closeDiagFooter.addEventListener('click', () => this.closeDiagnosticoModal());
+    }
+    const copyDiagBtn = document.getElementById('btn-copy-diag-minuta');
+    if (copyDiagBtn) {
+      copyDiagBtn.addEventListener('click', () => this.copyDiagnosticoMinuta());
+    }
+    const emailDiagBtn = document.getElementById('btn-email-diag-minuta');
+    if (emailDiagBtn) {
+      emailDiagBtn.addEventListener('click', () => this.emailDiagnosticoMinuta());
+    }
+    const modalDiag = document.getElementById('modal-executive-diagnosis') || document.getElementById('executive-diagnosis-modal');
+    if (modalDiag) {
+      modalDiag.addEventListener('click', (e) => {
+        if (e.target === modalDiag) {
+          this.closeDiagnosticoModal();
+        }
+      });
+    }
+
     const btnDdEdit = document.getElementById('btn-dd-edit-project');
     if (btnDdEdit) {
       btnDdEdit.addEventListener('click', () => {
@@ -859,6 +1158,10 @@ const App = {
         const delUsrModal = document.getElementById('delete-user-modal');
         if (delUsrModal && delUsrModal.style.display !== 'none') {
           this.closeDeleteUserModal();
+        }
+        const diagModal = document.getElementById('modal-executive-diagnosis') || document.getElementById('executive-diagnosis-modal');
+        if (diagModal && diagModal.style.display !== 'none') {
+          this.closeDiagnosticoModal();
         }
         this.hideAutocompleteDropdown();
       }
@@ -1084,6 +1387,12 @@ const App = {
     if (btnDdDelete) {
       const user = Auth.getUser();
       btnDdDelete.style.display = (user && (user.rol || '').toUpperCase() === 'ADMIN') ? 'inline-flex' : 'none';
+    }
+
+    // Executive Diagnosis Button in Drill Down Header
+    const btnDdDiag = document.getElementById('btn-drilldown-diagnostico') || document.getElementById('btn-dd-diagnostico');
+    if (btnDdDiag) {
+      btnDdDiag.style.display = this.isExecutiveDiagnosisActive() ? 'inline-flex' : 'none';
     }
 
     this.switchTab('summary');
@@ -1339,12 +1648,16 @@ const App = {
 
     const user = Auth.getUser();
     const isAdmin = user && (user.rol || '').toUpperCase() === 'ADMIN';
+    const isDiagActive = this.isExecutiveDiagnosisActive();
 
     tbody.innerHTML = proyectos.map(p => {
       const solicitanteFormatted = this.formatSolicitante(p.Solicitante);
       const isUnmatched = solicitanteFormatted.startsWith('NO IDENTIFICADO');
       const deleteBtnHtml = isAdmin
         ? `<button type="button" class="btn-action-icon btn-action-delete" onclick="App.openDeleteProjectModal(${p.ID})" title="Eliminar proyecto" aria-label="Eliminar Proyecto">🗑️</button>`
+        : '';
+      const diagBtnHtml = isDiagActive
+        ? `<button type="button" class="btn-action-icon btn-action-diag" onclick="App.openDiagnosticoModal(${p.ID})" title="Diagnóstico Ejecutivo en 1 Clic" aria-label="Diagnóstico">⚡</button>`
         : '';
 
       return `
@@ -1373,6 +1686,7 @@ const App = {
               <button type="button" class="btn-action-icon btn-action-view" onclick="App.drillDownById(${p.ID})" title="Ver detalle completo (Drill Down)" aria-label="Ver Detalle">
                 🔍
               </button>
+              ${diagBtnHtml}
               <button type="button" class="btn-action-icon btn-action-edit" onclick="App.openEditProjectModal(${p.ID})" title="Editar proyecto" aria-label="Editar Proyecto">
                 ✏️
               </button>
@@ -2497,7 +2811,7 @@ const App = {
   // --------------------------------------------------------------------------
   // MODAL: ENVIAR DETALLE DEL TICKET POR CORREO (OFFICE 365)
   // --------------------------------------------------------------------------
-  openEmailTicketModal() {
+  openEmailTicketModal(options = null) {
     const modal = document.getElementById('email-ticket-modal');
     if (!modal) return;
 
@@ -2514,31 +2828,39 @@ const App = {
     // Pre-fill recipient (Para)
     const toInput = document.getElementById('email-destinatario') || document.getElementById('email-to');
     if (toInput) {
-      toInput.value = 'alejandro.aguilarm@clarovtr.cl';
+      toInput.value = options?.to || 'alejandro.aguilarm@clarovtr.cl';
     }
 
     // Pre-fill Subject (Asunto)
     const subjectInput = document.getElementById('email-asunto') || document.getElementById('email-subject');
     if (subjectInput) {
-      const defaultTitle = this.lastTicketFormData?.titulo || document.getElementById('ticket-titulo')?.value?.trim() || '';
-      subjectInput.value = defaultTitle ? `Interacción Service Manager: ${defaultTitle}` : (this.lastGeneratedTicketId ? `Interacción ${this.lastGeneratedTicketId}` : 'Interacción Service Manager');
+      if (options?.subject) {
+        subjectInput.value = options.subject;
+      } else {
+        const defaultTitle = this.lastTicketFormData?.titulo || document.getElementById('ticket-titulo')?.value?.trim() || '';
+        subjectInput.value = defaultTitle ? `Interacción Service Manager: ${defaultTitle}` : (this.lastGeneratedTicketId ? `Interacción ${this.lastGeneratedTicketId}` : 'Interacción Service Manager');
+      }
     }
 
     // Pre-fill Body (Cuerpo)
     const bodyInput = document.getElementById('email-cuerpo') || document.getElementById('email-body');
     if (bodyInput) {
-      const defaultDesc = this.lastTicketFormData?.descripcion || document.getElementById('ticket-descripcion')?.value?.trim() || '';
-      bodyInput.value = defaultDesc || (this.lastGeneratedTicketId ? `Interacción ${this.lastGeneratedTicketId} generada exitosamente.` : '');
+      if (options?.body) {
+        bodyInput.value = options.body;
+      } else {
+        const defaultDesc = this.lastTicketFormData?.descripcion || document.getElementById('ticket-descripcion')?.value?.trim() || '';
+        bodyInput.value = defaultDesc || (this.lastGeneratedTicketId ? `Interacción ${this.lastGeneratedTicketId} generada exitosamente.` : '');
+      }
     }
 
     // Update ticket badges
     const badgeTicket = document.getElementById('email-badge-ticket-id');
     if (badgeTicket) {
-      badgeTicket.textContent = this.lastGeneratedTicketId || 'SD0000000';
+      badgeTicket.textContent = options?.ticketBadge || this.lastGeneratedTicketId || 'SD0000000';
     }
     const badgePeticion = document.getElementById('email-badge-peticion-id');
     if (badgePeticion) {
-      badgePeticion.textContent = this.lastGeneratedPeticionId || 'PET0000000';
+      badgePeticion.textContent = options?.peticionBadge || this.lastGeneratedPeticionId || 'PET0000000';
     }
 
     // Reset attachment state

@@ -1584,3 +1584,572 @@ def delete_proyecto(proyecto_id: int) -> dict:
     finally:
         conn.close()
 
+# -----------------------------------------------------------------------------
+# MOTOR DE DIAGNÓSTICO EJECUTIVO EN 1 CLIC (SPECS-LTI-MOD-012)
+# -----------------------------------------------------------------------------
+def compilar_minuta_texto_plano(
+    proyecto: dict,
+    salud: dict,
+    antiguedad_dias: int,
+    porcentaje_avance: float,
+    solots_ejecutadas: int,
+    total_solots: int,
+    cuellos_de_botella: list,
+    recomendaciones: list
+) -> str:
+    num_proy = proyecto.get("Numero_Proyecto") or "S/N"
+    cliente = proyecto.get("Cliente") or "Sin Cliente"
+    lt_asignado = proyecto.get("LT_Asignado") or "No asignado"
+    solicitante = proyecto.get("Solicitante") or "No especificado"
+    estado_sp = proyecto.get("Estado") or "Generado"
+    salud_label = salud.get("label", "Sin Datos") if salud else "Sin Datos"
+    salud_color = (salud.get("color") or "").lower() if salud else "gray"
+    icono = "🔴" if salud_color == "red" else ("🟡" if salud_color == "yellow" else ("🟢" if salud_color == "green" else "⚪"))
+    motivos_str = f" ({', '.join(salud.get('motivos', []))})" if salud and salud.get("motivos") else ""
+
+    lines = [
+        "=" * 60,
+        "⚡ DIAGNÓSTICO EJECUTIVO HALO — APP LÍDERES TI",
+        "=" * 60,
+        f"PROYECTO: {num_proy}",
+        f"CLIENTE: {cliente}",
+        f"LÍDER TI: {lt_asignado}",
+        f"SOLICITANTE: {solicitante}",
+        f"ESTADO SHAREPOINT: {estado_sp}",
+        f"SALUD OPERACIONAL: {icono} {salud_label}{motivos_str}",
+        f"ANTIGÜEDAD: {antiguedad_dias} días",
+        f"AVANCE SOLOTS: {porcentaje_avance}% ({solots_ejecutadas}/{total_solots} ejecutadas)",
+        "",
+        "-" * 60,
+        "🚨 CUELLOS DE BOTELLA OPERATIVOS",
+        "-" * 60,
+    ]
+
+    if cuellos_de_botella:
+        for idx, cb in enumerate(cuellos_de_botella, 1):
+            lines.append(f"{idx}. [{cb['severidad']}] {cb['identificador']}: {cb['descripcion']} Área: {cb['responsable_area']}.")
+    else:
+        lines.append("No se detectaron cuellos de botella ni bloqueos operacionales en este proyecto.")
+
+    lines.extend([
+        "",
+        "-" * 60,
+        "🎯 ACCIONES RECOMENDADAS DE ESCALAMIENTO",
+        "-" * 60,
+    ])
+
+    if recomendaciones:
+        for idx, rec in enumerate(recomendaciones, 1):
+            lines.append(f"{idx}. [{rec['prioridad']}] {rec['accion']} (Destinatario: {rec['destinatario_escalamiento']} | Canal: {rec['canal_sugerido']})")
+    else:
+        lines.append("Sin recomendaciones adicionales de escalamiento.")
+
+    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    lines.extend([
+        "",
+        f"Generado el: {now_str} | HALO App Líderes TI",
+        "=" * 60
+    ])
+
+    return "\n".join(lines)
+
+
+def compilar_minuta_markdown(
+    proyecto: dict,
+    salud: dict,
+    antiguedad_dias: int,
+    porcentaje_avance: float,
+    solots_ejecutadas: int,
+    total_solots: int,
+    cuellos_de_botella: list,
+    recomendaciones: list
+) -> str:
+    num_proy = proyecto.get("Numero_Proyecto") or "S/N"
+    cliente = proyecto.get("Cliente") or "Sin Cliente"
+    lt_asignado = proyecto.get("LT_Asignado") or "No asignado"
+    solicitante = proyecto.get("Solicitante") or "No especificado"
+    estado_sp = proyecto.get("Estado") or "Generado"
+    salud_label = salud.get("label", "Sin Datos") if salud else "Sin Datos"
+    salud_color = (salud.get("color") or "").lower() if salud else "gray"
+    icono = "🔴" if salud_color == "red" else ("🟡" if salud_color == "yellow" else ("🟢" if salud_color == "green" else "⚪"))
+    motivos_str = f" *({', '.join(salud.get('motivos', []))})*" if salud and salud.get("motivos") else ""
+
+    md = [
+        "### ⚡ DIAGNÓSTICO EJECUTIVO — HALO Líderes TI",
+        "",
+        f"- **Proyecto:** `{num_proy}`",
+        f"- **Cliente:** **{cliente}**",
+        f"- **Líder TI:** {lt_asignado}",
+        f"- **Solicitante:** {solicitante}",
+        f"- **Estado SharePoint:** `{estado_sp}`",
+        f"- **Salud Operacional:** {icono} **{salud_label}**{motivos_str}",
+        f"- **Antigüedad:** {antiguedad_dias} días",
+        f"- **Avance Solots SGA:** **{porcentaje_avance}%** ({solots_ejecutadas} de {total_solots} ejecutadas)",
+        "",
+        "---",
+        "",
+        f"#### 🚨 Cuellos de Botella Detectados ({len(cuellos_de_botella)})",
+        ""
+    ]
+
+    if cuellos_de_botella:
+        for idx, cb in enumerate(cuellos_de_botella, 1):
+            md.append(f"{idx}. **[{cb['severidad']}] `{cb['identificador']}`** — {cb['descripcion']} *(Área: {cb['responsable_area']})*")
+    else:
+        md.append("✅ *No se detectaron cuellos de botella ni bloqueos operacionales en este proyecto.*")
+
+    md.extend([
+        "",
+        "---",
+        "",
+        f"#### 🎯 Acciones Recomendadas de Escalamiento ({len(recomendaciones)})",
+        ""
+    ])
+
+    if recomendaciones:
+        for idx, rec in enumerate(recomendaciones, 1):
+            md.append(f"{idx}. **[{rec['prioridad']}]** {rec['accion']}  \n   *Destinatario:* **{rec['destinatario_escalamiento']}** | *Canal:* _{rec['canal_sugerido']}_")
+    else:
+        md.append("ℹ️ *Sin recomendaciones adicionales de escalamiento.*")
+
+    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    md.extend([
+        "",
+        "---",
+        f"*Generado el: {now_str} | Plataforma HALO Líderes TI*"
+    ])
+
+    return "\n".join(md)
+
+
+def compilar_minuta_html(
+    proyecto: dict,
+    salud: dict,
+    antiguedad_dias: int,
+    porcentaje_avance: float,
+    solots_ejecutadas: int,
+    total_solots: int,
+    cuellos_de_botella: list,
+    recomendaciones: list
+) -> str:
+    num_proy = proyecto.get("Numero_Proyecto") or "S/N"
+    cliente = proyecto.get("Cliente") or "Sin Cliente"
+    lt_asignado = proyecto.get("LT_Asignado") or "No asignado"
+    solicitante = proyecto.get("Solicitante") or "No especificado"
+    estado_sp = proyecto.get("Estado") or "Generado"
+    salud_label = salud.get("label", "Sin Datos") if salud else "Sin Datos"
+    salud_color = (salud.get("color") or "").lower() if salud else "gray"
+    badge_bg = "#fee2e2" if salud_color == "red" else ("#fef3c7" if salud_color == "yellow" else ("#d1fae5" if salud_color == "green" else "#f3f4f6"))
+    badge_fg = "#dc2626" if salud_color == "red" else ("#d97706" if salud_color == "yellow" else ("#059669" if salud_color == "green" else "#4b5563"))
+
+    cuellos_html = ""
+    if cuellos_de_botella:
+        items = []
+        for cb in cuellos_de_botella:
+            sev_bg = "#fee2e2" if cb["severidad"] == "CRITICA" else ("#fef3c7" if cb["severidad"] == "ALTA" else "#e0f2fe")
+            sev_fg = "#dc2626" if cb["severidad"] == "CRITICA" else ("#d97706" if cb["severidad"] == "ALTA" else "#0369a1")
+            items.append(f"""
+            <li style="margin-bottom: 8px;">
+                <span style="display: inline-block; padding: 2px 6px; font-size: 11px; font-weight: bold; border-radius: 4px; background: {sev_bg}; color: {sev_fg};">{cb['severidad']}</span>
+                <strong>{cb['identificador']}</strong>: {cb['descripcion']} <span style="color: #666; font-size: 12px;">(Área: {cb['responsable_area']})</span>
+            </li>
+            """)
+        cuellos_html = f"<ul style='padding-left: 20px; margin: 8px 0;'>{''.join(items)}</ul>"
+    else:
+        cuellos_html = "<p style='color: #059669; font-weight: 500; margin: 8px 0;'>✅ No se detectaron cuellos de botella ni bloqueos operacionales en este proyecto.</p>"
+
+    recs_html = ""
+    if recomendaciones:
+        items = []
+        for r in recomendaciones:
+            prio_bg = "#fee2e2" if r["prioridad"] == "URGENTE" else ("#fef3c7" if r["prioridad"] == "ALTA" else "#e0f2fe")
+            prio_fg = "#dc2626" if r["prioridad"] == "URGENTE" else ("#d97706" if r["prioridad"] == "ALTA" else "#0369a1")
+            items.append(f"""
+            <li style="margin-bottom: 10px;">
+                <span style="display: inline-block; padding: 2px 6px; font-size: 11px; font-weight: bold; border-radius: 4px; background: {prio_bg}; color: {prio_fg};">{r['prioridad']}</span>
+                <strong>{r['accion']}</strong><br/>
+                <span style="font-size: 12px; color: #555;">Destinatario: <strong>{r['destinatario_escalamiento']}</strong> | Canal: <em>{r['canal_sugerido']}</em></span>
+            </li>
+            """)
+        recs_html = f"<ol style='padding-left: 20px; margin: 8px 0;'>{''.join(items)}</ol>"
+    else:
+        recs_html = "<p style='color: #555; margin: 8px 0;'>Sin recomendaciones adicionales de escalamiento.</p>"
+
+    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    html = f"""
+    <div style="font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #222; line-height: 1.5; max-width: 700px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; background: #ffffff;">
+        <div style="background: linear-gradient(135deg, #B52217 0%, #DA291C 100%); color: #ffffff; padding: 16px 20px;">
+            <h2 style="margin: 0; font-size: 18px; font-weight: 700;">⚡ Diagnóstico Ejecutivo — HALO Líderes TI</h2>
+            <p style="margin: 4px 0 0 0; font-size: 12px; opacity: 0.9;">Reporte Operacional en Tiempo Real</p>
+        </div>
+        <div style="padding: 20px;">
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
+                <tr>
+                    <td style="padding: 6px 0; color: #64748b; width: 140px;"><strong>Proyecto:</strong></td>
+                    <td style="padding: 6px 0; font-family: monospace; font-weight: bold; color: #DA291C;">{num_proy}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 6px 0; color: #64748b;"><strong>Cliente:</strong></td>
+                    <td style="padding: 6px 0; font-weight: bold;">{cliente}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 6px 0; color: #64748b;"><strong>Líder TI:</strong></td>
+                    <td style="padding: 6px 0;">{lt_asignado}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 6px 0; color: #64748b;"><strong>Solicitante:</strong></td>
+                    <td style="padding: 6px 0;">{solicitante}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 6px 0; color: #64748b;"><strong>Estado SP:</strong></td>
+                    <td style="padding: 6px 0;">{estado_sp}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 6px 0; color: #64748b;"><strong>Salud Operacional:</strong></td>
+                    <td style="padding: 6px 0;">
+                        <span style="display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; background: {badge_bg}; color: {badge_fg};">
+                            {salud_label}
+                        </span>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="padding: 6px 0; color: #64748b;"><strong>Antigüedad:</strong></td>
+                    <td style="padding: 6px 0;">{antiguedad_dias} días</td>
+                </tr>
+                <tr>
+                    <td style="padding: 6px 0; color: #64748b;"><strong>Avance Solots SGA:</strong></td>
+                    <td style="padding: 6px 0;"><strong>{porcentaje_avance}%</strong> ({solots_ejecutadas} de {total_solots} ejecutadas)</td>
+                </tr>
+            </table>
+
+            <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 16px 0;" />
+
+            <h3 style="font-size: 15px; color: #0f172a; margin: 0 0 8px 0;">🚨 Cuellos de Botella Detectados ({len(cuellos_de_botella)})</h3>
+            {cuellos_html}
+
+            <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 16px 0;" />
+
+            <h3 style="font-size: 15px; color: #0f172a; margin: 0 0 8px 0;">🎯 Recomendaciones de Escalamiento ({len(recomendaciones)})</h3>
+            {recs_html}
+
+            <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 16px 0;" />
+
+            <p style="margin: 0; font-size: 11px; color: #94a3b8; text-align: right;">
+                Generado el {now_str} | Plataforma HALO Líderes TI
+            </p>
+        </div>
+    </div>
+    """
+    return html.strip()
+
+
+def get_diagnostico_proyecto(proyecto_id: int):
+    """
+    Genera el diagnóstico ejecutivo y operacional de un proyecto en tiempo real,
+    analizando datos de dbo.Proyectos, dbo.CT_BACKLOG_OPERACIONES2,
+    dbo.registrosRF_SD_SM y dbo.registrosSM_RFC.
+    """
+    # 1. Obtener datos del proyecto base
+    proyecto = get_proyecto_by_id(proyecto_id)
+    if not proyecto:
+        return None
+
+    numero_proyecto = proyecto.get("Numero_Proyecto")
+    cliente = proyecto.get("Cliente", "Sin Cliente")
+    lt_asignado = proyecto.get("LT_Asignado", "Sin Asignar")
+    solicitante = proyecto.get("Solicitante") or "No especificado"
+    estado_sp = proyecto.get("Estado", "Generado")
+    tipo_servicio = proyecto.get("Tipo_Servicio", "Otros")
+    salud = proyecto.get("salud", {})
+    fecha_creacion_lti = proyecto.get("Creado") or proyecto.get("fecha_solicitud_lti")
+
+    # 2. Calcular antigüedad en días
+    creado_dt = proyecto.get("Creado")
+    antiguedad_dias = 0
+    hoy = datetime.date.today()
+    if creado_dt:
+        try:
+            if isinstance(creado_dt, str):
+                clean_str = creado_dt.replace("Z", "")
+                if " " in clean_str:
+                    dt = datetime.datetime.strptime(clean_str[:19], '%Y-%m-%d %H:%M:%S').date()
+                else:
+                    dt = datetime.date.fromisoformat(clean_str[:10])
+                antiguedad_dias = max(0, (hoy - dt).days)
+            elif isinstance(creado_dt, datetime.datetime):
+                antiguedad_dias = max(0, (hoy - creado_dt.date()).days)
+            elif isinstance(creado_dt, datetime.date):
+                antiguedad_dias = max(0, (hoy - creado_dt).days)
+        except Exception:
+            pass
+
+    # 3. Obtener elementos asociados
+    solots = get_solots_by_proyecto(proyecto_id, numero_proyecto)
+    tickets = get_tickets_by_proyecto(proyecto_id, numero_proyecto)
+    rfcs = get_rfcs_by_proyecto(proyecto_id, numero_proyecto)
+
+    # Estados cerrados canónicos de Solots
+    estados_cerrados_solot = {
+        'cerrada', '5- ejecutada', '5- ejecutada tareas pendientes',
+        'abortado', 'en aborcion', 'eliminada', 'aprobado'
+    }
+
+    # 4. Análisis de Solots
+    total_solots = len(solots)
+    solots_ejecutadas = 0
+    solots_vencidas_list = []
+    solots_por_vencer_list = []
+
+    for s in solots:
+        estado_otp = (s.get("ESTADO_OTP") or "").strip().lower()
+        is_cerrada = estado_otp in estados_cerrados_solot
+        if is_cerrada:
+            solots_ejecutadas += 1
+            continue
+
+        fecha_comp = s.get("FECHA_COMPROMETIDA")
+        if fecha_comp:
+            try:
+                if isinstance(fecha_comp, str):
+                    fc = datetime.date.fromisoformat(fecha_comp[:10])
+                elif isinstance(fecha_comp, datetime.datetime):
+                    fc = fecha_comp.date()
+                elif isinstance(fecha_comp, datetime.date):
+                    fc = fecha_comp
+                else:
+                    fc = None
+
+                if fc:
+                    if fc < hoy:
+                        dias_atraso = (hoy - fc).days
+                        solots_vencidas_list.append({
+                            "id_otp": s.get("ID_OTP"),
+                            "descr": s.get("DESCR_OTP") or "Sin descripción",
+                            "dias_atraso": dias_atraso,
+                            "area": s.get("GRUPO_ASIGNADO_OTP") or s.get("ASIGNADO_OTP") or "Operaciones SGA",
+                            "estado": s.get("ESTADO_OTP") or "Pendiente"
+                        })
+                    elif fc <= hoy + datetime.timedelta(days=5):
+                        solots_por_vencer_list.append({
+                            "id_otp": s.get("ID_OTP"),
+                            "descr": s.get("DESCR_OTP") or "Sin descripción",
+                            "dias_restantes": (fc - hoy).days,
+                            "area": s.get("GRUPO_ASIGNADO_OTP") or s.get("ASIGNADO_OTP") or "Operaciones SGA"
+                        })
+            except Exception:
+                pass
+
+    porcentaje_avance = round((solots_ejecutadas / total_solots * 100), 1) if total_solots > 0 else 0.0
+
+    # 5. Análisis de Tickets SD
+    total_tickets = len(tickets)
+    tickets_abiertos = 0
+    tickets_cerrados = 0
+    tickets_criticos_list = []
+    tickets_atencion_list = []
+
+    for t in tickets:
+        status = (t.get("STATUS") or "").strip().lower()
+        if status in ('cerrado', 'resuelto'):
+            tickets_cerrados += 1
+            continue
+
+        tickets_abiertos += 1
+        sub_date = t.get("SUBMIT_DATE")
+        if sub_date:
+            try:
+                if isinstance(sub_date, str):
+                    sd = datetime.date.fromisoformat(sub_date[:10])
+                elif isinstance(sub_date, datetime.datetime):
+                    sd = sub_date.date()
+                elif isinstance(sub_date, datetime.date):
+                    sd = sub_date
+                else:
+                    sd = None
+
+                if sd:
+                    dias_abierto = max(0, (hoy - sd).days)
+                    ticket_info = {
+                        "incident_id": t.get("CC_INCIDENT_ID"),
+                        "brief_description": t.get("BRIEF_DESCRIPTION") or "Sin título",
+                        "dias_abierto": dias_abierto,
+                        "torre": t.get("ASSIGNED_GROUP") or "Sin Grupo Asignado",
+                        "asignado": t.get("ASSIGNED_TO") or "No Asignado",
+                        "status": t.get("STATUS") or "Abierto"
+                    }
+                    if dias_abierto > 14:
+                        tickets_criticos_list.append(ticket_info)
+                    elif dias_abierto > 7:
+                        tickets_atencion_list.append(ticket_info)
+            except Exception:
+                pass
+
+    # 6. Análisis de RFCs
+    total_rfcs = len(rfcs)
+    rfcs_abiertas = [r for r in rfcs if not r.get("CLOSE_TIME")]
+
+    # 7. Construcción de Cuellos de Botella
+    cuellos_de_botella = []
+    cb_count = 1
+
+    for sv in sorted(solots_vencidas_list, key=lambda x: x["dias_atraso"], reverse=True):
+        severidad = "CRITICA" if sv["dias_atraso"] > 15 else "ALTA"
+        cuellos_de_botella.append({
+            "id": f"CB-{cb_count:02d}",
+            "tipo": "SOLOT_VENCIDA",
+            "severidad": severidad,
+            "identificador": f"OTP-{sv['id_otp']}",
+            "descripcion": f"Solot vencida hace {sv['dias_atraso']} días ({sv['descr']}).",
+            "dias_atraso": sv["dias_atraso"],
+            "responsable_area": sv["area"],
+            "estado_actual": sv["estado"]
+        })
+        cb_count += 1
+
+    for tc in sorted(tickets_criticos_list, key=lambda x: x["dias_abierto"], reverse=True):
+        cuellos_de_botella.append({
+            "id": f"CB-{cb_count:02d}",
+            "tipo": "TICKET_DETENIDO",
+            "severidad": "CRITICA",
+            "identificador": str(tc["incident_id"]),
+            "descripcion": f"Ticket detenido hace {tc['dias_abierto']} días sin resolución: '{tc['brief_description']}'.",
+            "dias_antiguedad": tc["dias_abierto"],
+            "responsable_area": tc["torre"],
+            "estado_actual": tc["status"]
+        })
+        cb_count += 1
+
+    for ta in sorted(tickets_atencion_list, key=lambda x: x["dias_abierto"], reverse=True):
+        cuellos_de_botella.append({
+            "id": f"CB-{cb_count:02d}",
+            "tipo": "TICKET_EN_RIESGO",
+            "severidad": "MEDIA",
+            "identificador": str(ta["incident_id"]),
+            "descripcion": f"Ticket abierto hace {ta['dias_abierto']} días (> 7 días): '{ta['brief_description']}'.",
+            "dias_antiguedad": ta["dias_abierto"],
+            "responsable_area": ta["torre"],
+            "estado_actual": ta["status"]
+        })
+        cb_count += 1
+
+    for r in rfcs_abiertas:
+        cuellos_de_botella.append({
+            "id": f"CB-{cb_count:02d}",
+            "tipo": "RFC_PENDIENTE",
+            "severidad": "MEDIA",
+            "identificador": str(r.get("NUMBER")),
+            "descripcion": f"RFC abierta sin fecha de cierre: '{r.get('BRIEF_DESCRIPTION') or 'Sin descripción'}'.",
+            "dias_antiguedad": None,
+            "responsable_area": r.get("ASSIGN_DEPT") or "Gestión de Cambios",
+            "estado_actual": "En Proceso"
+        })
+        cb_count += 1
+
+    # 8. Construcción de Recomendaciones de Escalamiento
+    recomendaciones = []
+    rec_count = 1
+
+    # Recomendación por tickets críticos en torres
+    torres_criticas = {}
+    for tc in tickets_criticos_list:
+        torre = tc["torre"]
+        torres_criticas.setdefault(torre, []).append(tc)
+
+    for torre, tks in torres_criticas.items():
+        t_ids = ", ".join([str(t["incident_id"]) for t in tks[:3]])
+        max_dias = max([t["dias_abierto"] for t in tks])
+        recomendaciones.append({
+            "orden": rec_count,
+            "prioridad": "URGENTE",
+            "destinatario_escalamiento": f"Jefatura / Coordinación de {torre}",
+            "accion": f"Escalar de manera urgente la atención de ticket(s) {t_ids} detenido(s) hasta {max_dias} días sin resolución.",
+            "canal_sugerido": "Mesa de seguimiento técnico diario / Notificación formal SM"
+        })
+        rec_count += 1
+
+    # Recomendación por Solots vencidas
+    if solots_vencidas_list:
+        max_dias_s = max([s["dias_atraso"] for s in solots_vencidas_list])
+        recomendaciones.append({
+            "orden": rec_count,
+            "prioridad": "ALTA",
+            "destinatario_escalamiento": "Coordinación Operaciones SGA / Provisión",
+            "accion": f"Solicitar reprogramación formal de compromisos o priorización de cuadrilla para {len(solots_vencidas_list)} Solot(s) vencida(s) (hasta {max_dias_s} días de atraso).",
+            "canal_sugerido": "Correo formal a operaciones SGA con copia al Jefe de Proyectos"
+        })
+        rec_count += 1
+
+    # Recomendación por Solicitante / Cliente
+    if cuellos_de_botella:
+        recomendaciones.append({
+            "orden": rec_count,
+            "prioridad": "MEDIA",
+            "destinatario_escalamiento": f"Solicitante del Proyecto ({solicitante})",
+            "accion": "Emitir minuta de estado reportando los bloqueos operacionales en curso y acordar fecha de corte.",
+            "canal_sugerido": "Minuta ejecutiva por correo corporativo"
+        })
+        rec_count += 1
+    else:
+        recomendaciones.append({
+            "orden": 1,
+            "prioridad": "BAJA",
+            "destinatario_escalamiento": "Líder Técnico Asignado",
+            "accion": "Proyecto en operación regular. Mantener seguimiento preventivo de fechas comprometidas.",
+            "canal_sugerido": "Revisión semanal de backlog"
+        })
+
+    # 9. Generación de Minuta Ejecutiva en Formatos (Texto, MD, HTML)
+    minuta_texto = compilar_minuta_texto_plano(
+        proyecto, salud, antiguedad_dias, porcentaje_avance,
+        solots_ejecutadas, total_solots, cuellos_de_botella, recomendaciones
+    )
+    minuta_md = compilar_minuta_markdown(
+        proyecto, salud, antiguedad_dias, porcentaje_avance,
+        solots_ejecutadas, total_solots, cuellos_de_botella, recomendaciones
+    )
+    minuta_html = compilar_minuta_html(
+        proyecto, salud, antiguedad_dias, porcentaje_avance,
+        solots_ejecutadas, total_solots, cuellos_de_botella, recomendaciones
+    )
+
+    asunto = f"[HALO] Diagnóstico Ejecutivo: Proyecto {numero_proyecto or 'S/N'} - {cliente}"
+
+    return {
+        "proyecto_id": proyecto_id,
+        "numero_proyecto": numero_proyecto,
+        "cliente": cliente,
+        "lt_asignado": lt_asignado,
+        "solicitante": solicitante,
+        "estado_sp": estado_sp,
+        "tipo_servicio": tipo_servicio,
+        "fecha_creacion_lti": fecha_creacion_lti,
+        "antiguedad_dias": antiguedad_dias,
+        "salud": salud,
+        "resumen_operacional": {
+            "total_solots": total_solots,
+            "solots_ejecutadas": solots_ejecutadas,
+            "solots_pendientes": total_solots - solots_ejecutadas,
+            "solots_vencidas": len(solots_vencidas_list),
+            "solots_por_vencer": len(solots_por_vencer_list),
+            "porcentaje_avance_solots": porcentaje_avance,
+            "total_tickets": total_tickets,
+            "tickets_abiertos": tickets_abiertos,
+            "tickets_cerrados": tickets_cerrados,
+            "tickets_criticos": len(tickets_criticos_list),
+            "tickets_atencion": len(tickets_atencion_list),
+            "total_rfcs": total_rfcs,
+            "rfcs_abiertas": len(rfcs_abiertas)
+        },
+        "cuellos_de_botella": cuellos_de_botella,
+        "recomendaciones_escalamiento": recomendaciones,
+        "minuta_ejecutiva": {
+            "asunto_sugerido": asunto,
+            "texto_plano": minuta_texto,
+            "markdown": minuta_md,
+            "html": minuta_html
+        },
+        "timestamp_generacion": datetime.datetime.now().isoformat()
+    }
+
+
