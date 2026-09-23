@@ -10,6 +10,9 @@ if (window.HALO_CONFIG.ENABLE_HEALTH_SCORE === undefined) {
 if (window.HALO_CONFIG.ENABLE_EXECUTIVE_DIAGNOSIS === undefined) {
   window.HALO_CONFIG.ENABLE_EXECUTIVE_DIAGNOSIS = true;
 }
+if (window.HALO_CONFIG.ENABLE_PDF_EXPORT === undefined) {
+  window.HALO_CONFIG.ENABLE_PDF_EXPORT = true;
+}
 
 const CANONICAL_ESTADOS_SHAREPOINT = ['Generado', 'En revision', 'Atendido'];
 
@@ -52,6 +55,7 @@ const App = {
     this.initTheme();
     this.initHealthScore();
     this.initExecutiveDiagnosis();
+    this.initPdfExport();
     this.bindEvents();
     
     try {
@@ -556,6 +560,127 @@ const App = {
   },
 
   // --------------------------------------------------------------------------
+  // FICHA EJECUTIVA PDF EXPORT / FEATURE TOGGLE (KILL-SWITCH)
+  // --------------------------------------------------------------------------
+  initPdfExport() {
+    this.applyPdfExportState(false);
+  },
+
+  isPdfExportActive() {
+    // 1. Si la configuración maestra en runtime está en false, se apaga obligatoriamente
+    if (window.HALO_CONFIG && window.HALO_CONFIG.ENABLE_PDF_EXPORT === false) {
+      return false;
+    }
+    // 2. Si el usuario definió una preferencia en localStorage, se respeta
+    const userPref = localStorage.getItem('halo_export_pdf_enabled');
+    if (userPref !== null) {
+      return userPref === 'true';
+    }
+    // 3. Fallback por defecto: Habilitado (true)
+    return true;
+  },
+
+  togglePdfExport() {
+    const current = this.isPdfExportActive();
+    const next = !current;
+    localStorage.setItem('halo_export_pdf_enabled', next ? 'true' : 'false');
+    this.applyPdfExportState(true);
+    const msg = next ? '📄 Exportación de Ficha PDF activada' : '📄 Exportación de Ficha PDF desactivada';
+    this.showToast(msg, 'info');
+  },
+
+  applyPdfExportState(triggerRender = true) {
+    const active = this.isPdfExportActive();
+    const toggleBtn = document.getElementById('pdf-export-toggle-btn');
+    const toggleLabel = document.getElementById('pdf-toggle-label');
+    const btnDdPdf = document.getElementById('btn-drilldown-export-pdf');
+
+    if (toggleBtn) {
+      toggleBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
+      if (active) {
+        toggleBtn.classList.remove('is-off');
+        toggleBtn.title = 'Desactivar Exportación de Ficha PDF';
+        if (toggleLabel) toggleLabel.textContent = 'Ficha PDF: ON';
+      } else {
+        toggleBtn.classList.add('is-off');
+        toggleBtn.title = 'Activar Exportación de Ficha PDF';
+        if (toggleLabel) toggleLabel.textContent = 'Ficha PDF: OFF';
+      }
+    }
+
+    // Política estricta de Cero Rastros
+    if (btnDdPdf) {
+      btnDdPdf.style.display = active ? 'inline-flex' : 'none';
+    }
+  },
+
+  async exportarFichaEjecutivaPDF(proyectoId) {
+    if (!this.isPdfExportActive()) return;
+
+    const btn = document.getElementById('btn-drilldown-export-pdf');
+    const originalHtml = btn ? btn.innerHTML : '';
+
+    try {
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-sm"></span> Generando PDF...';
+      }
+
+      // Obtener el HTML corporativo desde backend con auto_print=false
+      const res = await Auth.fetchWithAuth(`/api/proyectos/${proyectoId}/ficha-html?auto_print=false`);
+      if (!res.ok) {
+        throw new Error(`Error ${res.status}: No se pudo obtener la ficha ejecutiva.`);
+      }
+
+      const htmlContent = await res.text();
+
+      // Renderizar mediante Iframe Oculto para impresión limpia
+      let printIframe = document.getElementById('halo-print-iframe');
+      if (!printIframe) {
+        printIframe = document.createElement('iframe');
+        printIframe.id = 'halo-print-iframe';
+        printIframe.style.position = 'fixed';
+        printIframe.style.top = '-9999px';
+        printIframe.style.left = '-9999px';
+        printIframe.style.width = '0px';
+        printIframe.style.height = '0px';
+        printIframe.style.border = 'none';
+        document.body.appendChild(printIframe);
+      }
+
+      const frameDoc = printIframe.contentDocument || printIframe.contentWindow.document;
+      frameDoc.open();
+      frameDoc.write(htmlContent);
+      frameDoc.close();
+
+      // Esperar renderizado de estilos e imágenes antes de invocar print
+      setTimeout(() => {
+        try {
+          printIframe.contentWindow.focus();
+          printIframe.contentWindow.print();
+          this.showToast('📄 Ficha ejecutiva enviada al diálogo de impresión/PDF', 'success');
+        } catch (printErr) {
+          console.warn('Iframe print bloqueado, recurriendo a ventana emergente:', printErr);
+          // Fallback en caso de bloqueo de iframe
+          const targetUrl = (window.Auth && typeof window.Auth.getAppApiUrl === 'function')
+            ? window.Auth.getAppApiUrl(`/api/proyectos/${proyectoId}/ficha-html?auto_print=true`)
+            : `/api/proyectos/${proyectoId}/ficha-html?auto_print=true`;
+          window.open(targetUrl, '_blank');
+        }
+      }, 450);
+
+    } catch (err) {
+      console.error('Error al exportar ficha ejecutiva a PDF:', err);
+      this.showToast('No fue posible generar la ficha ejecutiva PDF: ' + err.message, 'danger');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+      }
+    }
+  },
+
+  // --------------------------------------------------------------------------
   // EVENT BINDINGS
   // --------------------------------------------------------------------------
   bindEvents() {
@@ -636,6 +761,12 @@ const App = {
     const diagToggleBtn = document.getElementById('diag-toggle-btn') || document.getElementById('executive-diagnosis-toggle-btn');
     if (diagToggleBtn) {
       diagToggleBtn.addEventListener('click', () => this.toggleExecutiveDiagnosis());
+    }
+
+    // PDF Export Toggle Button
+    const pdfToggleBtn = document.getElementById('pdf-export-toggle-btn');
+    if (pdfToggleBtn) {
+      pdfToggleBtn.addEventListener('click', () => this.togglePdfExport());
     }
 
     // Health Score KPI Cards Interactive Filtering
@@ -957,7 +1088,16 @@ const App = {
       });
     }
 
-    // Drill Down Edit / Delete / Diagnosis Toolbar Buttons
+    // Drill Down Edit / Delete / Diagnosis / PDF Export Toolbar Buttons
+    const btnDdPdf = document.getElementById('btn-drilldown-export-pdf');
+    if (btnDdPdf) {
+      btnDdPdf.addEventListener('click', () => {
+        if (this.currentProject && this.currentProject.ID) {
+          this.exportarFichaEjecutivaPDF(this.currentProject.ID);
+        }
+      });
+    }
+
     const btnDdDiag = document.getElementById('btn-drilldown-diagnostico') || document.getElementById('btn-dd-diagnostico');
     if (btnDdDiag) {
       btnDdDiag.addEventListener('click', () => {
@@ -1387,6 +1527,12 @@ const App = {
     if (btnDdDelete) {
       const user = Auth.getUser();
       btnDdDelete.style.display = (user && (user.rol || '').toUpperCase() === 'ADMIN') ? 'inline-flex' : 'none';
+    }
+
+    // PDF Export Button in Drill Down Header
+    const btnDdPdf = document.getElementById('btn-drilldown-export-pdf');
+    if (btnDdPdf) {
+      btnDdPdf.style.display = this.isPdfExportActive() ? 'inline-flex' : 'none';
     }
 
     // Executive Diagnosis Button in Drill Down Header

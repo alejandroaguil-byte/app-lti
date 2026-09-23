@@ -25,14 +25,19 @@
    - **Kill-Switch**: Botón `⚡ Diagnóstico: ON / OFF` en sub-barra, `localStorage` y política de Cero Rastros.
    - **Pruebas Automatizadas:** 206/206 aprobadas (100% pass rate).
 
+3. **Funcionalidad 3: Exportación de 'Ficha Ejecutiva de Proyecto' a PDF Corporativo & Kill-Switch**:
+   - Descarga con 1 clic de documento PDF/imprimible A4 corporativo Claro HALO.
+   - Membrete institucional con logotipo SVG oficial vectorizado, paleta `#B52217` / `#0097A9`, tipografía de alta fidelidad.
+   - Indicador de Salud Operacional, KPIs de avance, resumen, diagnóstico sintético, cuellos de botella y recomendaciones.
+   - Tablas compactas de Solots SGA (con días de atraso), Tickets HPSM/SD (con permanencia y alertas) y RFCs.
+   - Generación de Folio determinista único (`HALO-FE-YYYY-XXXXXX-HASH`), firmas institucionales y disclaimer de confidencialidad.
+   - Endpoints REST `/api/proyectos/{id}/ficha-ejecutiva` y `/api/proyectos/{id}/ficha-html`.
+   - **Kill-Switch**: Botón `📄 Ficha PDF: ON / OFF` (`#pdf-export-toggle-btn`), switch maestro en runtime y política estricta de Cero Rastros.
+   - **Pruebas Automatizadas:** Suite completa en `tests/test_ficha_ejecutiva_pdf.py` y `tests/test_functional_ficha_ejecutiva_pdf.py` (13/13 aprobadas).
+
 ---
 
 ## 🚀 ROADMAP PENDIENTE PARA MAÑANA (SESIÓN PREVIA A LA DEMO DEL JUEVES)
-
-### 📄 Funcionalidad 3: Exportación de "Ficha Ejecutiva de Proyecto" a PDF Corporativo
-- **Objetivo:** Permitir al gerente descargar con 1 clic un PDF estilizado de la ficha del proyecto con membrete y tipografía corporativa de Claro HALO (`#B52217` / `#0097A9`), resumen ejecutivo, tablas de Solots, Tickets SD y RFCs asociadas.
-- **Valor para el Gerente:** Llevar la ficha lista para comités directivos o enviarla por correo sin armar PowerPoints a mano.
-- **Requerimiento:** Botón `📄 Exportar Ficha (PDF)` en Drill Down y soporte de Kill-Switch para activar/desactivar.
 
 ### ⏱️ Funcionalidad 4: Timeline / Línea de Tiempo Visual del Proyecto (Visual Roadmap)
 - **Objetivo:** Nueva pestaña en el Drill Down que unifique cronológicamente los hitos del proyecto: Creación en SharePoint ➔ Asignación de Líder ➔ Apertura de Solots SGA ➔ Generación de Tickets HPSM ➔ Creación de RFCs ➔ Hitos pendientes.

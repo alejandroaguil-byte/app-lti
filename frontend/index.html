@@ -117,6 +117,12 @@
             <span class="diagnosis-toggle-label" id="diagnosis-toggle-label">Diagnóstico: ON</span>
           </button>
 
+          <!-- Botón Kill-Switch / Toggle de Exportación a PDF -->
+          <button id="pdf-export-toggle-btn" class="btn-subbar-toggle" title="Activar o desactivar Exportación de Ficha Ejecutiva a PDF" aria-label="Toggle Exportación PDF" aria-pressed="true">
+            <span class="pdf-toggle-icon">📄</span>
+            <span class="pdf-toggle-label" id="pdf-toggle-label">Ficha PDF: ON</span>
+          </button>
+
           <span id="user-role-badge" class="badge badge-info">Líder</span>
           <button id="theme-toggle-btn" class="btn-icon-subbar" title="Cambiar Modo Claro / Oscuro" aria-label="Cambiar tema">
             <span id="theme-icon">🌙</span>
@@ -309,6 +315,15 @@
                 <!-- Indicador de Salud Operacional (Controlado por Kill-Switch) -->
                 <div id="dd-health-status" style="display: none;"></div>
                 <div class="drilldown-action-toolbar">
+                  <!-- Botón Exportar Ficha Ejecutiva a PDF (Controlado por Kill-Switch) -->
+                  <button type="button" 
+                          id="btn-drilldown-export-pdf" 
+                          class="btn btn-primary-outline btn-sm btn-pdf-export-action" 
+                          title="Descargar Ficha Ejecutiva de Proyecto en PDF Corporativo Claro HALO" 
+                          aria-label="Exportar Ficha Ejecutiva a PDF"
+                          style="display: none;">
+                    <span class="btn-icon">📄</span> Exportar Ficha (PDF)
+                  </button>
                   <button type="button" id="btn-drilldown-diagnostico" class="btn btn-warning-outline btn-sm btn-diagnostico-action" title="Generar Diagnóstico Ejecutivo en 1 Clic" style="display: none;">
                     <span class="btn-icon">⚡</span> Diagnóstico Ejecutivo
                   </button>

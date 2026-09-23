@@ -6,6 +6,8 @@ import logging
 from .config import DB_CONFIG
 
 import re
+import hashlib
+import html
 
 logger = logging.getLogger("db")
 
@@ -2151,5 +2153,825 @@ def get_diagnostico_proyecto(proyecto_id: int):
         },
         "timestamp_generacion": datetime.datetime.now().isoformat()
     }
+
+
+def _parse_date(date_val):
+    """
+    Normaliza valores de fecha provenientes de la base de datos (str, datetime, date)
+    a un objeto datetime.date o None.
+    """
+    if not date_val:
+        return None
+    if isinstance(date_val, datetime.datetime):
+        return date_val.date()
+    if isinstance(date_val, datetime.date):
+        return date_val
+    if isinstance(date_val, str):
+        clean_str = date_val.strip().replace("Z", "")
+        try:
+            return datetime.date.fromisoformat(clean_str[:10])
+        except Exception:
+            pass
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%d/%m/%Y", "%Y/%m/%d", "%d-%m-%Y"):
+            try:
+                return datetime.datetime.strptime(clean_str[:19], fmt).date()
+            except Exception:
+                pass
+    return None
+
+
+def get_ficha_ejecutiva_data(proyecto_id: int, username: str = "sistema") -> dict:
+    """
+    Consolida todos los datos del proyecto para la generación de la Ficha Ejecutiva PDF.
+    Cruza información de dbo.Proyectos, dbo.CT_BACKLOG_OPERACIONES2,
+    dbo.registrosRF_SD_SM y dbo.registrosSM_RFC.
+    """
+    proyecto = get_proyecto_by_id(proyecto_id)
+    if not proyecto:
+        return None
+
+    numero_proyecto = proyecto.get("Numero_Proyecto") or "S/N"
+    hoy = datetime.date.today()
+    ahora = datetime.datetime.now()
+
+    # Reutilizar el motor de diagnóstico existente para métricas y recomendaciones
+    diag = get_diagnostico_proyecto(proyecto_id) or {}
+    kpis = diag.get("resumen_operacional", {})
+    cuellos = diag.get("cuellos_de_botella", [])
+    recs = diag.get("recomendaciones_escalamiento", [])
+
+    # Estados cerrados canónicos de Solots
+    estados_cerrados_solot = {
+        'cerrada', '5- ejecutada', '5- ejecutada tareas pendientes',
+        'abortado', 'en aborcion', 'eliminada', 'aprobado'
+    }
+
+    # Obtener Solots y formatear para tabla ejecutiva
+    solots_raw = get_solots_by_proyecto(proyecto_id, numero_proyecto)
+    solots_table = []
+    for s in solots_raw:
+        fc = s.get("FECHA_COMPROMETIDA")
+        fc_fmt = "-"
+        dias_atraso = 0
+        estado_alerta = "NORMAL"
+
+        if fc:
+            fc_date = _parse_date(fc)
+            if fc_date:
+                fc_fmt = fc_date.strftime("%d/%m/%Y")
+                estado_otp_str = (s.get("ESTADO_OTP") or "").strip().lower()
+                if fc_date < hoy and estado_otp_str not in estados_cerrados_solot:
+                    dias_atraso = (hoy - fc_date).days
+                    estado_alerta = "VENCIDA"
+                elif fc_date <= hoy + datetime.timedelta(days=5) and estado_otp_str not in estados_cerrados_solot:
+                    estado_alerta = "POR_VENCER"
+
+        solots_table.append({
+            "id_otp": s.get("ID_OTP"),
+            "nro_proyecto": s.get("NRO_PROYECTO") or numero_proyecto,
+            "descr_otp": s.get("DESCR_OTP") or "Sin descripción",
+            "estado_otp": s.get("ESTADO_OTP") or "Pendiente",
+            "fecha_compromiso": str(fc)[:10] if fc else None,
+            "fecha_compromiso_fmt": fc_fmt,
+            "dias_atraso": dias_atraso,
+            "estado_alerta": estado_alerta,
+            "servicio": s.get("SERVICIO") or "-",
+            "producto": s.get("PRODUCTO") or "-"
+        })
+
+    # Obtener Tickets y formatear para tabla ejecutiva
+    tickets_raw = get_tickets_by_proyecto(proyecto_id, numero_proyecto)
+    tickets_table = []
+    for t in tickets_raw:
+        sd = t.get("SUBMIT_DATE")
+        sd_fmt = "-"
+        dias_abierto = 0
+        estado_alerta = "NORMAL"
+
+        if sd:
+            sd_date = _parse_date(sd)
+            if sd_date:
+                sd_fmt = sd_date.strftime("%d/%m/%Y")
+                if (t.get("STATUS") or "").strip().lower() not in ('cerrado', 'resuelto'):
+                    dias_abierto = max(0, (hoy - sd_date).days)
+                    if dias_abierto > 14:
+                        estado_alerta = "CRITICO"
+                    elif dias_abierto > 7:
+                        estado_alerta = "ATENCION"
+
+        tickets_table.append({
+            "cc_incident_id": t.get("CC_INCIDENT_ID") or "S/I",
+            "brief_description": t.get("BRIEF_DESCRIPTION") or "Sin título",
+            "assigned_group": t.get("ASSIGNED_GROUP") or "Sin Asignar",
+            "assigned_to": t.get("ASSIGNED_TO") or "No asignado",
+            "status": t.get("STATUS") or "Abierto",
+            "severity": t.get("CATEGORY") or "Normal",
+            "submit_date": str(sd)[:10] if sd else None,
+            "submit_date_fmt": sd_fmt,
+            "dias_abierto": dias_abierto,
+            "estado_alerta": estado_alerta
+        })
+
+    # Obtener RFCs y formatear para tabla ejecutiva
+    rfcs_raw = get_rfcs_by_proyecto(proyecto_id, numero_proyecto)
+    rfcs_table = []
+    for r in rfcs_raw:
+        ct = r.get("CLOSE_TIME")
+        ct_fmt = "Pendiente"
+        if ct:
+            ct_date = _parse_date(ct)
+            if ct_date:
+                ct_fmt = ct_date.strftime("%d/%m/%Y")
+
+        rfcs_table.append({
+            "number": r.get("NUMBER") or "S/N",
+            "brief_description": r.get("BRIEF_DESCRIPTION") or "Sin descripción",
+            "requested_by": r.get("REQUESTED_BY") or "-",
+            "assign_dept": r.get("ASSIGN_DEPT") or "Gestión de Cambios",
+            "close_time": str(ct)[:10] if ct else None,
+            "close_time_fmt": ct_fmt,
+            "estado": "Cerrada" if ct else "En Proceso"
+        })
+
+    # Generación de Folio Único Determinista
+    # Formato: HALO-FE-YYYY-XXXXXX-HASH (6 dígitos numéricos para satisfacer regex ^HALO-FE-\d{4}-\d{6}-[A-F0-9]{4}$)
+    raw_hash_seed = f"{numero_proyecto}_{proyecto_id}_{ahora.strftime('%Y%m%d%H%M')}_{username}"
+    checksum = hashlib.sha256(raw_hash_seed.encode('utf-8')).hexdigest()[:4].upper()
+    digits = re.sub(r'\D', '', str(numero_proyecto))
+    num_code = digits[-6:].zfill(6) if digits else str(proyecto_id).zfill(6)
+    folio = f"HALO-FE-{ahora.year}-{num_code}-{checksum}"
+
+    return {
+        "folio": folio,
+        "fecha_emision": ahora.isoformat(),
+        "fecha_emision_formateada": ahora.strftime("%d/%m/%Y %H:%M"),
+        "usuario_generador": username,
+        "proyecto": {
+            "id": proyecto.get("ID"),
+            "numero_proyecto": numero_proyecto,
+            "cliente": proyecto.get("Cliente") or "Sin Cliente",
+            "lt_asignado": proyecto.get("LT_Asignado") or "No Asignado",
+            "solicitante": proyecto.get("Solicitante") or "No Especificado",
+            "estado_sp": proyecto.get("Estado") or "Generado",
+            "tipo_servicio": proyecto.get("Tipo_Servicio") or "Servicios TI",
+            "fecha_creacion_lti": proyecto.get("Creado"),
+            "antiguedad_dias": diag.get("antiguedad_dias", 0),
+            "salud": proyecto.get("salud", {})
+        },
+        "kpis": kpis,
+        "diagnostico_sintetico": {
+            "resumen": diag.get("minuta_ejecutiva", {}).get("asunto_sugerido", ""),
+            "cuellos_de_botella": cuellos[:5],
+            "recomendaciones": recs[:4]
+        },
+        "tablas": {
+            "solots": solots_table,
+            "tickets": tickets_table,
+            "rfcs": rfcs_table
+        }
+    }
+
+
+def generar_ficha_ejecutiva_html(data: dict, auto_print: bool = False) -> str:
+    """
+    Renderiza el documento HTML A4 corporativo Claro HALO de la Ficha Ejecutiva.
+    Cumple con el estándar visual institucional (#B52217, #0097A9), tipografía,
+    membrete, tablas compactas, firmas y estilos @media print.
+    """
+    folio = html.escape(str(data.get("folio", "")))
+    fecha_emision = html.escape(str(data.get("fecha_emision_formateada", "")))
+    usuario = html.escape(str(data.get("usuario_generador", "sistema")))
+
+    proy = data.get("proyecto") or {}
+    num_proy = html.escape(str(proy.get("numero_proyecto") or "S/N"))
+    cliente = html.escape(str(proy.get("cliente") or "Sin Cliente"))
+    lt_asignado = html.escape(str(proy.get("lt_asignado") or "No Asignado"))
+    solicitante = html.escape(str(proy.get("solicitante") or "No Especificado"))
+    estado_sp = html.escape(str(proy.get("estado_sp") or "Generado"))
+    tipo_servicio = html.escape(str(proy.get("tipo_servicio") or "Servicios TI"))
+    antiguedad_dias = proy.get("antiguedad_dias") or 0
+
+    salud = proy.get("salud") or {}
+    salud_label = html.escape(str(salud.get("label") or "Sin Datos"))
+    salud_color = (salud.get("color") or "gray").lower()
+
+    if salud_color == "red":
+        badge_bg, badge_fg, badge_border = "#fee2e2", "#dc2626", "#fca5a5"
+    elif salud_color == "yellow":
+        badge_bg, badge_fg, badge_border = "#fef3c7", "#d97706", "#fcd34d"
+    elif salud_color == "green":
+        badge_bg, badge_fg, badge_border = "#ecfdf5", "#059669", "#6ee7b7"
+    else:
+        badge_bg, badge_fg, badge_border = "#f3f4f6", "#4b5563", "#d1d5db"
+
+    kpis = data.get("kpis") or {}
+    total_solots = kpis.get("total_solots") or 0
+    solots_ejec = kpis.get("solots_ejecutadas") or 0
+    solots_venc = kpis.get("solots_vencidas") or 0
+    solots_por_venc = kpis.get("solots_por_vencer") or 0
+    pct_avance = kpis.get("porcentaje_avance_solots") or 0.0
+
+    total_tickets = kpis.get("total_tickets") or 0
+    tickets_abiertos = kpis.get("tickets_abiertos") or 0
+    tickets_criticos = kpis.get("tickets_criticos") or 0
+
+    total_rfcs = kpis.get("total_rfcs") or 0
+    rfcs_abiertas = kpis.get("rfcs_abiertas") or 0
+
+    # Diagnóstico sintético
+    diag_sintetico = data.get("diagnostico_sintetico") or {}
+    cuellos = diag_sintetico.get("cuellos_de_botella") or []
+    recs = diag_sintetico.get("recomendaciones") or []
+
+    cuellos_rows = ""
+    if cuellos:
+        for cb in cuellos:
+            sev = cb.get("severidad", "MEDIA")
+            if sev == "CRITICA":
+                c_bg, c_fg = "#fee2e2", "#dc2626"
+            elif sev == "ALTA":
+                c_bg, c_fg = "#fef3c7", "#d97706"
+            else:
+                c_bg, c_fg = "#e0f2fe", "#0284c7"
+
+            ident = html.escape(str(cb.get("identificador", "")))
+            descr = html.escape(str(cb.get("descripcion", "")))
+            area = html.escape(str(cb.get("responsable_area", "-")))
+            cuellos_rows += f"""
+            <div style="display:flex; align-items:flex-start; gap:8px; margin-bottom:5px; font-size:8pt;">
+                <span style="display:inline-block; padding:1px 5px; font-size:6.5pt; font-weight:700; border-radius:3px; background:{c_bg}; color:{c_fg};">{sev}</span>
+                <span style="font-weight:700; color:#181B20;">{ident}:</span>
+                <span style="color:#333; flex:1;">{descr} <em style="color:#666E7A; font-size:7.5pt;">({area})</em></span>
+            </div>
+            """
+    else:
+        cuellos_rows = "<p style='color:#059669; font-size:8pt; margin:4px 0;'>✅ No se registran cuellos de botella ni bloqueos operacionales críticos.</p>"
+
+    recs_rows = ""
+    if recs:
+        for r in recs:
+            prio = r.get("prioridad", "MEDIA")
+            if prio == "URGENTE":
+                p_bg, p_fg = "#fee2e2", "#dc2626"
+            elif prio == "ALTA":
+                p_bg, p_fg = "#fef3c7", "#d97706"
+            else:
+                p_bg, p_fg = "#e0f2fe", "#0284c7"
+
+            dest = html.escape(str(r.get("destinatario", r.get("destinatario_escalamiento", ""))))
+            accion = html.escape(str(r.get("accion", "")))
+            recs_rows += f"""
+            <div style="display:flex; align-items:flex-start; gap:8px; margin-bottom:5px; font-size:8pt;">
+                <span style="display:inline-block; padding:1px 5px; font-size:6.5pt; font-weight:700; border-radius:3px; background:{p_bg}; color:{p_fg};">{prio}</span>
+                <span style="color:#181B20; flex:1;"><strong>{dest}:</strong> {accion}</span>
+            </div>
+            """
+    else:
+        recs_rows = "<p style='color:#666E7A; font-size:8pt; margin:4px 0;'>Sin recomendaciones de escalamiento adicionales.</p>"
+
+    # Tablas
+    tablas = data.get("tablas") or {}
+    solots = tablas.get("solots") or []
+    tickets = tablas.get("tickets") or []
+    rfcs = tablas.get("rfcs") or []
+
+    solots_tbody = ""
+    if solots:
+        for s in solots:
+            alerta = s.get("estado_alerta", "NORMAL")
+            dias_at = s.get("dias_atraso", 0)
+            if alerta == "VENCIDA":
+                badge_td = f"<span style='background:#fee2e2; color:#dc2626; padding:1px 4px; border-radius:3px; font-weight:700; font-size:7pt;'>VENCIDA (+{dias_at}d)</span>"
+            elif alerta == "POR_VENCER":
+                badge_td = f"<span style='background:#fef3c7; color:#d97706; padding:1px 4px; border-radius:3px; font-weight:700; font-size:7pt;'>POR VENCER</span>"
+            else:
+                badge_td = "<span style='color:#059669; font-weight:600; font-size:7pt;'>Al día</span>"
+
+            s_id = html.escape(str(s.get("id_otp") or "-"))
+            s_nro = html.escape(str(s.get("nro_proyecto") or "-"))
+            s_descr = html.escape(str(s.get("descr_otp") or "-"))
+            s_est = html.escape(str(s.get("estado_otp") or "-"))
+            s_fc = html.escape(str(s.get("fecha_compromiso_fmt") or "-"))
+            s_serv = html.escape(str(s.get("servicio") or "-"))
+
+            solots_tbody += f"""
+            <tr>
+                <td style="font-family:monospace; font-weight:600;">{s_id}</td>
+                <td style="font-family:monospace;">{s_nro}</td>
+                <td>{s_descr}</td>
+                <td>{s_est}</td>
+                <td>{s_fc}</td>
+                <td>{badge_td}</td>
+                <td>{s_serv}</td>
+            </tr>
+            """
+    else:
+        solots_tbody = "<tr><td colspan='7' style='text-align:center; color:#666E7A; font-style:italic;'>No registra Solots asociadas en SGA.</td></tr>"
+
+    tickets_tbody = ""
+    if tickets:
+        for t in tickets:
+            alerta = t.get("estado_alerta", "NORMAL")
+            dias_ab = t.get("dias_abierto", 0)
+            if alerta == "CRITICO":
+                t_badge = f"<span style='background:#fee2e2; color:#dc2626; padding:1px 4px; border-radius:3px; font-weight:700; font-size:7pt;'>{dias_ab}d (Crítico)</span>"
+            elif alerta == "ATENCION":
+                t_badge = f"<span style='background:#fef3c7; color:#d97706; padding:1px 4px; border-radius:3px; font-weight:700; font-size:7pt;'>{dias_ab}d (Atención)</span>"
+            else:
+                t_badge = f"<span style='color:#333; font-size:7pt;'>{dias_ab}d</span>"
+
+            t_id = html.escape(str(t.get("cc_incident_id") or "-"))
+            t_brief = html.escape(str(t.get("brief_description") or "-"))
+            t_grp = html.escape(str(t.get("assigned_group") or "-"))
+            t_to = html.escape(str(t.get("assigned_to") or "-"))
+            t_sev = html.escape(str(t.get("severity") or "-"))
+            t_sub = html.escape(str(t.get("submit_date_fmt") or "-"))
+            t_st = html.escape(str(t.get("status") or "-"))
+
+            tickets_tbody += f"""
+            <tr>
+                <td style="font-family:monospace; font-weight:600;">{t_id}</td>
+                <td>{t_brief}</td>
+                <td>{t_grp}</td>
+                <td>{t_to}</td>
+                <td>{t_sev}</td>
+                <td>{t_sub}</td>
+                <td>{t_st} / {t_badge}</td>
+            </tr>
+            """
+    else:
+        tickets_tbody = "<tr><td colspan='7' style='text-align:center; color:#666E7A; font-style:italic;'>No registra Tickets de incidentes o requerimientos.</td></tr>"
+
+    rfcs_tbody = ""
+    if rfcs:
+        for r in rfcs:
+            r_num = html.escape(str(r.get("number") or "-"))
+            r_brief = html.escape(str(r.get("brief_description") or "-"))
+            r_by = html.escape(str(r.get("requested_by") or "-"))
+            r_dept = html.escape(str(r.get("assign_dept") or "-"))
+            r_st = html.escape(str(r.get("estado") or "-"))
+            r_ct = html.escape(str(r.get("close_time_fmt") or "-"))
+
+            rfcs_tbody += f"""
+            <tr>
+                <td style="font-family:monospace; font-weight:600;">{r_num}</td>
+                <td>{r_brief}</td>
+                <td>{r_by}</td>
+                <td>{r_dept}</td>
+                <td>{r_st} ({r_ct})</td>
+            </tr>
+            """
+    else:
+        rfcs_tbody = "<tr><td colspan='5' style='text-align:center; color:#666E7A; font-style:italic;'>No registra RFCs asociadas.</td></tr>"
+
+    auto_print_script = """
+    <script>
+      window.addEventListener('load', function() {
+        setTimeout(function() {
+          window.focus();
+          window.print();
+        }, 350);
+      });
+    </script>
+    """ if auto_print else ""
+
+    document_html = f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ficha Ejecutiva - {num_proy} - {cliente}</title>
+  <style>
+    @page {{
+      size: A4 portrait;
+      margin: 10mm 12mm 12mm 12mm;
+    }}
+    * {{
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+      color-adjust: exact !important;
+    }}
+    body {{
+      font-family: 'Roboto', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+      font-size: 8.5pt;
+      line-height: 1.35;
+      color: #181B20;
+      background: #ffffff;
+      margin: 0;
+      padding: 0;
+    }}
+    .sheet-container {{
+      max-width: 210mm;
+      margin: 0 auto;
+      background: #ffffff;
+      padding: 6px;
+    }}
+    /* Header Institucional */
+    .header-band {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 2.5px solid #B52217;
+      padding-bottom: 8px;
+      margin-bottom: 8px;
+    }}
+    .brand-left {{
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }}
+    .brand-titles h1 {{
+      margin: 0;
+      font-size: 11pt;
+      font-weight: 800;
+      color: #B52217;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }}
+    .brand-titles h2 {{
+      margin: 2px 0 0 0;
+      font-size: 8.5pt;
+      font-weight: 700;
+      color: #0097A9;
+      letter-spacing: 0.3px;
+    }}
+    .meta-band {{
+      display: flex;
+      justify-content: space-between;
+      background: #F4F5F7;
+      border-left: 3px solid #0097A9;
+      padding: 4px 8px;
+      font-size: 7.5pt;
+      color: #666E7A;
+      margin-bottom: 10px;
+      border-radius: 2px;
+    }}
+    .meta-item strong {{
+      color: #181B20;
+    }}
+    /* Secciones */
+    .section-title {{
+      font-size: 8.5pt;
+      font-weight: 800;
+      color: #B52217;
+      text-transform: uppercase;
+      margin: 8px 0 4px 0;
+      padding-bottom: 2px;
+      border-bottom: 1px solid #E3E6EB;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }}
+    .section-title::before {{
+      content: '';
+      display: inline-block;
+      width: 4px;
+      height: 10px;
+      background: #0097A9;
+      border-radius: 1px;
+    }}
+    /* Ficha Resumen 2 Columnas */
+    .info-grid {{
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      background: #F4F5F7;
+      padding: 6px 10px;
+      border-radius: 4px;
+      border: 1px solid #E3E6EB;
+      margin-bottom: 8px;
+    }}
+    .info-cell {{
+      display: flex;
+      flex-direction: column;
+    }}
+    .info-label {{
+      font-size: 6.8pt;
+      color: #666E7A;
+      text-transform: uppercase;
+      font-weight: 700;
+    }}
+    .info-val {{
+      font-size: 8pt;
+      font-weight: 600;
+      color: #181B20;
+    }}
+    /* KPI Cards */
+    .kpis-row {{
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      margin-bottom: 8px;
+    }}
+    .kpi-card {{
+      background: #F4F5F7;
+      border: 1px solid #E3E6EB;
+      border-radius: 4px;
+      padding: 6px 8px;
+      text-align: center;
+    }}
+    .kpi-title {{
+      font-size: 6.8pt;
+      font-weight: 700;
+      color: #666E7A;
+      text-transform: uppercase;
+    }}
+    .kpi-metric {{
+      font-size: 11pt;
+      font-weight: 800;
+      color: #B52217;
+      margin: 1px 0;
+    }}
+    .kpi-sub {{
+      font-size: 6.8pt;
+      color: #181B20;
+    }}
+    /* Tablas Compactas */
+    .table-compact {{
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 7.2pt;
+      margin-bottom: 8px;
+    }}
+    .table-compact th {{
+      background: #0097A9;
+      color: #ffffff;
+      font-weight: 700;
+      text-align: left;
+      padding: 3px 5px;
+      border: 1px solid #008797;
+    }}
+    .table-compact td {{
+      padding: 3px 5px;
+      border: 1px solid #E3E6EB;
+      color: #181B20;
+    }}
+    .table-compact tr:nth-child(even) {{
+      background: #F9FAFB;
+    }}
+    /* Bloque Diagnóstico */
+    .diag-box {{
+      background: #ffffff;
+      border: 1px solid #E3E6EB;
+      border-radius: 4px;
+      padding: 6px 8px;
+      margin-bottom: 8px;
+    }}
+    .diag-subtitle {{
+      font-size: 7.5pt;
+      font-weight: 700;
+      color: #0097A9;
+      margin: 4px 0 3px 0;
+    }}
+    /* Firmas y Cierre */
+    .signatures-block {{
+      display: flex;
+      justify-content: space-around;
+      margin-top: 14px;
+      padding-top: 10px;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }}
+    .sign-box {{
+      text-align: center;
+      width: 42%;
+    }}
+    .sign-line {{
+      border-top: 1px solid #181B20;
+      margin-bottom: 4px;
+    }}
+    .sign-name {{
+      font-size: 8pt;
+      font-weight: 700;
+      color: #181B20;
+    }}
+    .sign-role {{
+      font-size: 7.2pt;
+      color: #666E7A;
+    }}
+    .footer-band {{
+      margin-top: 12px;
+      border-top: 1px solid #E3E6EB;
+      padding-top: 4px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 6.8pt;
+      color: #666E7A;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }}
+    @media print {{
+      body {{
+        background: #ffffff !important;
+      }}
+      .sheet-container {{
+        padding: 0;
+      }}
+      .page-break-avoid {{
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+      }}
+    }}
+  </style>
+</head>
+<body>
+  <div class="sheet-container">
+    <!-- Membrete Corporativo Claro HALO -->
+    <header class="header-band">
+      <div class="brand-left">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="44" height="44" role="img" aria-label="HALO">
+          <g fill="#B52217">
+            <circle cx="60" cy="16" r="8"/>
+            <circle cx="91" cy="29" r="8"/>
+            <circle cx="104" cy="60" r="8"/>
+            <circle cx="91" cy="91" r="8"/>
+            <circle cx="60" cy="104" r="8"/>
+            <circle cx="29" cy="91" r="8"/>
+            <circle cx="16" cy="60" r="8"/>
+            <circle cx="29" cy="29" r="8"/>
+          </g>
+          <rect x="47" y="47" width="26" height="26" rx="8" fill="#0097A9"/>
+        </svg>
+        <div class="brand-titles">
+          <h1>CLARO CHILE — DIRECCIÓN DE OPERACIONES Y SERVICIOS TI</h1>
+          <h2>FICHA EJECUTIVA DE CONTROL OPERACIONAL DE PROYECTO</h2>
+        </div>
+      </div>
+      <div style="text-align:right;">
+        <span style="display:inline-block; padding:2px 8px; border-radius:3px; font-size:7pt; font-weight:800; background:#FDEDEA; color:#B52217; border:1px solid #fca5a5;">
+          CONFIDENCIAL — USO INTERNO
+        </span>
+      </div>
+    </header>
+
+    <!-- Barra de Metadatos de Control -->
+    <div class="meta-band">
+      <div class="meta-item">FOLIO: <strong>{folio}</strong></div>
+      <div class="meta-item">FECHA DE CORTE: <strong>{fecha_emision}</strong></div>
+      <div class="meta-item">EMITIDO POR: <strong>{usuario}</strong></div>
+      <div class="meta-item">PLATAFORMA: <strong>HALO LÍDERES TI</strong></div>
+    </div>
+
+    <!-- 1. Resumen General del Proyecto -->
+    <div class="section-title">1. Resumen General del Proyecto</div>
+    <div class="info-grid">
+      <div class="info-cell">
+        <span class="info-label">N° Proyecto</span>
+        <span class="info-val" style="color:#B52217; font-family:monospace;">{num_proy}</span>
+      </div>
+      <div class="info-cell">
+        <span class="info-label">Cliente / Razón Social</span>
+        <span class="info-val">{cliente}</span>
+      </div>
+      <div class="info-cell">
+        <span class="info-label">Tipo de Servicio</span>
+        <span class="info-val">{tipo_servicio}</span>
+      </div>
+      <div class="info-cell">
+        <span class="info-label">Solicitante</span>
+        <span class="info-val">{solicitante}</span>
+      </div>
+      <div class="info-cell">
+        <span class="info-label">Líder TI Responsable</span>
+        <span class="info-val">{lt_asignado}</span>
+      </div>
+      <div class="info-cell">
+        <span class="info-label">Estado SharePoint</span>
+        <span class="info-val">{estado_sp}</span>
+      </div>
+      <div class="info-cell">
+        <span class="info-label">Antigüedad</span>
+        <span class="info-val">{antiguedad_dias} días</span>
+      </div>
+      <div class="info-cell">
+        <span class="info-label">Salud Operacional</span>
+        <span class="info-val">
+          <span style="display:inline-block; padding:1px 6px; border-radius:3px; font-size:7pt; font-weight:700; background:{badge_bg}; color:{badge_fg}; border:1px solid {badge_border};">
+            {salud_label}
+          </span>
+        </span>
+      </div>
+    </div>
+
+    <!-- 2. Indicadores Clave de Rendimiento (KPIs) -->
+    <div class="section-title">2. Indicadores Clave de Rendimiento (KPIs)</div>
+    <div class="kpis-row">
+      <div class="kpi-card">
+        <div class="kpi-title">Solots SGA</div>
+        <div class="kpi-metric">{solots_ejec} / {total_solots}</div>
+        <div class="kpi-sub">{pct_avance}% Avance Global</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-title">Solots Vencidas</div>
+        <div class="kpi-metric" style="color:{'#dc2626' if solots_venc > 0 else '#059669'};">{solots_venc}</div>
+        <div class="kpi-sub">{solots_por_venc} por vencer en &le;5d</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-title">Tickets HPSM / SD</div>
+        <div class="kpi-metric">{tickets_abiertos} / {total_tickets}</div>
+        <div class="kpi-sub" style="color:{'#dc2626' if tickets_criticos > 0 else '#666E7A'};">{tickets_criticos} Críticos (&gt;14d)</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-title">RFCs de Cambio</div>
+        <div class="kpi-metric">{rfcs_abiertas}</div>
+        <div class="kpi-sub">{total_rfcs} Asociadas</div>
+      </div>
+    </div>
+
+    <!-- 3. Síntesis de Diagnóstico Operacional y Plan de Escalamiento -->
+    <div class="section-title">3. Síntesis de Diagnóstico y Plan de Escalamiento</div>
+    <div class="diag-box">
+      <div class="diag-subtitle">🚨 Cuellos de Botella Detectados</div>
+      {cuellos_rows}
+      <div class="diag-subtitle" style="margin-top:6px;">🎯 Recomendaciones Ejecutivas de Escalamiento</div>
+      {recs_rows}
+    </div>
+
+    <!-- 4. Detalle Técnico de Solots de Backlog (SGA) -->
+    <div class="section-title">4. Detalle Técnico de Solots SGA</div>
+    <table class="table-compact">
+      <thead>
+        <tr>
+          <th style="width:75px;">ID OTP</th>
+          <th style="width:75px;">N° Proyecto</th>
+          <th>Descripción del Servicio</th>
+          <th style="width:90px;">Estado OTP</th>
+          <th style="width:75px;">Fecha Comp.</th>
+          <th style="width:95px;">Alerta Atraso</th>
+          <th style="width:110px;">Servicio</th>
+        </tr>
+      </thead>
+      <tbody>
+        {solots_tbody}
+      </tbody>
+    </table>
+
+    <!-- 5. Detalle Técnico de Tickets HPSM / SD -->
+    <div class="section-title">5. Detalle de Incidentes y Requerimientos (HPSM / SD)</div>
+    <table class="table-compact">
+      <thead>
+        <tr>
+          <th style="width:80px;">Incident ID</th>
+          <th>Resumen Incidente</th>
+          <th style="width:100px;">Torre Asignada</th>
+          <th style="width:110px;">Responsable</th>
+          <th style="width:65px;">Severidad</th>
+          <th style="width:75px;">Apertura</th>
+          <th style="width:105px;">Estado / Permanencia</th>
+        </tr>
+      </thead>
+      <tbody>
+        {tickets_tbody}
+      </tbody>
+    </table>
+
+    <!-- 6. Solicitudes de Cambio (RFCs) -->
+    <div class="section-title">6. Solicitudes de Cambio Asociadas (RFCs)</div>
+    <table class="table-compact">
+      <thead>
+        <tr>
+          <th style="width:90px;">N° RFC</th>
+          <th>Descripción del Cambio</th>
+          <th style="width:120px;">Solicitante</th>
+          <th style="width:110px;">Área Asignada</th>
+          <th style="width:110px;">Estado / Cierre</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rfcs_tbody}
+      </tbody>
+    </table>
+
+    <!-- 7. Validación y Firmas Institucionales -->
+    <div class="page-break-avoid">
+      <div class="section-title">7. Validación y Responsabilidad Técnica</div>
+      <div class="signatures-block">
+        <div class="sign-box">
+          <div class="sign-line"></div>
+          <div class="sign-name">{lt_asignado}</div>
+          <div class="sign-role">Líder Técnico TI Responsable</div>
+          <div class="sign-role">Dirección de Operaciones TI</div>
+        </div>
+        <div class="sign-box">
+          <div class="sign-line"></div>
+          <div class="sign-name">JEFATURA DE OPERACIONES TI</div>
+          <div class="sign-role">Gestión de Proyectos & Servicios</div>
+          <div class="sign-role">Claro Chile S.A.</div>
+        </div>
+      </div>
+
+      <!-- Pie Institucional -->
+      <footer class="footer-band">
+        <div>Folio: <strong>{folio}</strong> | Clasificación: <strong>CONFIDENCIAL — USO INTERNO</strong></div>
+        <div>Generado en Plataforma HALO Líderes TI | Claro Chile S.A.</div>
+      </footer>
+    </div>
+  </div>
+  {auto_print_script}
+</body>
+</html>"""
+    return document_html
+
 
 

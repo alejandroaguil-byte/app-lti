@@ -5,7 +5,7 @@ from typing import Optional, List
 from fastapi import FastAPI, Depends, HTTPException, status, Query, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse, HTMLResponse
 from pydantic import BaseModel
 
 logger = logging.getLogger("main")
@@ -43,7 +43,9 @@ from .db import (
     create_solicitud_lti,
     update_proyecto,
     delete_proyecto,
-    get_diagnostico_proyecto
+    get_diagnostico_proyecto,
+    get_ficha_ejecutiva_data,
+    generar_ficha_ejecutiva_html
 )
 from .seed_users import seed_default_users
 from .ticket_automation import stream_ticket_creation
@@ -248,6 +250,43 @@ def obtener_diagnostico_proyecto(
             detail=f"Proyecto con ID {proyecto_id} no fue encontrado."
         )
     return diagnostico
+
+@app.get("/api/proyectos/{proyecto_id}/ficha-ejecutiva")
+def obtener_ficha_ejecutiva_proyecto(
+    proyecto_id: int,
+    current_user: dict = Depends(require_lti_or_admin)
+):
+    """
+    Retorna el JSON estructurado consolidado para la Ficha Ejecutiva del proyecto.
+    """
+    username = current_user.get("username") or "sistema"
+    data = get_ficha_ejecutiva_data(proyecto_id, username=username)
+    if not data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Proyecto con ID {proyecto_id} no fue encontrado."
+        )
+    return data
+
+@app.get("/api/proyectos/{proyecto_id}/ficha-html", response_class=HTMLResponse)
+def obtener_ficha_html_proyecto(
+    proyecto_id: int,
+    auto_print: bool = Query(False),
+    current_user: dict = Depends(require_lti_or_admin)
+):
+    """
+    Retorna el documento HTML A4 corporativo Claro HALO de la Ficha Ejecutiva,
+    listo para previsualizar o imprimir como PDF.
+    """
+    username = current_user.get("username") or "sistema"
+    data = get_ficha_ejecutiva_data(proyecto_id, username=username)
+    if not data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Proyecto con ID {proyecto_id} no fue encontrado."
+        )
+    html_content = generar_ficha_ejecutiva_html(data, auto_print=auto_print)
+    return HTMLResponse(content=html_content, media_type="text/html; charset=utf-8")
 
 @app.put("/api/proyectos/{proyecto_id}")
 def actualizar_proyecto(

@@ -105,6 +105,19 @@ Diseñada con la identidad visual corporativa de Claro Chile (cabecera instituci
      * Botón **"📧 Enviar Minuta por Correo"**: Apertura directa del modal de notificación SMTP Office 365 prellenado con el diagnóstico y asunto formal del proyecto.
    - **Mecanismo de Desactivación Rápida (Kill-Switch)**: Botón toggle en sub-barra (`⚡ Diagnóstico: ON / OFF`), configuración maestra `window.HALO_CONFIG.ENABLE_EXECUTIVE_DIAGNOSIS` y persistencia en `localStorage` (`halo_executive_diagnosis_enabled`). Al apagarse, desaparece limpiamente de la tabla y del Drill Down con política de cero rastros.
 
+9. **Exportación de 'Ficha Ejecutiva de Proyecto' a PDF Corporativo & Kill-Switch (v1.5.0)**:
+   - **Descarga en 1 Clic**: Botón `📄 Exportar Ficha (PDF)` en la cabecera del Drill Down del proyecto, permitiendo a gerentes y líderes técnicos generar al instante un PDF corporativo listo para comités directivos.
+   - **Identidad Visual Corporativa Claro HALO**: Membrete oficial con logotipo vectorizado SVG, paleta institucional Rojo Claro (`#B52217`), Acento Cyan/Teal HALO (`#0097A9`), tipografía estructurada y fecha/hora exacta de extracción de datos.
+   - **Contenido Ejecutivo de Alto Valor**:
+     * Ficha de resumen general (N° Proyecto, Cliente, Servicio, Líder TI, Solicitante, Estado SP, Antigüedad).
+     * Indicador de Salud Operacional (badge 🟢🟡🔴⚪ con justificación sintética).
+     * Métricas clave de avance (Solots SGA ejecutadas vs pendientes, % avance, Solots vencidas, Tickets HPSM detenidos >14d clasificados por torre operativa y RFCs).
+     * Diagnóstico operacional y recomendaciones de escalamiento priorizadas.
+     * Tablas de detalle técnico compactas: Solots SGA con fecha compromiso y días de atraso, Tickets HPSM con grupo/torre responsable y severidad, y RFCs asociadas.
+     * Pie de página con folio único determinista (`HALO-FE-YYYY-XXXXXX-HASH`), bloques de firmas y leyenda de confidencialidad institucional.
+   - **Arquitectura Desacoplada sin Dependencias C**: Motor cliente-servidor de alta fidelidad vía iframe aislado y CSS `@media print` A4, complementado con endpoints backend `/api/proyectos/{id}/ficha-ejecutiva` y `/api/proyectos/{id}/ficha-html`. Cero binarios nativos de Chromium o librerías C (`pango`/`cairo`), garantizando 100% de compatibilidad tanto en `bobbadeveloper` como en `iacdi` (producción).
+   - **Kill-Switch Mandatorio & Política de Cero Rastros**: Botón toggle en sub-barra (`📄 Ficha PDF: ON / OFF`), flag global `window.HALO_CONFIG.ENABLE_PDF_EXPORT` y persistencia en `localStorage` (`halo_export_pdf_enabled`). Al desactivarse, el botón del Drill Down desaparece de forma invisible sin dejar espacios en blanco ni alterar la alineación de los otros controles.
+
 ---
 
 ## 🛠️ Stack Tecnológico
@@ -234,6 +247,7 @@ El token JWT del Portal define la capacidad de escritura de la sesión:
 
 ## 📚 Documentación y Especificaciones Técnicas (SPECS)
 
+- [SPECS_FICHA_EJECUTIVA_PDF.md](file:///home/bobbasystem/Desarrollos/app-lti/SPECS_FICHA_EJECUTIVA_PDF.md): **(v1.0.0 Ratificada)** Especificación técnica integral de la Funcionalidad 3: 'Exportación de Ficha Ejecutiva de Proyecto a PDF Corporativo' y Kill-Switch Desactivador. Endpoints REST (`/api/proyectos/{id}/ficha-ejecutiva` y `/api/proyectos/{id}/ficha-html`), motor de renderizado A4 con CSS `@media print` y cero binarios C pesados (máxima compatibilidad entre `bobbadeveloper` e `iacdi`), identidad oficial Claro HALO (`#B52217` y `#0097A9`), foliado determinista, tablas compactas de Solots SGA, Tickets HPSM y RFCs, mecanismo Kill-Switch con persistencia en `localStorage` y política estricta de Cero Rastros.
 - [SPECS_DIAGNOSTICO_EJECUTIVO.md](file:///home/bobbasystem/Desarrollos/app-lti/SPECS_DIAGNOSTICO_EJECUTIVO.md): **(v1.0.0 Ratificada)** Especificación técnica integral de la Funcionalidad 2: 'Diagnóstico Ejecutivo en 1 Clic' y Kill-Switch Desactivador. Motor operacional en tiempo real (`/api/proyectos/{id}/diagnostico`), detección multivariable de cuellos de botella (Solots vencidas y tickets detenidos identificando torres de soporte responsables), recomendaciones de escalamiento priorizadas, minuta multiformato (Texto, MD, HTML), modal interactivo con copiado al portapapeles y envío directo por correo Office 365 SMTP, y mecanismo Kill-Switch con fallback cero rastros para `bobbadeveloper` e `iacdi`.
 - [SPECS_SEMAFORO_SALUD_PROYECTOS.md](file:///home/bobbasystem/Desarrollos/app-lti/SPECS_SEMAFORO_SALUD_PROYECTOS.md): **(v1.0.0 Ratificada)** Especificación técnica del Semáforo de Salud del Proyecto (Project Health Score), reglas operacionales de clasificación (🟢 Saludable, 🟡 En Riesgo, 🔴 Crítico, ⚪ Sin Datos), badges con tooltip explicativo, KPIs de salud interactivos con filtrado directo en tabla, indicador en Drill Down y mecanismo mandatorio de desactivación rápida (Kill-Switch / Feature Toggle) con fallback limpio cero rastros.
 - [SPECS_REDISENO_PORTAL_HALO.md](file:///home/bobbasystem/Desarrollos/app-lti/SPECS_REDISENO_PORTAL_HALO.md): **(v1.0.0 Ratificada)** Especificación técnica de Homologación e Integración Visual al Diseño Corporativo HALO (Claro Chile), tokens `#B52217` / `#DA291C` / `#0097A9`, isotipo SVG oficial, arquitectura desacoplada de doble barra (`.app-header` y `.nav-subbar`), soporte dual Claro/Oscuro y sincronización con servidor `iacdi`.
