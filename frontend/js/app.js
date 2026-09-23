@@ -16,6 +16,9 @@ if (window.HALO_CONFIG.ENABLE_PDF_EXPORT === undefined) {
 if (window.HALO_CONFIG.ENABLE_TIMELINE === undefined) {
   window.HALO_CONFIG.ENABLE_TIMELINE = true;
 }
+if (window.HALO_CONFIG.ENABLE_ALERTS === undefined) {
+  window.HALO_CONFIG.ENABLE_ALERTS = true;
+}
 
 const CANONICAL_ESTADOS_SHAREPOINT = ['Generado', 'En revision', 'Atendido'];
 
@@ -24,6 +27,9 @@ const App = {
   currentDiagnosticoData: null,
   currentTimelineData: null,
   currentTimelineFilter: 'all',
+  alertsData: null,
+  currentAlertsFilter: 'todas',
+  alertsDropdownOpen: false,
   projectsData: [],
   lideresList: [],
   estadosSharepoint: [],
@@ -62,6 +68,7 @@ const App = {
     this.initExecutiveDiagnosis();
     this.initPdfExport();
     this.initTimeline();
+    this.initAlerts();
     this.bindEvents();
     
     try {
@@ -953,6 +960,348 @@ const App = {
   },
 
   // --------------------------------------------------------------------------
+  // CENTRO DE ALERTAS TEMPRANAS SLA & ESCALAMIENTO RÁPIDO (FEATURE 5)
+  // --------------------------------------------------------------------------
+  initAlerts() {
+    this.applyAlertsState(false);
+    if (this.isAlertsActive()) {
+      this.fetchAlertsSLA();
+    }
+  },
+
+  isAlertsActive() {
+    // 1. Configuración maestra en runtime
+    if (window.HALO_CONFIG && window.HALO_CONFIG.ENABLE_ALERTS === false) {
+      return false;
+    }
+    // 2. Preferencia de usuario persistida
+    const pref = localStorage.getItem('halo_alerts_enabled');
+    if (pref !== null) {
+      return pref === 'true';
+    }
+    // 3. Fallback por defecto: Habilitado (true)
+    return true;
+  },
+
+  toggleAlerts() {
+    const current = this.isAlertsActive();
+    const next = !current;
+    localStorage.setItem('halo_alerts_enabled', next ? 'true' : 'false');
+    this.applyAlertsState(true);
+    const msg = next ? '🔔 Centro de Alertas activado' : '🔔 Centro de Alertas desactivado';
+    this.showToast(msg, 'info');
+  },
+
+  applyAlertsState(triggerFetch = true) {
+    const active = this.isAlertsActive();
+    const toggleBtn = document.getElementById('alerts-toggle-btn');
+    const toggleLabel = document.getElementById('alerts-toggle-label');
+    const bellWrapper = document.getElementById('alerts-wrapper');
+    const dropdown = document.getElementById('alerts-dropdown');
+
+    if (toggleBtn) {
+      toggleBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
+      if (active) {
+        toggleBtn.classList.remove('is-off');
+        toggleBtn.title = 'Desactivar Centro de Alertas Tempranas SLA';
+        if (toggleLabel) toggleLabel.textContent = 'Alertas: ON';
+      } else {
+        toggleBtn.classList.add('is-off');
+        toggleBtn.title = 'Activar Centro de Alertas Tempranas SLA';
+        if (toggleLabel) toggleLabel.textContent = 'Alertas: OFF';
+      }
+    }
+
+    // Política estricta de Cero Rastros
+    if (bellWrapper) {
+      bellWrapper.style.setProperty('display', active ? 'inline-flex' : 'none', 'important');
+    }
+
+    // Si se apaga mientras el panel estaba abierto, se cierra inmediatamente
+    if (!active && dropdown) {
+      dropdown.style.display = 'none';
+      this.alertsDropdownOpen = false;
+      const bellBtn = document.getElementById('alerts-bell-btn');
+      if (bellBtn) bellBtn.setAttribute('aria-expanded', 'false');
+    }
+
+    if (active && triggerFetch) {
+      this.fetchAlertsSLA();
+    }
+  },
+
+  async fetchAlertsSLA() {
+    if (!this.isAlertsActive()) return;
+
+    const loading = document.getElementById('alerts-loading-state');
+    const itemsList = document.getElementById('alerts-items-list');
+    const emptyState = document.getElementById('alerts-empty-state');
+
+    if (loading && this.alertsDropdownOpen) loading.style.display = 'flex';
+    if (itemsList && this.alertsDropdownOpen) itemsList.style.display = 'none';
+    if (emptyState && this.alertsDropdownOpen) emptyState.style.display = 'none';
+
+    try {
+      const res = await Auth.fetchWithAuth('/api/alertas/sla?limite=200');
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      this.alertsData = data;
+      this.updateAlertsUI();
+    } catch (err) {
+      console.warn('Error al cargar alertas SLA:', err);
+      if (loading) loading.style.display = 'none';
+      if (emptyState && this.alertsDropdownOpen) {
+        emptyState.style.display = 'flex';
+        const emptyTitle = emptyState.querySelector('.empty-title');
+        if (emptyTitle) emptyTitle.textContent = 'No fue posible cargar alertas';
+        const emptyDesc = emptyState.querySelector('.empty-desc');
+        if (emptyDesc) emptyDesc.textContent = 'Verifique la conexión al servidor.';
+      }
+    }
+  },
+
+  updateAlertsUI() {
+    if (!this.alertsData) return;
+    const { resumen } = this.alertsData;
+    const total = resumen?.total_alertas || 0;
+    const criticas = resumen?.criticas || 0;
+    const advertencias = resumen?.advertencias || 0;
+
+    // 1. Badge en la campanita
+    const badgeCount = document.getElementById('alerts-badge-count');
+    if (badgeCount) {
+      if (total > 0) {
+        badgeCount.style.display = 'inline-flex';
+        badgeCount.textContent = total > 99 ? '99+' : String(total);
+        if (criticas > 0) {
+          badgeCount.classList.add('pulse-red');
+          badgeCount.classList.remove('badge-amber');
+        } else if (advertencias > 0) {
+          badgeCount.classList.add('badge-amber');
+          badgeCount.classList.remove('pulse-red');
+        } else {
+          badgeCount.classList.remove('pulse-red');
+          badgeCount.classList.remove('badge-amber');
+        }
+      } else {
+        badgeCount.style.display = 'none';
+        badgeCount.classList.remove('pulse-red');
+        badgeCount.classList.remove('badge-amber');
+      }
+    }
+
+    // 2. Cabecera del Dropdown
+    const totalPill = document.getElementById('alerts-dropdown-total-badge');
+    if (totalPill) {
+      totalPill.textContent = `${total} Alertas`;
+      totalPill.className = criticas > 0 ? 'badge badge-danger alerts-total-pill' : (advertencias > 0 ? 'badge badge-warning alerts-total-pill' : 'badge badge-info alerts-total-pill');
+    }
+
+    const critSummary = document.getElementById('alerts-summary-crit-count');
+    if (critSummary) critSummary.textContent = `🔴 ${criticas} Críticas`;
+
+    const warnSummary = document.getElementById('alerts-summary-warn-count');
+    if (warnSummary) warnSummary.textContent = `🟡 ${advertencias} Advertencias`;
+
+    // 3. Contadores en las píldoras de filtro
+    const cntAll = document.getElementById('alerts-filter-count-all');
+    if (cntAll) cntAll.textContent = String(total);
+    const cntCrit = document.getElementById('alerts-filter-count-crit');
+    if (cntCrit) cntCrit.textContent = String(criticas);
+    const cntWarn = document.getElementById('alerts-filter-count-warn');
+    if (cntWarn) cntWarn.textContent = String(advertencias);
+
+    // 4. Renderizar tarjetas en la lista
+    this.renderAlerts();
+  },
+
+  renderAlerts() {
+    const loading = document.getElementById('alerts-loading-state');
+    const itemsList = document.getElementById('alerts-items-list');
+    const emptyState = document.getElementById('alerts-empty-state');
+    if (!itemsList) return;
+
+    if (loading) loading.style.display = 'none';
+
+    if (!this.alertsData || !Array.isArray(this.alertsData.alertas)) {
+      if (emptyState) emptyState.style.display = 'flex';
+      itemsList.style.display = 'none';
+      return;
+    }
+
+    let items = this.alertsData.alertas;
+    const filter = this.currentAlertsFilter || 'todas';
+
+    if (filter === 'critica') {
+      items = items.filter(a => a.severidad === 'CRITICAL');
+    } else if (filter === 'advertencia') {
+      items = items.filter(a => a.severidad === 'WARNING');
+    }
+
+    if (items.length === 0) {
+      if (emptyState) {
+        emptyState.style.display = 'flex';
+        const emptyTitle = emptyState.querySelector('.empty-title');
+        if (emptyTitle) emptyTitle.textContent = filter === 'todas' ? '¡Excelente! Operación en Norma' : `No hay alertas de tipo ${filter}`;
+        const emptyDesc = emptyState.querySelector('.empty-desc');
+        if (emptyDesc) emptyDesc.textContent = filter === 'todas' ? 'No existen tickets ni solots fuera de los límites de SLA en este momento.' : 'Sin desviaciones en esta categoría.';
+      }
+      itemsList.style.display = 'none';
+      return;
+    }
+
+    if (emptyState) emptyState.style.display = 'none';
+    itemsList.style.display = 'flex';
+    itemsList.style.flexDirection = 'column';
+    itemsList.style.gap = '8px';
+
+    itemsList.innerHTML = items.map(item => {
+      const isCrit = item.severidad === 'CRITICAL';
+      const sevClass = isCrit ? 'critica' : 'advertencia';
+      const badgeSevClass = isCrit ? 'badge-sla-critical' : 'badge-sla-warning';
+      const badgeSevLabel = isCrit ? '🔴 Crítica' : '🟡 Advertencia';
+      const icono = item.icono || (item.tipo === 'ticket' ? '🎫' : '⚡');
+
+      return `
+        <div class="alert-card-item ${sevClass}" data-id="${this.escapeHtml(item.id)}" data-project-id="${item.proyecto_id || ''}">
+          <div class="alert-card-header">
+            <div class="alert-card-type-row">
+              <span class="alert-card-icon">${icono}</span>
+              <span class="alert-card-title">${this.escapeHtml(item.titulo || '')}</span>
+            </div>
+            <span class="alert-card-sla-badge ${badgeSevClass}">${badgeSevLabel}</span>
+          </div>
+          <div class="alert-card-subtitulo">${this.escapeHtml(item.subtitulo || '')}</div>
+          <div class="alert-card-meta-row">
+            <div class="alert-card-meta-info">
+              <span><strong>Cliente:</strong> ${this.escapeHtml(item.cliente || 'S/C')}</span>
+              <span><strong>Líder:</strong> ${this.escapeHtml(item.lt_asignado || 'S/A')}</span>
+              <span><strong>Resp:</strong> ${this.escapeHtml(item.responsable || '')}</span>
+            </div>
+            ${item.proyecto_id ? `
+              <button type="button" class="btn-alert-drilldown" onclick="App.openProjectFromAlert(${item.proyecto_id})" title="Ver proyecto en Drill Down">
+                🔍 Ver Proyecto
+              </button>
+            ` : ''}
+          </div>
+        </div>
+      `;
+    }).join('');
+  },
+
+  toggleAlertsDropdown(forceOpen = null) {
+    if (!this.isAlertsActive()) return;
+
+    const dropdown = document.getElementById('alerts-dropdown');
+    const bellBtn = document.getElementById('alerts-bell-btn');
+    if (!dropdown) return;
+
+    const isOpen = forceOpen !== null ? forceOpen : (dropdown.style.display !== 'none');
+    const nextState = !isOpen;
+
+    if (nextState) {
+      dropdown.style.display = 'flex';
+      this.alertsDropdownOpen = true;
+      if (bellBtn) bellBtn.setAttribute('aria-expanded', 'true');
+      this.fetchAlertsSLA();
+    } else {
+      dropdown.style.display = 'none';
+      this.alertsDropdownOpen = false;
+      if (bellBtn) bellBtn.setAttribute('aria-expanded', 'false');
+    }
+  },
+
+  closeAlertsDropdown() {
+    const dropdown = document.getElementById('alerts-dropdown');
+    const bellBtn = document.getElementById('alerts-bell-btn');
+    if (dropdown) {
+      dropdown.style.display = 'none';
+    }
+    this.alertsDropdownOpen = false;
+    if (bellBtn) {
+      bellBtn.setAttribute('aria-expanded', 'false');
+    }
+  },
+
+  filterAlerts(filterName) {
+    this.currentAlertsFilter = filterName;
+    const pills = [
+      { id: 'alerts-filter-all', key: 'todas' },
+      { id: 'alerts-filter-crit', key: 'critica' },
+      { id: 'alerts-filter-warn', key: 'advertencia' }
+    ];
+    pills.forEach(p => {
+      const el = document.getElementById(p.id);
+      if (el) {
+        if (p.key === filterName) {
+          el.classList.add('active');
+        } else {
+          el.classList.remove('active');
+        }
+      }
+    });
+    this.renderAlerts();
+  },
+
+  async copyAlertsMinuta() {
+    if (!this.alertsData || !this.alertsData.minuta_escalamiento) {
+      this.showToast('No hay datos de minuta para copiar.', 'warning');
+      return;
+    }
+    const texto = this.alertsData.minuta_escalamiento.texto_plano;
+    const ok = await this.copyTextToClipboard(texto);
+    if (ok) {
+      this.showToast('📋 Minuta ejecutiva copiada al portapapeles.', 'success');
+    } else {
+      this.showToast('No se pudo copiar la minuta al portapapeles.', 'danger');
+    }
+  },
+
+  escalarAlertsEmail() {
+    this.closeAlertsDropdown();
+    if (!this.alertsData || !this.alertsData.minuta_escalamiento) return;
+    const minuta = this.alertsData.minuta_escalamiento;
+    const recipients = minuta.destinatarios_sugeridos || ['jefatura.operaciones@clarovtr.cl'];
+    this.openEmailTicketModal({
+      to: recipients.join('; '),
+      subject: minuta.asunto_sugerido || '[HALO ESCALAMIENTO] Alertas Críticas SLA Operacional',
+      body: minuta.texto_plano || '',
+      ticketBadge: 'ESCALAMIENTO'
+    });
+  },
+
+  async openProjectFromAlert(projectId) {
+    this.closeAlertsDropdown();
+    if (!projectId) return;
+
+    if (this.currentModule !== 'projects') {
+      this.switchModule('projects');
+    }
+
+    let project = (this.projectsData || []).find(p => p.ID == projectId || p.Numero_Proyecto == projectId);
+    if (project) {
+      this.showProjectDrilldown(project);
+      this.loadProjectTabs(project.ID, project.Numero_Proyecto);
+    } else {
+      try {
+        const res = await Auth.fetchWithAuth(`/api/proyectos/${projectId}`);
+        if (res.ok) {
+          project = await res.json();
+          this.showProjectDrilldown(project);
+          this.loadProjectTabs(project.ID, project.Numero_Proyecto);
+        } else {
+          this.showToast('No se pudo cargar el detalle del proyecto.', 'warning');
+        }
+      } catch (err) {
+        console.error('Error al abrir proyecto desde alerta:', err);
+        this.showToast('Error de conexión al abrir el proyecto.', 'danger');
+      }
+    }
+  },
+
+  // --------------------------------------------------------------------------
   // EVENT BINDINGS
   // --------------------------------------------------------------------------
   bindEvents() {
@@ -1045,6 +1394,61 @@ const App = {
     const timelineToggleBtn = document.getElementById('timeline-toggle-btn');
     if (timelineToggleBtn) {
       timelineToggleBtn.addEventListener('click', () => this.toggleTimeline());
+    }
+
+    // Alerts Toggle Button (Kill-Switch)
+    const alertsToggleBtn = document.getElementById('alerts-toggle-btn');
+    if (alertsToggleBtn) {
+      alertsToggleBtn.addEventListener('click', () => this.toggleAlerts());
+    }
+
+    // Alerts Center Bell and Dropdown Actions
+    const alertsBellBtn = document.getElementById('alerts-bell-btn');
+    if (alertsBellBtn) {
+      alertsBellBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.toggleAlertsDropdown();
+      });
+    }
+
+    const alertsCloseBtn = document.getElementById('alerts-dropdown-close-btn');
+    if (alertsCloseBtn) {
+      alertsCloseBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.closeAlertsDropdown();
+      });
+    }
+
+    const alertsRefreshBtn = document.getElementById('btn-alerts-refresh');
+    if (alertsRefreshBtn) {
+      alertsRefreshBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.fetchAlertsSLA();
+      });
+    }
+
+    // Alerts Filter Pills
+    const filterAllBtn = document.getElementById('alerts-filter-all');
+    if (filterAllBtn) {
+      filterAllBtn.addEventListener('click', () => this.filterAlerts('todas'));
+    }
+    const filterCritBtn = document.getElementById('alerts-filter-crit');
+    if (filterCritBtn) {
+      filterCritBtn.addEventListener('click', () => this.filterAlerts('critica'));
+    }
+    const filterWarnBtn = document.getElementById('alerts-filter-warn');
+    if (filterWarnBtn) {
+      filterWarnBtn.addEventListener('click', () => this.filterAlerts('advertencia'));
+    }
+
+    // Alerts Executive Actions
+    const btnCopyMinuta = document.getElementById('btn-copy-alerts-minuta');
+    if (btnCopyMinuta) {
+      btnCopyMinuta.addEventListener('click', () => this.copyAlertsMinuta());
+    }
+    const btnEscalarEmail = document.getElementById('btn-escalar-alerts-email');
+    if (btnEscalarEmail) {
+      btnEscalarEmail.addEventListener('click', () => this.escalarAlertsEmail());
     }
 
     // Timeline Filter Pills
@@ -1590,7 +1994,18 @@ const App = {
         if (diagModal && diagModal.style.display !== 'none') {
           this.closeDiagnosticoModal();
         }
+        if (this.alertsDropdownOpen) {
+          this.closeAlertsDropdown();
+        }
         this.hideAutocompleteDropdown();
+      }
+    });
+
+    // Click outside to close alerts dropdown
+    document.addEventListener('click', (e) => {
+      const bellWrapper = document.getElementById('alerts-wrapper');
+      if (this.alertsDropdownOpen && bellWrapper && !bellWrapper.contains(e.target)) {
+        this.closeAlertsDropdown();
       }
     });
   },
@@ -1840,7 +2255,8 @@ const App = {
     await Promise.all([
       this.loadLideres(),
       this.loadEstados(),
-      this.loadKPIs()
+      this.loadKPIs(),
+      this.fetchAlertsSLA()
     ]);
     await this.loadProjects();
     this.isInitialized = true;

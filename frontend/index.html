@@ -72,6 +72,87 @@
           <span class="user-name" id="username-label">Líder TI</span>
           <span id="user-display-name" style="display: none;">Líder TI</span>
         </div>
+
+        <!-- ========================================================================
+             CENTRO DE ALERTAS TEMPRANAS SLA & ESCALAMIENTO RÁPIDO (CAMPANA Y PANEL)
+             ======================================================================== -->
+        <div class="alerts-wrapper" id="alerts-wrapper">
+          <!-- Botón Campanita Institucional -->
+          <button class="btn-alerts-bell" id="alerts-bell-btn" title="Centro de Alertas Tempranas SLA" aria-label="Centro de Alertas Tempranas SLA" aria-expanded="false" aria-haspopup="true">
+            <svg class="alerts-bell-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+            </svg>
+            <!-- Badge reactivo numérico -->
+            <span class="alerts-badge" id="alerts-badge-count" style="display: none;">0</span>
+          </button>
+
+          <!-- Panel Flotante / Dropdown de Alertas SLA -->
+          <div class="alerts-dropdown" id="alerts-dropdown" style="display: none;" role="dialog" aria-label="Centro de Alertas Tempranas SLA">
+            
+            <!-- Cabecera del Panel -->
+            <div class="alerts-dropdown-header">
+              <div class="alerts-dropdown-title-row">
+                <div class="alerts-header-brand">
+                  <span class="alerts-header-icon">🔔</span>
+                  <span class="alerts-header-title">Alertas Tempranas SLA</span>
+                </div>
+                <span class="badge badge-danger alerts-total-pill" id="alerts-dropdown-total-badge">0 Alertas</span>
+                <button class="alerts-close-btn" id="alerts-dropdown-close-btn" aria-label="Cerrar panel de alertas">&times;</button>
+              </div>
+              
+              <!-- Sub-resumen de salud rápida -->
+              <div class="alerts-status-summary-bar" id="alerts-status-summary-bar">
+                <span id="alerts-summary-crit-count" class="summary-crit">🔴 0 Críticas</span>
+                <span id="alerts-summary-warn-count" class="summary-warn">🟡 0 Advertencias</span>
+              </div>
+            </div>
+
+            <!-- Barra de Píldoras de Filtro Rápido en Dropdown -->
+            <div class="alerts-filter-bar">
+              <button class="alerts-filter-pill active" data-filter="todas" id="alerts-filter-all">🌟 Todas (<span id="alerts-filter-count-all">0</span>)</button>
+              <button class="alerts-filter-pill" data-filter="critica" id="alerts-filter-crit">🔴 Críticas (<span id="alerts-filter-count-crit">0</span>)</button>
+              <button class="alerts-filter-pill" data-filter="advertencia" id="alerts-filter-warn">🟡 Advertencias (<span id="alerts-filter-count-warn">0</span>)</button>
+            </div>
+
+            <!-- Barra de Acciones Ejecutivas de Escalamiento -->
+            <div class="alerts-actions-bar">
+              <button class="btn btn-sm btn-secondary btn-alerts-action" id="btn-copy-alerts-minuta" title="Copiar minuta ejecutiva con el resumen de alertas al portapapeles">
+                <span class="btn-icon">📋</span> Copiar Minuta
+              </button>
+              <button class="btn btn-sm btn-primary btn-alerts-action" id="btn-escalar-alerts-email" title="Enviar correo de escalamiento a jefaturas de soporte">
+                <span class="btn-icon">📧</span> Escalar por Correo
+              </button>
+            </div>
+
+            <!-- Cuerpo Scrollable de Alertas -->
+            <div class="alerts-list-container" id="alerts-list-container">
+              <!-- Loading State -->
+              <div class="alerts-loading-state" id="alerts-loading-state">
+                <div class="spinner-sm"></div>
+                <span>Cargando desviaciones operacionales de SLA...</span>
+              </div>
+              
+              <!-- Lista Dinámica Inyectada por JS -->
+              <div class="alerts-items-list" id="alerts-items-list" style="display: none;"></div>
+
+              <!-- Empty State -->
+              <div class="alerts-empty-state" id="alerts-empty-state" style="display: none;">
+                <span class="empty-icon">🎉</span>
+                <p class="empty-title">¡Excelente! Operación en Norma</p>
+                <p class="empty-desc">No existen tickets ni solots fuera de los límites de SLA en este momento.</p>
+              </div>
+            </div>
+
+            <!-- Pie del Dropdown -->
+            <div class="alerts-dropdown-footer">
+              <span class="alerts-footer-info" id="alerts-footer-info">Actualizado en tiempo real</span>
+              <button class="btn-alerts-refresh" id="btn-alerts-refresh" title="Refrescar alertas">🔄</button>
+            </div>
+
+          </div>
+        </div>
+
         <button class="btn-logout" id="btn-logout" aria-label="Salir" title="Cerrar Sesión">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
@@ -127,6 +208,12 @@
           <button id="timeline-toggle-btn" class="btn-subbar-toggle" title="Activar o desactivar Línea de Tiempo Visual del Proyecto" aria-label="Toggle Timeline Visual" aria-pressed="true">
             <span class="timeline-toggle-icon">⏱️</span>
             <span class="timeline-toggle-label" id="timeline-toggle-label">Timeline: ON</span>
+          </button>
+
+          <!-- Botón Kill-Switch / Toggle del Centro de Alertas Tempranas -->
+          <button id="alerts-toggle-btn" class="btn-subbar-toggle" title="Activar o desactivar Centro de Alertas Tempranas SLA" aria-label="Toggle Alertas Tempranas SLA" aria-pressed="true">
+            <span class="alerts-toggle-icon">🔔</span>
+            <span class="alerts-toggle-label" id="alerts-toggle-label">Alertas: ON</span>
           </button>
 
           <span id="user-role-badge" class="badge badge-info">Líder</span>

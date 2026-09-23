@@ -46,7 +46,9 @@ from .db import (
     get_diagnostico_proyecto,
     get_ficha_ejecutiva_data,
     generar_ficha_ejecutiva_html,
-    get_timeline_proyecto
+    get_timeline_proyecto,
+    get_alertas_tempranas_sla,
+    get_alertas_sla
 )
 from .seed_users import seed_default_users
 from .ticket_automation import stream_ticket_creation
@@ -305,6 +307,33 @@ def obtener_timeline_proyecto(
             detail=f"Proyecto con ID {proyecto_id} no fue encontrado."
         )
     return data
+
+@app.get("/api/alertas/sla")
+def get_alertas_sla_endpoint(
+    lider: Optional[str] = Query(None, description="Filtro opcional por Líder TI"),
+    severidad: Optional[str] = Query("todas", description="Filtro por severidad: todas, critica, advertencia"),
+    tipo: Optional[str] = Query("todos", description="Filtro por tipo: todos, ticket, solot, proyecto"),
+    limite: Optional[int] = Query(100, ge=1, le=1000, description="Límite de registros en la lista"),
+    current_user: dict = Depends(require_lti_or_admin)
+):
+    """
+    Centro de Alertas Tempranas SLA & Escalamiento Rápido (Funcionalidad 5).
+    Retorna métricas consolidadas, lista priorizada de alertas y minuta ejecutiva.
+    """
+    try:
+        data = get_alertas_tempranas_sla(
+            lider=lider,
+            severidad=severidad,
+            tipo=tipo,
+            limite=limite
+        )
+        return JSONResponse(status_code=status.HTTP_200_OK, content=data)
+    except Exception as e:
+        logger.error(f"Error al obtener alertas SLA: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al procesar el centro de alertas tempranas SLA."
+        )
 
 @app.put("/api/proyectos/{proyecto_id}")
 def actualizar_proyecto(

@@ -47,15 +47,22 @@
 
 ---
 
-## 🚀 ROADMAP PENDIENTE PARA MAÑANA (SESIÓN PREVIA A LA DEMO DEL JUEVES)
-
-### 🔔 Funcionalidad 5: Centro de Alertas Tempranas y Escalamiento Rápido (SLA Warnings)
-- **Objetivo:** Icono de campanita / panel flotante de alertas en la cabecera que resuma los incidentes que exceden SLAs operacionales (>14 días en torres, Solots vencidas sin fecha compromiso).
-- **Valor para el Gerente:** Escalamiento proactivo en un solo panel consolidado para la reunión diaria de operaciones.
-- **Requerimiento:** Panel de alertas con botón directo de notificación y Kill-Switch.
+5. **Funcionalidad 5: Centro de Alertas Tempranas y Escalamiento Rápido (SLA Warnings) & Kill-Switch**:
+   - **Estado:** ✅ **IMPLEMENTADA, INTEGRADA Y VALIDADA (100%)**.
+   - Documento técnico maestro: [`SPECS_ALERTAS_TEMPRANAS_SLA.md`](file:///home/bobbasystem/Desarrollos/app-lti/SPECS_ALERTAS_TEMPRANAS_SLA.md).
+   - Acceso desde la cabecera institucional Claro HALO (`#alerts-bell-btn`) con badge reactivo numérico (`#alerts-badge-count`) y animación suave pulsante roja (`#B52217`) ante incidentes críticos.
+   - Panel flotante / dropdown (`#alerts-dropdown`) con categorización tripartita (🔴 Críticas, 🟡 Advertencias, 🌟 Todas), botón de acción rápida `Ver Proyecto` hacia el Drill Down y motor de Escalamiento Rápido (copia de minuta y correo prellenado Office 365).
+   - Endpoint backend dedicado: `GET /api/alertas/sla` con agregación multivariable en motor MSSQL (`dbo.registrosRF_SD_SM`, `dbo.CT_BACKLOG_OPERACIONES2`, `dbo.Proyectos`) protegido con `Depends(require_lti_or_admin)`.
+   - **Kill-Switch Mandatorio**: Botón `🔔 Alertas: ON / OFF` (`#alerts-toggle-btn`), variable global `window.HALO_CONFIG.ENABLE_ALERTS`, `localStorage` y política estricta de Cero Rastros (`display: none !important;` y auto-cierre del panel).
+   - **Pruebas Automatizadas:** 20/20 pruebas aprobadas (10 unitarias en `tests/test_alertas_sla.py` y 10 funcionales/E2E en `tests/test_functional_alertas_sla.py`). 100% de éxito.
 
 ---
 
-## 🛠️ INSTRUCCIONES PARA RETOMAR MAÑANA
-1. En la nueva sesión, invocar `/flujo-5-agentes` indicando con cuál de las funcionalidades pendientes iniciar (por ejemplo: *"Retomemos con la Funcionalidad 3: Exportación a PDF Corporativo"*).
-2. El agente orquestador leerá este archivo y activará la fase de planificación (`planificador_specs`) de inmediato.
+## 🚀 PASO SIGUIENTE INMEDIATO: REVISIÓN DE CÓDIGO Y AUDITORÍA QA
+
+1. **Subagente Responsable:** `code_reviewer` (Revisor de Código & QA Auditor).
+2. **Tareas a Ejecutar**:
+   - Auditoría estricta de lineamientos Claro HALO (#B52217, #0097A9, Dark Mode).
+   - Verificación de Cero Rastros y resiliencia en Kill-Switch de Alertas.
+   - Verificación de suite completa de pruebas unitarias y E2E.
+   - Sincronización y despliegue a servidor de producción (`iacdi`).

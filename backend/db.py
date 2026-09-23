@@ -3371,4 +3371,427 @@ def get_timeline_proyecto(proyecto_id: int) -> dict | None:
     }
 
 
+# ==============================================================================
+# MÓDULO 015: CENTRO DE ALERTAS TEMPRANAS SLA & ESCALAMIENTO RÁPIDO
+# ==============================================================================
+
+def generar_minuta_escalamiento_sla(resumen: dict, alertas: list) -> dict:
+    """
+    Genera la minuta ejecutiva en texto plano estructurado y el asunto
+    para escalamiento rápido de alertas de SLA operacional a comités y jefaturas.
+    """
+    hoy = datetime.date.today()
+    fecha_str = hoy.strftime('%d/%m/%Y')
+    
+    criticas = [a for a in alertas if a.get('severidad') == 'CRITICAL']
+    top_criticas = criticas[:10]
+    
+    lineas_top = []
+    for i, a in enumerate(top_criticas, 1):
+        lineas_top.append(
+            f"{i}. [{a.get('severidad')}] {a.get('titulo')} - {a.get('subtitulo')} | "
+            f"Proyecto: {a.get('numero_proyecto') or 'S/N'} ({a.get('cliente') or 'S/C'}) | "
+            f"Líder: {a.get('lt_asignado') or 'S/A'} | "
+            f"Resp: {a.get('responsable')} ({a.get('asignado_a')}) | {a.get('detalle_sla')}"
+        )
+    top_txt = '\n'.join(lineas_top) if lineas_top else 'No se registran desviaciones críticas prioritarias en el periodo.'
+    
+    texto_plano = f"""======================================================================
+CLARO HALO — MINUTA EJECUTIVA DE ESCALAMIENTO OPERACIONAL
+Fecha de Emisión: {fecha_str}
+======================================================================
+
+1. RESUMEN DE SALUD OPERACIONAL
+- Total Alertas SLA: {resumen.get('total_alertas', 0)}
+- Alertas Críticas (🔴): {resumen.get('criticas', 0)}
+- Advertencias (🟡): {resumen.get('advertencias', 0)}
+- Proyectos Críticos Comprometidos: {resumen.get('proyectos_criticos', 0)}
+
+2. DESGLOSE DE INCIDENTES
+- Tickets SD Fuera de SLA (>14 días): {resumen.get('tickets_sla_criticos', 0)}
+- Tickets SD en Atención Preventiva (>7 días): {resumen.get('tickets_sla_advertencia', 0)}
+- Solots SGA Vencidas: {resumen.get('solots_vencidas', 0)}
+- Solots Próximas a Vencer (<=48h): {resumen.get('solots_proximas_vencer', 0)}
+- Solots Sin Fecha de Compromiso (>10d): {resumen.get('solots_sin_compromiso', 0)}
+
+3. PRINCIPALES DESVIACIONES CRÍTICAS (TOP 10)
+{top_txt}
+
+======================================================================
+Generado automáticamente por Claro HALO - App Líderes TI
+======================================================================"""
+
+    return {
+        "asunto_sugerido": f"[HALO ESCALAMIENTO] Alertas Críticas de SLA Operacional - {fecha_str}",
+        "texto_plano": texto_plano,
+        "destinatarios_sugeridos": [
+            "jefatura.operaciones@clarovtr.cl",
+            "soporte.sga@clarovtr.cl"
+        ]
+    }
+
+
+def procesar_alertas_sla(raw_tickets: list, raw_solots: list, lider: str = None, severidad: str = "todas", tipo: str = "todos", limite: int = 100) -> dict:
+    """
+    Aplica las reglas canónicas de clasificación de severidad para tickets HPSM y Solots SGA,
+    calcula métricas de resumen, genera la minuta de escalamiento y retorna el payload estructurado.
+    """
+    hoy = datetime.date.today()
+    alertas_todas = []
+
+    # 1. Reglas de SLA para Tickets HPSM / SD
+    estados_cerrados_tickets = {'cerrado', 'resuelto', 'closed', 'resolved'}
+    for t in (raw_tickets or []):
+        st = (t.get("STATUS") or "").strip().lower()
+        if st in estados_cerrados_tickets:
+            continue
+
+        dt_submit = _parse_timeline_dt(t.get("SUBMIT_DATE"))
+        if not dt_submit:
+            continue
+
+        dias_abierto = (hoy - dt_submit.date()).days
+        if dias_abierto <= 7:
+            continue  # Dentro de SLA preventivo y crítico
+
+        if dias_abierto > 14:
+            sev = "CRITICAL"
+            badge_color = "red"
+            detalle = f"{dias_abierto} días abierto en torre (>14d límite SLA)"
+        else:
+            sev = "WARNING"
+            badge_color = "amber"
+            detalle = f"{dias_abierto} días en atención (>7d límite preventivo)"
+
+        inc_id = t.get("CC_INCIDENT_ID") or t.get("RF_ID") or "SD"
+        pid = t.get("p_id") if t.get("p_id") is not None else (t.get("ID_Proyecto") or t.get("proyecto_id"))
+        if pid is not None:
+            try:
+                pid = int(pid)
+            except (ValueError, TypeError):
+                pass
+
+        num_proy = t.get("p_numero") or t.get("Numero_Proyecto_Limpio") or t.get("numero_proyecto")
+        if num_proy:
+            num_proy = str(num_proy).strip()
+
+        cli = t.get("p_cliente") or t.get("cliente")
+        lt = t.get("p_lider") or t.get("lt_asignado") or "Sin Asignar"
+        resp = t.get("ASSIGNED_GROUP") or t.get("responsable") or "Sin Grupo"
+        asig = t.get("ASSIGNED_TO") or t.get("asignado_a") or "Sin Asignar"
+        subt = t.get("BRIEF_DESCRIPTION") or t.get("subtitulo") or f"Ticket SD {inc_id}"
+
+        alertas_todas.append({
+            "id": f"TICKET-{inc_id}",
+            "tipo": "ticket",
+            "severidad": sev,
+            "icono": "🎫",
+            "titulo": str(inc_id),
+            "subtitulo": str(subt),
+            "proyecto_id": pid,
+            "numero_proyecto": num_proy,
+            "cliente": cli,
+            "lt_asignado": lt,
+            "responsable": resp,
+            "responsable_tipo": "Torre Operativa",
+            "asignado_a": asig,
+            "dias_fuera_sla": dias_abierto,
+            "fecha_referencia": dt_submit.strftime("%Y-%m-%d"),
+            "detalle_sla": detalle,
+            "badge_color": badge_color
+        })
+
+    # 2. Reglas de SLA para Solots SGA
+    estados_cerrados_solot = {
+        'cerrada', '5- ejecutada', '5- ejecutada tareas pendientes',
+        'abortado', 'en aborcion', 'eliminada', 'aprobado'
+    }
+
+    for s in (raw_solots or []):
+        st_otp = (s.get("ESTADO_OTP") or "").strip().lower()
+        if st_otp in estados_cerrados_solot:
+            continue
+
+        dt_comp = _parse_timeline_dt(s.get("FECHA_COMPROMETIDA"))
+        dt_insert = _parse_timeline_dt(s.get("FECHA_INSERT"))
+
+        sev = None
+        badge_color = None
+        detalle = ""
+        dias_fuera = 0
+        fecha_ref_str = ""
+
+        if dt_comp:
+            fecha_ref_str = dt_comp.strftime("%Y-%m-%d")
+            if dt_comp.date() < hoy:
+                # Solot vencida
+                dias_atraso = (hoy - dt_comp.date()).days
+                sev = "CRITICAL"
+                badge_color = "red"
+                dias_fuera = dias_atraso
+                detalle = f"Vencida hace {dias_atraso} días (Compromiso: {fecha_ref_str})"
+            elif dt_comp.date() <= hoy + datetime.timedelta(days=2):
+                # Próxima a vencer en <= 48h
+                dias_restantes = (dt_comp.date() - hoy).days
+                sev = "WARNING"
+                badge_color = "amber"
+                dias_fuera = 0
+                if dias_restantes == 0:
+                    detalle = f"Vence hoy (Compromiso: {fecha_ref_str})"
+                elif dias_restantes == 1:
+                    detalle = f"Vence mañana (Compromiso: {fecha_ref_str})"
+                else:
+                    detalle = f"Próxima a vencer en {dias_restantes} días (Compromiso: {fecha_ref_str})"
+        else:
+            # Sin fecha comprometida
+            if dt_insert:
+                fecha_ref_str = dt_insert.strftime("%Y-%m-%d")
+                dias_creacion = (hoy - dt_insert.date()).days
+                if dias_creacion > 10:
+                    sev = "WARNING"
+                    badge_color = "amber"
+                    dias_fuera = max(0, dias_creacion - 10)
+                    detalle = f"Sin compromiso pactado tras {dias_creacion} días de ingreso"
+
+        if not sev:
+            continue
+
+        otp_id = s.get("ID_OTP") or "SGA"
+        pid = s.get("p_id") if s.get("p_id") is not None else (s.get("ID_Proyecto") or s.get("proyecto_id"))
+        if pid is not None:
+            try:
+                pid = int(pid)
+            except (ValueError, TypeError):
+                pass
+
+        num_proy = s.get("p_numero") or s.get("Numero_Proyecto_Limpio") or s.get("numero_proyecto")
+        if num_proy:
+            num_proy = str(num_proy).strip()
+
+        cli = s.get("p_cliente") or s.get("cliente")
+        lt = s.get("p_lider") or s.get("lt_asignado") or "Sin Asignar"
+        resp = s.get("GRUPO_ASIGNADO_OTP") or s.get("responsable") or "Área SGA"
+        asig = s.get("ASIGNADO_OTP") or s.get("asignado_a") or "Sin Asignar"
+        subt = s.get("DESCR_OTP") or s.get("subtitulo") or f"Solot SGA {otp_id}"
+
+        alertas_todas.append({
+            "id": f"SOLOT-{otp_id}",
+            "tipo": "solot",
+            "severidad": sev,
+            "icono": "⚡",
+            "titulo": f"Solot {otp_id}",
+            "subtitulo": str(subt),
+            "proyecto_id": pid,
+            "numero_proyecto": num_proy,
+            "cliente": cli,
+            "lt_asignado": lt,
+            "responsable": resp,
+            "responsable_tipo": "Área SGA",
+            "asignado_a": asig,
+            "dias_fuera_sla": dias_fuera,
+            "fecha_referencia": fecha_ref_str,
+            "detalle_sla": detalle,
+            "badge_color": badge_color
+        })
+
+    # 3. Filtrar por Líder TI si aplica
+    if lider and lider.strip() and lider.strip().lower() not in ("todos", "todas", "all"):
+        lider_norm = lider.strip().lower()
+        alertas_alcance = [
+            a for a in alertas_todas
+            if a.get("lt_asignado") and (
+                lider_norm == a.get("lt_asignado").strip().lower() or
+                lider_norm in a.get("lt_asignado").strip().lower()
+            )
+        ]
+    else:
+        alertas_alcance = alertas_todas
+
+    # 4. Cálculo de Métricas y Resumen Global del Alcance
+    criticas_count = sum(1 for a in alertas_alcance if a["severidad"] == "CRITICAL")
+    warn_count = sum(1 for a in alertas_alcance if a["severidad"] == "WARNING")
+    tickets_crit = sum(1 for a in alertas_alcance if a["tipo"] == "ticket" and a["severidad"] == "CRITICAL")
+    tickets_warn = sum(1 for a in alertas_alcance if a["tipo"] == "ticket" and a["severidad"] == "WARNING")
+    solots_venc = sum(1 for a in alertas_alcance if a["tipo"] == "solot" and a["severidad"] == "CRITICAL")
+    solots_prox = sum(1 for a in alertas_alcance if a["tipo"] == "solot" and a["severidad"] == "WARNING" and ("Próxima" in a.get("detalle_sla", "") or "Vence" in a.get("detalle_sla", "")))
+    solots_sin_comp = sum(1 for a in alertas_alcance if a["tipo"] == "solot" and a["severidad"] == "WARNING" and "Sin compromiso" in a.get("detalle_sla", ""))
+
+    # Proyectos Críticos: Proyectos con >= 2 desviaciones críticas acumuladas
+    crit_by_proj = {}
+    for a in alertas_alcance:
+        if a.get("severidad") == "CRITICAL" and a.get("proyecto_id"):
+            crit_by_proj[a["proyecto_id"]] = crit_by_proj.get(a["proyecto_id"], 0) + 1
+    proyectos_criticos = sum(1 for count in crit_by_proj.values() if count >= 2)
+
+    resumen = {
+        "total_alertas": len(alertas_alcance),
+        "criticas": criticas_count,
+        "advertencias": warn_count,
+        "tickets_sla_criticos": tickets_crit,
+        "tickets_sla_advertencia": tickets_warn,
+        "solots_vencidas": solots_venc,
+        "solots_proximas_vencer": solots_prox,
+        "solots_sin_compromiso": solots_sin_comp,
+        "proyectos_criticos": proyectos_criticos
+    }
+
+    # 5. Filtrar por Severidad si se solicitó
+    alertas_filtradas = alertas_alcance
+    if severidad and severidad.strip().lower() not in ("todas", "todos", "all"):
+        s_norm = severidad.strip().lower()
+        if s_norm in ("critica", "critical", "criticas"):
+            alertas_filtradas = [a for a in alertas_filtradas if a["severidad"] == "CRITICAL"]
+        elif s_norm in ("advertencia", "warning", "advertencias"):
+            alertas_filtradas = [a for a in alertas_filtradas if a["severidad"] == "WARNING"]
+        elif s_norm in ("info", "informativa", "informativas"):
+            alertas_filtradas = [a for a in alertas_filtradas if a["severidad"] == "INFO"]
+
+    # 6. Filtrar por Tipo si se solicitó
+    if tipo and tipo.strip().lower() not in ("todos", "todas", "all"):
+        t_norm = tipo.strip().lower()
+        if t_norm in ("ticket", "tickets"):
+            alertas_filtradas = [a for a in alertas_filtradas if a["tipo"] == "ticket"]
+        elif t_norm in ("solot", "solots"):
+            alertas_filtradas = [a for a in alertas_filtradas if a["tipo"] == "solot"]
+        elif t_norm in ("proyecto", "proyectos"):
+            alertas_filtradas = [a for a in alertas_filtradas if a["tipo"] == "proyecto"]
+
+    # 7. Ordenamiento Canónico:
+    # 1º Severidad: CRITICAL (1) > WARNING (2) > INFO (3)
+    # 2º Días fuera de SLA descendente
+    # 3º ID descendente
+    sev_order = {"CRITICAL": 1, "WARNING": 2, "INFO": 3}
+    alertas_filtradas.sort(
+        key=lambda a: (
+            sev_order.get(a.get("severidad"), 99),
+            -int(a.get("dias_fuera_sla") or 0),
+            str(a.get("id"))
+        )
+    )
+
+    # 8. Limitar cantidad devuelta en lista detallada
+    if limite and limite > 0:
+        alertas_result = alertas_filtradas[:limite]
+    else:
+        alertas_result = alertas_filtradas
+
+    # 9. Minuta de Escalamiento
+    minuta = generar_minuta_escalamiento_sla(resumen, alertas_alcance)
+
+    return {
+        "timestamp": datetime.datetime.now().isoformat(),
+        "filtros_aplicados": {
+            "lider": lider,
+            "severidad": severidad or "todas",
+            "tipo": tipo or "todos"
+        },
+        "resumen": resumen,
+        "alertas": alertas_result,
+        "minuta_escalamiento": minuta
+    }
+
+
+def get_alertas_tempranas_sla(lider: str = None, severidad: str = "todas", tipo: str = "todos", limite: int = 100) -> dict:
+    """
+    Punto de entrada principal para el Centro de Alertas Tempranas SLA.
+    Ejecuta las consultas en la base de datos MSSQL con NOLOCK y procesa las desviaciones.
+    """
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            # 1. Consulta optimizada de Tickets HPSM en registrosRF_SD_SM
+            sql_tickets = """
+                SELECT 
+                    sd.CC_INCIDENT_ID,
+                    sd.RF_ID,
+                    sd.STATUS,
+                    sd.SUBMIT_DATE,
+                    sd.BRIEF_DESCRIPTION,
+                    sd.ASSIGNED_GROUP,
+                    sd.ASSIGNED_TO,
+                    sd.ID_Proyecto,
+                    sd.Numero_Proyecto_Limpio,
+                    p.ID AS p_id,
+                    p.Numero_Proyecto AS p_numero,
+                    p.Cliente AS p_cliente,
+                    p.LT_Asignado AS p_lider,
+                    p.Estado AS p_estado
+                FROM dbo.registrosRF_SD_SM sd WITH (NOLOCK)
+                OUTER APPLY (
+                    SELECT TOP 1 p.ID, p.Numero_Proyecto, p.Cliente, p.LT_Asignado, p.Estado, p.Tipo_Servicio
+                    FROM dbo.Proyectos p WITH (NOLOCK)
+                    WHERE (sd.ID_Proyecto = p.ID OR (sd.Numero_Proyecto_Limpio IS NOT NULL AND sd.Numero_Proyecto_Limpio = p.Numero_Proyecto))
+                      AND (p.Tipo_Servicio IS NULL OR p.Tipo_Servicio <> 'Reunión')
+                    ORDER BY CASE WHEN p.Estado <> 'Atendido' THEN 0 ELSE 1 END, p.ID DESC
+                ) p
+                WHERE sd.STATUS NOT IN ('Cerrado', 'Resuelto', 'Closed', 'Resolved')
+                  AND TRY_CAST(sd.SUBMIT_DATE AS DATETIME2) IS NOT NULL
+                  AND DATEDIFF(day, TRY_CAST(sd.SUBMIT_DATE AS DATETIME2), GETDATE()) > 7
+                  AND (p.ID IS NULL OR p.Estado <> 'Atendido')
+            """
+            params_t = []
+            if lider and lider.strip() and lider.strip().lower() not in ("todos", "todas", "all"):
+                sql_tickets += " AND p.LT_Asignado IS NOT NULL AND LOWER(LTRIM(RTRIM(p.LT_Asignado))) = LOWER(LTRIM(RTRIM(%s)))"
+                params_t.append(lider.strip())
+
+            cur.execute(sql_tickets, tuple(params_t))
+            raw_tickets = cur.fetchall()
+
+            # 2. Consulta optimizada de Solots SGA en CT_BACKLOG_OPERACIONES2
+            sql_solots = """
+                SELECT 
+                    b.ID_OTP,
+                    b.DESCR_OTP,
+                    b.ESTADO_OTP,
+                    b.FECHA_COMPROMETIDA,
+                    b.FECHA_INSERT,
+                    b.ASIGNADO_OTP,
+                    b.GRUPO_ASIGNADO_OTP,
+                    b.ID_Proyecto,
+                    b.Numero_Proyecto_Limpio,
+                    p.ID AS p_id,
+                    p.Numero_Proyecto AS p_numero,
+                    p.Cliente AS p_cliente,
+                    p.LT_Asignado AS p_lider,
+                    p.Estado AS p_estado
+                FROM dbo.CT_BACKLOG_OPERACIONES2 b WITH (NOLOCK)
+                OUTER APPLY (
+                    SELECT TOP 1 p.ID, p.Numero_Proyecto, p.Cliente, p.LT_Asignado, p.Estado, p.Tipo_Servicio
+                    FROM dbo.Proyectos p WITH (NOLOCK)
+                    WHERE (b.ID_Proyecto = p.ID OR (b.Numero_Proyecto_Limpio IS NOT NULL AND b.Numero_Proyecto_Limpio = p.Numero_Proyecto))
+                      AND (p.Tipo_Servicio IS NULL OR p.Tipo_Servicio <> 'Reunión')
+                    ORDER BY CASE WHEN p.Estado <> 'Atendido' THEN 0 ELSE 1 END, p.ID DESC
+                ) p
+                WHERE b.ESTADO_OTP NOT IN ('Cerrada', '5- Ejecutada', '5- Ejecutada Tareas Pendientes', 'Abortado', 'En Aborcion', 'Eliminada', 'Aprobado')
+                  AND (
+                    (b.FECHA_COMPROMETIDA IS NOT NULL AND b.FECHA_COMPROMETIDA <= DATEADD(day, 2, CAST(GETDATE() AS DATE)))
+                    OR
+                    (b.FECHA_COMPROMETIDA IS NULL AND DATEDIFF(day, b.FECHA_INSERT, GETDATE()) > 10)
+                  )
+                  AND (p.ID IS NOT NULL OR b.ID_Proyecto IS NOT NULL)
+                  AND (p.ID IS NULL OR p.Estado <> 'Atendido')
+            """
+            params_s = []
+            if lider and lider.strip() and lider.strip().lower() not in ("todos", "todas", "all"):
+                sql_solots += " AND p.LT_Asignado IS NOT NULL AND LOWER(LTRIM(RTRIM(p.LT_Asignado))) = LOWER(LTRIM(RTRIM(%s)))"
+                params_s.append(lider.strip())
+
+            cur.execute(sql_solots, tuple(params_s))
+            raw_solots = cur.fetchall()
+
+            return procesar_alertas_sla(
+                raw_tickets=raw_tickets,
+                raw_solots=raw_solots,
+                lider=lider,
+                severidad=severidad,
+                tipo=tipo,
+                limite=limite
+            )
+    finally:
+        conn.close()
+
+# Alias canónico
+get_alertas_sla = get_alertas_tempranas_sla
+
+
 
