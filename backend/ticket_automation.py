@@ -31,7 +31,7 @@ logger = logging.getLogger("ticket_automation")
 # ==============================================================================
 DEFAULT_PORTAL_URL = "https://portalti.clarocloud.cl:8443/smwebtier/index.do?lang=es"
 DEFAULT_PORTAL_USER = "Alejandro.Aguilar"
-DEFAULT_PORTAL_PASS = "Cl4r0.2026**"
+DEFAULT_PORTAL_PASS = "Cl4r0.2026*!?"
 DEFAULT_TIMEOUT = 30_000
 
 PORTAL_URL = os.getenv("PORTAL_URL", DEFAULT_PORTAL_URL)
@@ -1414,7 +1414,7 @@ async def stream_ticket_creation(params: Dict[str, Any]) -> AsyncGenerator[str, 
     """
     url = params.get("url") or params.get("portal_url") or PORTAL_URL
     username = params.get("username") or params.get("portal_user") or PORTAL_USER
-    password = params.get("password") or params.get("portal_pass") or PORTAL_PASS
+    password = params.get("password") or params.get("portal_pass") or os.getenv("PORTAL_PASS") or PORTAL_PASS
     
     headless_raw = params.get("headless", True)
     if isinstance(headless_raw, str):

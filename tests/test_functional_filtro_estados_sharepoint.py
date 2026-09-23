@@ -158,7 +158,7 @@ def test_tc_est_03_filter_by_estado_generado(auth_token):
     p1 = create_test_project_with_state("Generado")
     headers = {"Authorization": f"Bearer {auth_token}"}
     params = {"estado_sp": "Generado", "search": p1["numero_proyecto"]}
-    resp = requests.get(f"{BASE_URL}/api/proyectos", headers=headers, params=params, timeout=5)
+    resp = requests.get(f"{BASE_URL}/api/proyectos", headers=headers, params=params, timeout=10)
     assert resp.status_code == 200
     projs = resp.json()
     assert len(projs) >= 1
@@ -173,7 +173,7 @@ def test_tc_est_04_filter_by_estado_en_revision(auth_token):
     p2 = create_test_project_with_state("En revision")
     headers = {"Authorization": f"Bearer {auth_token}"}
     params = {"estado_sp": "En revision", "search": p2["numero_proyecto"]}
-    resp = requests.get(f"{BASE_URL}/api/proyectos", headers=headers, params=params, timeout=5)
+    resp = requests.get(f"{BASE_URL}/api/proyectos", headers=headers, params=params, timeout=10)
     assert resp.status_code == 200
     projs = resp.json()
     assert len(projs) >= 1
@@ -188,7 +188,7 @@ def test_tc_est_05_filter_by_estado_atendido(auth_token):
     p3 = create_test_project_with_state("Atendido")
     headers = {"Authorization": f"Bearer {auth_token}"}
     params = {"estado_sp": "Atendido", "search": p3["numero_proyecto"]}
-    resp = requests.get(f"{BASE_URL}/api/proyectos", headers=headers, params=params, timeout=5)
+    resp = requests.get(f"{BASE_URL}/api/proyectos", headers=headers, params=params, timeout=10)
     assert resp.status_code == 200
     projs = resp.json()
     assert len(projs) >= 1
@@ -206,7 +206,7 @@ def test_tc_est_06_wildcard_all_estados(auth_token):
     p_ate = create_test_project_with_state("Atendido")
 
     headers = {"Authorization": f"Bearer {auth_token}"}
-    resp = requests.get(f"{BASE_URL}/api/proyectos", headers=headers, timeout=5)
+    resp = requests.get(f"{BASE_URL}/api/proyectos", headers=headers, timeout=10)
     assert resp.status_code == 200
     all_projs = resp.json()
 

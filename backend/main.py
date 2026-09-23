@@ -115,6 +115,15 @@ class UserUpdateRequest(BaseModel):
     activo: bool = True
 
 
+# Health Check Endpoint
+@app.get("/api/health")
+def health_check():
+    return {
+        "status": "ok",
+        "app": "HALO — App Líderes TI",
+        "version": "2.0.0"
+    }
+
 # Auth Endpoints (SSO Portal de Acceso)
 @app.get("/api/auth/me")
 def get_me(current_user: dict = Depends(get_current_user)):

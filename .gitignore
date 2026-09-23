@@ -13,6 +13,8 @@ htmlcov/
 
 # Environment variables & virtualenvs
 .env
+.sm_pass
+*.pass
 venv/
 .venv/
 env/

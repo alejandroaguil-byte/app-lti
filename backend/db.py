@@ -74,6 +74,91 @@ def serialize_row(row):
 def serialize_rows(rows):
     return [serialize_row(r) for r in rows]
 
+def calcular_salud_proyecto(row: dict) -> dict:
+    """Calcula el estado de salud operacional de un proyecto (Verde, Amarillo, Rojo, Gris) y motivos legibles."""
+    if not row:
+        return {
+            "score": "NEUTRAL",
+            "color": "gray",
+            "label": "Sin Datos",
+            "motivos": ["Proyecto sin Solots ni tickets vinculados"],
+            "solots_vencidas": 0,
+            "solots_por_vencer": 0,
+            "tickets_criticos": 0,
+            "tickets_atencion": 0
+        }
+
+    total_solots = int(row.get('total_solots') or 0)
+    total_tickets = int(row.get('total_tickets') or 0)
+    solots_vencidas = int(row.get('solots_vencidas') or 0)
+    solots_por_vencer = int(row.get('solots_por_vencer') or 0)
+    tickets_criticos = int(row.get('tickets_criticos') or 0)
+    tickets_atencion = int(row.get('tickets_atencion') or 0)
+
+    # 1. Sin datos vinculados
+    if total_solots == 0 and total_tickets == 0:
+        return {
+            "score": "NEUTRAL",
+            "color": "gray",
+            "label": "Sin Datos",
+            "motivos": ["Proyecto sin Solots ni tickets vinculados"],
+            "solots_vencidas": 0,
+            "solots_por_vencer": 0,
+            "tickets_criticos": 0,
+            "tickets_atencion": 0
+        }
+
+    motivos = []
+
+    # 2. Criterio Crítico (Rojo)
+    if solots_vencidas > 0:
+        motivos.append(f"{solots_vencidas} Solot{'s' if solots_vencidas > 1 else ''} con fecha comprometida vencida")
+    if tickets_criticos > 0:
+        motivos.append(f"{tickets_criticos} Ticket{'s' if tickets_criticos > 1 else ''} abierto{'s' if tickets_criticos > 1 else ''} > 14 días")
+
+    if motivos:
+        return {
+            "score": "CRITICAL",
+            "color": "red",
+            "label": "Crítico",
+            "motivos": motivos,
+            "solots_vencidas": solots_vencidas,
+            "solots_por_vencer": solots_por_vencer,
+            "tickets_criticos": tickets_criticos,
+            "tickets_atencion": tickets_atencion
+        }
+
+    # 3. Criterio Riesgo / Atención (Amarillo)
+    if solots_por_vencer > 0:
+        motivos.append(f"{solots_por_vencer} Solot{'s' if solots_por_vencer > 1 else ''} por vencer (< 5 días)")
+    if tickets_atencion > 0:
+        motivos.append(f"{tickets_atencion} Ticket{'s' if tickets_atencion > 1 else ''} abierto{'s' if tickets_atencion > 1 else ''} > 7 días")
+
+    if motivos:
+        return {
+            "score": "WARNING",
+            "color": "yellow",
+            "label": "En Riesgo",
+            "motivos": motivos,
+            "solots_vencidas": 0,
+            "solots_por_vencer": solots_por_vencer,
+            "tickets_criticos": 0,
+            "tickets_atencion": tickets_atencion
+        }
+
+    # 4. Criterio Saludable (Verde)
+    return {
+        "score": "HEALTHY",
+        "color": "green",
+        "label": "Saludable",
+        "motivos": ["Solots y tickets operando dentro de plazo regular"],
+        "solots_vencidas": 0,
+        "solots_por_vencer": 0,
+        "tickets_criticos": 0,
+        "tickets_atencion": 0
+    }
+
+
 def init_auth_tables():
     """Ensures dbo.App_Usuarios table exists with updated_at column and nullable password_hash."""
     conn = get_db_connection()
@@ -413,7 +498,18 @@ def get_proyectos(lt_filter=None, search=None, estado_sp=None, estado_sga=None):
                 WITH SolotStats AS (
                     SELECT 
                         ID_Proyecto,
-                        COUNT(1) AS total_solots
+                        COUNT(1) AS total_solots,
+                        SUM(CASE 
+                            WHEN ESTADO_OTP NOT IN ('Cerrada', '5- Ejecutada', '5- Ejecutada Tareas Pendientes', 'Abortado', 'En Aborcion', 'Eliminada', 'Aprobado') 
+                                 AND FECHA_COMPROMETIDA IS NOT NULL AND FECHA_COMPROMETIDA < CAST(GETDATE() AS DATE) THEN 1 
+                            ELSE 0 
+                        END) AS solots_vencidas,
+                        SUM(CASE 
+                            WHEN ESTADO_OTP NOT IN ('Cerrada', '5- Ejecutada', '5- Ejecutada Tareas Pendientes', 'Abortado', 'En Aborcion', 'Eliminada', 'Aprobado') 
+                                 AND FECHA_COMPROMETIDA IS NOT NULL AND FECHA_COMPROMETIDA >= CAST(GETDATE() AS DATE) 
+                                 AND FECHA_COMPROMETIDA <= DATEADD(day, 5, CAST(GETDATE() AS DATE)) THEN 1 
+                            ELSE 0 
+                        END) AS solots_por_vencer
                     FROM dbo.CT_BACKLOG_OPERACIONES2 WITH (NOLOCK)
                     WHERE ID_Proyecto IS NOT NULL
                     GROUP BY ID_Proyecto
@@ -421,7 +517,20 @@ def get_proyectos(lt_filter=None, search=None, estado_sp=None, estado_sga=None):
                 TicketStats AS (
                     SELECT 
                         ID_Proyecto,
-                        COUNT(1) AS total_tickets
+                        COUNT(1) AS total_tickets,
+                        SUM(CASE 
+                            WHEN STATUS NOT IN ('Cerrado', 'Resuelto') 
+                                 AND SUBMIT_DATE IS NOT NULL
+                                 AND TRY_CAST(SUBMIT_DATE AS DATETIME2) < DATEADD(day, -14, GETDATE()) THEN 1 
+                            ELSE 0 
+                        END) AS tickets_criticos,
+                        SUM(CASE 
+                            WHEN STATUS NOT IN ('Cerrado', 'Resuelto') 
+                                 AND SUBMIT_DATE IS NOT NULL
+                                 AND TRY_CAST(SUBMIT_DATE AS DATETIME2) >= DATEADD(day, -14, GETDATE())
+                                 AND TRY_CAST(SUBMIT_DATE AS DATETIME2) < DATEADD(day, -7, GETDATE()) THEN 1 
+                            ELSE 0 
+                        END) AS tickets_atencion
                     FROM dbo.registrosRF_SD_SM WITH (NOLOCK)
                     WHERE ID_Proyecto IS NOT NULL
                     GROUP BY ID_Proyecto
@@ -497,6 +606,10 @@ def get_proyectos(lt_filter=None, search=None, estado_sp=None, estado_sga=None):
                     ISNULL(ss.total_solots, 0) AS total_solots,
                     ISNULL(ts.total_tickets, 0) AS total_tickets,
                     ISNULL(rs.total_rfcs, 0) AS total_rfcs,
+                    ISNULL(ss.solots_vencidas, 0) AS solots_vencidas,
+                    ISNULL(ss.solots_por_vencer, 0) AS solots_por_vencer,
+                    ISNULL(ts.tickets_criticos, 0) AS tickets_criticos,
+                    ISNULL(ts.tickets_atencion, 0) AS tickets_atencion,
                     COALESCE(
                         si_id.PRO_ING_PROYECTO, 
                         si_limp.PRO_ING_PROYECTO,
@@ -557,7 +670,10 @@ def get_proyectos(lt_filter=None, search=None, estado_sp=None, estado_sga=None):
             """
             cursor.execute(sql, tuple(params))
             rows = cursor.fetchall()
-            return serialize_rows(rows)
+            serialized = serialize_rows(rows)
+            for r in serialized:
+                r['salud'] = calcular_salud_proyecto(r)
+            return serialized
     finally:
         conn.close()
 
@@ -596,6 +712,48 @@ def get_proyecto_by_id(proyecto_id):
                     (SELECT COUNT(1) FROM dbo.registrosRF_SD_SM sd WITH (NOLOCK) WHERE sd.ID_Proyecto = p.ID OR sd.Numero_Proyecto_Limpio = p.Numero_Proyecto) AS total_tickets,
                     (SELECT COUNT(1) FROM dbo.registrosSM_RFC rfc WITH (NOLOCK) WHERE rfc.ID_Proyecto = p.ID OR rfc.Numero_Proyecto_Limpio = p.Numero_Proyecto) AS total_rfcs,
                     (
+                        SELECT SUM(CASE 
+                            WHEN b.ESTADO_OTP NOT IN ('Cerrada', '5- Ejecutada', '5- Ejecutada Tareas Pendientes', 'Abortado', 'En Aborcion', 'Eliminada', 'Aprobado') 
+                                 AND b.FECHA_COMPROMETIDA < CAST(GETDATE() AS DATE) THEN 1 
+                            ELSE 0 
+                        END)
+                        FROM dbo.CT_BACKLOG_OPERACIONES2 b WITH (NOLOCK)
+                        WHERE (b.ID_Proyecto = p.ID OR b.Numero_Proyecto_Limpio = p.Numero_Proyecto)
+                          AND b.FECHA_COMPROMETIDA IS NOT NULL
+                    ) AS solots_vencidas,
+                    (
+                        SELECT SUM(CASE 
+                            WHEN b.ESTADO_OTP NOT IN ('Cerrada', '5- Ejecutada', '5- Ejecutada Tareas Pendientes', 'Abortado', 'En Aborcion', 'Eliminada', 'Aprobado') 
+                                 AND b.FECHA_COMPROMETIDA >= CAST(GETDATE() AS DATE) 
+                                 AND b.FECHA_COMPROMETIDA <= DATEADD(day, 5, CAST(GETDATE() AS DATE)) THEN 1 
+                            ELSE 0 
+                        END)
+                        FROM dbo.CT_BACKLOG_OPERACIONES2 b WITH (NOLOCK)
+                        WHERE (b.ID_Proyecto = p.ID OR b.Numero_Proyecto_Limpio = p.Numero_Proyecto)
+                          AND b.FECHA_COMPROMETIDA IS NOT NULL
+                    ) AS solots_por_vencer,
+                    (
+                        SELECT SUM(CASE 
+                            WHEN sd.STATUS NOT IN ('Cerrado', 'Resuelto') 
+                                 AND DATEDIFF(day, TRY_CAST(sd.SUBMIT_DATE AS DATETIME2), GETDATE()) > 14 THEN 1 
+                            ELSE 0 
+                        END)
+                        FROM dbo.registrosRF_SD_SM sd WITH (NOLOCK)
+                        WHERE (sd.ID_Proyecto = p.ID OR sd.Numero_Proyecto_Limpio = p.Numero_Proyecto)
+                          AND sd.SUBMIT_DATE IS NOT NULL
+                    ) AS tickets_criticos,
+                    (
+                        SELECT SUM(CASE 
+                            WHEN sd.STATUS NOT IN ('Cerrado', 'Resuelto') 
+                                 AND DATEDIFF(day, TRY_CAST(sd.SUBMIT_DATE AS DATETIME2), GETDATE()) > 7 
+                                 AND DATEDIFF(day, TRY_CAST(sd.SUBMIT_DATE AS DATETIME2), GETDATE()) <= 14 THEN 1 
+                            ELSE 0 
+                        END)
+                        FROM dbo.registrosRF_SD_SM sd WITH (NOLOCK)
+                        WHERE (sd.ID_Proyecto = p.ID OR sd.Numero_Proyecto_Limpio = p.Numero_Proyecto)
+                          AND sd.SUBMIT_DATE IS NOT NULL
+                    ) AS tickets_atencion,
+                    (
                         SELECT TOP 1 b.PRO_ING_PROYECTO 
                         FROM dbo.CT_BACKLOG_OPERACIONES2 b WITH (NOLOCK)
                         WHERE (
@@ -622,7 +780,11 @@ def get_proyecto_by_id(proyecto_id):
             """
             cursor.execute(sql, (proyecto_id,))
             row = cursor.fetchone()
-            return serialize_row(row)
+            if not row:
+                return None
+            res = serialize_row(row)
+            res['salud'] = calcular_salud_proyecto(res)
+            return res
     finally:
         conn.close()
 
@@ -813,6 +975,72 @@ def get_dashboard_kpis(lt_filter=None):
             cursor.execute(sql_rfcs, tuple(params_r))
             total_rfcs = cursor.fetchone()['total']
 
+            # 8. KPIs de Salud Operacional
+            sql_salud_kpis = """
+                WITH SolotStats AS (
+                    SELECT 
+                        ID_Proyecto, 
+                        COUNT(1) AS total_solots,
+                        SUM(CASE WHEN ESTADO_OTP NOT IN ('Cerrada', '5- Ejecutada', '5- Ejecutada Tareas Pendientes', 'Abortado', 'En Aborcion', 'Eliminada', 'Aprobado') 
+                                 AND FECHA_COMPROMETIDA IS NOT NULL AND FECHA_COMPROMETIDA < CAST(GETDATE() AS DATE) THEN 1 ELSE 0 END) AS solots_vencidas,
+                        SUM(CASE WHEN ESTADO_OTP NOT IN ('Cerrada', '5- Ejecutada', '5- Ejecutada Tareas Pendientes', 'Abortado', 'En Aborcion', 'Eliminada', 'Aprobado') 
+                                 AND FECHA_COMPROMETIDA IS NOT NULL AND FECHA_COMPROMETIDA >= CAST(GETDATE() AS DATE) 
+                                 AND FECHA_COMPROMETIDA <= DATEADD(day, 5, CAST(GETDATE() AS DATE)) THEN 1 ELSE 0 END) AS solots_por_vencer
+                    FROM dbo.CT_BACKLOG_OPERACIONES2 WITH (NOLOCK) 
+                    WHERE ID_Proyecto IS NOT NULL 
+                    GROUP BY ID_Proyecto
+                ),
+                TicketStats AS (
+                    SELECT 
+                        ID_Proyecto, 
+                        COUNT(1) AS total_tickets,
+                        SUM(CASE WHEN STATUS NOT IN ('Cerrado', 'Resuelto') 
+                                 AND SUBMIT_DATE IS NOT NULL
+                                 AND TRY_CAST(SUBMIT_DATE AS DATETIME2) < DATEADD(day, -14, GETDATE()) THEN 1 ELSE 0 END) AS tickets_criticos,
+                        SUM(CASE WHEN STATUS NOT IN ('Cerrado', 'Resuelto') 
+                                 AND SUBMIT_DATE IS NOT NULL
+                                 AND TRY_CAST(SUBMIT_DATE AS DATETIME2) >= DATEADD(day, -14, GETDATE())
+                                 AND TRY_CAST(SUBMIT_DATE AS DATETIME2) < DATEADD(day, -7, GETDATE()) THEN 1 ELSE 0 END) AS tickets_atencion
+                    FROM dbo.registrosRF_SD_SM WITH (NOLOCK) 
+                    WHERE ID_Proyecto IS NOT NULL 
+                    GROUP BY ID_Proyecto
+                )
+                SELECT 
+                    SUM(CASE 
+                        WHEN ISNULL(ss.total_solots, 0) = 0 AND ISNULL(ts.total_tickets, 0) = 0 THEN 1 
+                        ELSE 0 
+                    END) AS sin_datos,
+                    SUM(CASE 
+                        WHEN (ISNULL(ss.total_solots, 0) > 0 OR ISNULL(ts.total_tickets, 0) > 0)
+                             AND (ISNULL(ss.solots_vencidas, 0) > 0 OR ISNULL(ts.tickets_criticos, 0) > 0) THEN 1 
+                        ELSE 0 
+                    END) AS criticos,
+                    SUM(CASE 
+                        WHEN (ISNULL(ss.total_solots, 0) > 0 OR ISNULL(ts.total_tickets, 0) > 0)
+                             AND (ISNULL(ss.solots_vencidas, 0) = 0 AND ISNULL(ts.tickets_criticos, 0) = 0)
+                             AND (ISNULL(ss.solots_por_vencer, 0) > 0 OR ISNULL(ts.tickets_atencion, 0) > 0) THEN 1 
+                        ELSE 0 
+                    END) AS en_riesgo,
+                    SUM(CASE 
+                        WHEN (ISNULL(ss.total_solots, 0) > 0 OR ISNULL(ts.total_tickets, 0) > 0)
+                             AND (ISNULL(ss.solots_vencidas, 0) = 0 AND ISNULL(ts.tickets_criticos, 0) = 0)
+                             AND (ISNULL(ss.solots_por_vencer, 0) = 0 AND ISNULL(ts.tickets_atencion, 0) = 0) THEN 1 
+                        ELSE 0 
+                    END) AS saludables
+                FROM dbo.Proyectos p WITH (NOLOCK)
+                LEFT JOIN SolotStats ss ON p.ID = ss.ID_Proyecto
+                LEFT JOIN TicketStats ts ON p.ID = ts.ID_Proyecto
+                WHERE (p.Tipo_Servicio IS NULL OR p.Tipo_Servicio <> 'Reunión')
+            """
+            params_s = []
+            if lt_filter == "__UNASSIGNED__":
+                sql_salud_kpis += " AND (p.LT_Asignado IS NULL OR LTRIM(RTRIM(p.LT_Asignado)) = '' OR LOWER(LTRIM(RTRIM(p.LT_Asignado))) = 'sin asignar')"
+            elif lt_filter:
+                sql_salud_kpis += " AND p.LT_Asignado = %s"
+                params_s.append(lt_filter)
+            cursor.execute(sql_salud_kpis, tuple(params_s))
+            salud_row = cursor.fetchone() or {}
+
             return {
                 'total_proyectos': total_proyectos,
                 'proyectos_en_curso': proyectos_en_curso,
@@ -820,7 +1048,13 @@ def get_dashboard_kpis(lt_filter=None):
                 'pendientes_asignar': pendientes_asignar,
                 'efectividad': efectividad,
                 'total_tickets': total_tickets,
-                'total_rfcs': total_rfcs
+                'total_rfcs': total_rfcs,
+                'salud': {
+                    'saludables': int(salud_row.get('saludables') or 0),
+                    'en_riesgo': int(salud_row.get('en_riesgo') or 0),
+                    'criticos': int(salud_row.get('criticos') or 0),
+                    'sin_datos': int(salud_row.get('sin_datos') or 0)
+                }
             }
     finally:
         conn.close()

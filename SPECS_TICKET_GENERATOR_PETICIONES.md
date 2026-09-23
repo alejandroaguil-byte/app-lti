@@ -2,8 +2,8 @@
 ## Módulo: "Generador Automatizado de Tickets y Peticiones Relacionadas con Cierre de Sesión Seguro" — Portal App LTI (`app-lti`)
 
 - **Documento:** SPECS-LTI-MOD-007
-- **Versión:** 1.1.0
-- **Fecha:** 2026-08-28
+- **Versión:** 1.2.0
+- **Fecha:** 2026-09-14
 - **Autor:** Subagente Planificador & Diseñador de Specs
 - **Destinatario:** Subagente Implementador (Coder) & Equipo de Desarrollo
 - **Ubicación del Proyecto:** `/home/bobbasystem/Desarrollos/app-lti`
@@ -16,6 +16,7 @@
 |---|---|---|---|
 | **1.0.0** | 2026-08-28 | Subagente Planificador | Especificación técnica inicial para la integración del flujo extendido de creación de tickets en Micro Focus Service Manager (HPSM): Interacción (SD), vinculación de Petición Relacionada, selección de usuario (`Alejandro.Aguilar`), captura de ID de Petición, guardado en cascada y cierre de sesión seguro (`Info. del usuario` &rarr; `Cerrar sesión` &rarr; `Sí`), streaming en vivo vía Server-Sent Events (SSE) y nuevo modal de éxito con soporte para doble ID (SD + Petición). |
 | **1.1.0** | 2026-08-28 | Subagente Planificador | **Diagnóstico y Corrección Arquitectónica de Ejecución Directa:**<br>1. Diagnóstico de causa raíz por proceso Uvicorn desactualizado en puerto 8000 (PID 209087) sin `--reload` reteniendo código antiguo en memoria.<br>2. Rediseño arquitectónico del generador `stream_ticket_creation` en `backend/ticket_automation.py` eliminando el antipatrón de colas concurrentes `asyncio.Queue` / `create_task` en favor de una **ejecución lineal directa** con `yield format_sse(...)` paso a paso garantizado.<br>3. Protocolo de gestión del ciclo de vida del servidor y reinicio limpio con recarga automática.<br>4. Resiliencia en frontend (`app.js` e `index.html`) para procesar estados intermedios y fallbacks de `peticion_id`.<br>5. Plan detallado de implementación y verificación para el subagente Coder. |
+| **1.2.0** | 2026-09-14 | Subagente Planificador | **Actualización y Gestión de Credenciales Service Manager (Dev & Prod):**<br>1. Formalización del cambio de contraseña de Service Manager a partir de credencial temporal `.sm_pass`.<br>2. Definición de variables de entorno y orden de precedencia (`PORTAL_PASS`, `PORTAL_USER`, `PORTAL_URL`) en `.env` y `.env.example`.<br>3. Actualización de constantes predeterminadas y lectura en `backend/ticket_automation.py`, `portal_login.py` y `portal_login_v2.py`.<br>4. Ajuste de suites de prueba unitaria/funcional en `tests/test_functional_ticket_peticiones.py`.<br>5. Procedimiento de sincronización a producción (`iacdi`), inyección en `.env` remoto y reinicio seguro del servicio systemd.<br>6. Protocolo de destrucción segura de `.sm_pass` y blindaje en `.gitignore`.<br>7. Criterios de Aceptación (DoD) formalizados para Coder, Revisor, QA y Validador. |
 
 ---
 
@@ -577,3 +578,273 @@ El subagente Coder debe proceder siguiendo estas 5 etapas ordenadas:
 5. **Logout Seguro y Limpio:** La automatización siempre ejecuta el cierre de formularios y el logout en Micro Focus Service Manager (`Info. del usuario` &rarr; `Cerrar sesión` &rarr; `Sí`).
 6. **Proceso Uvicorn Actualizado:** El servidor se encuentra activo en el puerto 8000 corriendo el código actualizado con `--reload`.
 7. **Pruebas Automatizadas Exitosas:** 100% de los tests unitarios, de API y E2E pasan en verde.
+
+---
+
+## 8. ESPECIFICACIÓN TÉCNICA: ACTUALIZACIÓN Y GESTIÓN DE CREDENCIALES SERVICE MANAGER (DEV & PROD)
+
+### 8.1. Contexto y Requerimiento
+El usuario administrador actualizó su contraseña corporativa para el acceso a Micro Focus Service Manager (HPSM / Portal TI) asignada a la cuenta `Alejandro.Aguilar`.
+La nueva credencial fue dispuesta temporalmente en el archivo confidencial local:
+`/home/bobbasystem/Desarrollos/app-lti/.sm_pass`
+
+**Valores de Credenciales:**
+- **Usuario SM:** `Alejandro.Aguilar`
+- **Contraseña Anterior (obsoleta):** `Cl4r0.2026**`
+- **Nueva Contraseña Vigente:** `Cl4r0.2026*!?`
+
+Esta especificación detalla el procedimiento exacto, arquitectura de variables de entorno, mecanismos de fallback, sincronización dev/prod, blindaje de seguridad, destrucción de archivos temporales y criterios de aceptación por rol.
+
+---
+
+### 8.2. Arquitectura de Propagación de Credenciales
+
+```mermaid
+flowchart TD
+    SMPASS[".sm_pass (Temporal / Confidencial)<br>Cl4r0.2026*!?"] -->|Lectura & Aplicación| DEV_ENV["Dev: .env<br>PORTAL_PASS=Cl4r0.2026*!?"]
+    SMPASS -->|Saneamiento en Plantilla| DEV_EXAMPLE["Dev: .env.example<br>PORTAL_PASS=TuPasswordServiceManager"]
+    SMPASS -->|Actualización Fallback| DEV_PY["Dev Scripts:<br>ticket_automation.py<br>portal_login.py<br>portal_login_v2.py"]
+    SMPASS -->|Actualización Mocks| DEV_TESTS["Dev Tests:<br>test_functional_ticket_peticiones.py"]
+    
+    DEV_ENV -->|Protección Permisos| CHMOD_DEV["chmod 600 .env"]
+    DEV_PY -->|deploy_to_iacdi.sh rsync| PROD_CODE["Prod: /home/iacdi/Desarrollos/app-lti/"]
+    
+    SMPASS -.->|Inyección SSH Remota| PROD_ENV["Prod: /home/iacdi/Desarrollos/app-lti/.env<br>PORTAL_PASS=Cl4r0.2026*!?"]
+    PROD_ENV -->|Protección Permisos| CHMOD_PROD["chmod 600 .env en iacdi"]
+    
+    PROD_CODE -->|systemctl --user restart| PROD_SVC["app-lti.service (Uvicorn)"]
+    PROD_ENV -->|Carga de Variables| PROD_SVC
+
+    SMPASS -->|Destrucción Segura tras despliegue| SHRED["shred -u -z -n 3 .sm_pass"]
+    GITIGNORE[".gitignore"] -->|Blindaje| EXCLUDE_PASS[".sm_pass / *.pass"]
+```
+
+---
+
+### 8.3. Matriz de Componentes y Archivos Afectados
+
+| Archivo / Componente | Ambiente | Rol / Modificación Requerida | Estado Previo | Estado Esperado |
+|---|---|---|---|---|
+| `/home/bobbasystem/Desarrollos/app-lti/.sm_pass` | Local Dev | Origen temporal de la credencial. Debe destruirse de forma segura una vez aplicada en dev y prod. | Archivo con contraseña en texto claro | Archivo destruido con `shred -u` |
+| `backend/ticket_automation.py` | Dev / Prod | 1. Modificar constante `DEFAULT_PORTAL_PASS`.<br>2. Asegurar fallback `os.getenv("PORTAL_PASS", DEFAULT_PORTAL_PASS)`.<br>3. Asegurar lectura prioritaria en `stream_ticket_creation`. | `DEFAULT_PORTAL_PASS = "Cl4r0.2026**"` | `DEFAULT_PORTAL_PASS = "Cl4r0.2026*!?"` |
+| `portal_login.py` | Dev / Prod | Actualizar fallback de constante `PASSWORD`. | `PASSWORD = os.getenv("PORTAL_PASS", "Cl4r0.2026**")` | `PASSWORD = os.getenv("PORTAL_PASS", "Cl4r0.2026*!?")` |
+| `portal_login_v2.py` | Dev / Prod | Actualizar fallback de constante `PASSWORD`. | `PASSWORD = os.getenv("PORTAL_PASS", "Cl4r0.2026**")` | `PASSWORD = os.getenv("PORTAL_PASS", "Cl4r0.2026*!?")` |
+| `.env` | Local Dev | Incorporar variables `PORTAL_URL`, `PORTAL_USER` y `PORTAL_PASS`. Aplicar permisos 600. | No definidas explícitamente | Bloque `SERVICE MANAGER` configurado con `PORTAL_PASS=Cl4r0.2026*!?` |
+| `.env.example` | Dev / Repo | Incorporar plantilla sanitizada de `PORTAL_URL`, `PORTAL_USER` y `PORTAL_PASS`. | No definidas | Bloque con placeholders seguros |
+| `.gitignore` | Dev / Repo | Ignorar explícitamente `.sm_pass` y archivos `*.pass`. | No incluía `.sm_pass` | Líneas agregadas: `.sm_pass` y `*.pass` |
+| `tests/test_functional_ticket_peticiones.py` | Dev | Actualizar valor simulado en `mock_loc.input_value` (Línea 187) y añadir test de precedencia de variables de entorno. | `side_effect=[..., "Cl4r0.2026**", ...]` | `side_effect=[..., "Cl4r0.2026*!?", ...]` + test unitario de env var |
+| `/home/iacdi/Desarrollos/app-lti/.env` | Prod (`iacdi`) | Incorporar o reemplazar `PORTAL_PASS` en el archivo de entorno del servidor. | Sin variable o con password anterior | `PORTAL_PASS=Cl4r0.2026*!?` con `chmod 600` |
+| `app-lti.service` | Prod (`iacdi`) | Reiniciar servicio systemd para recargar variables de entorno del proceso. | Corriendo con PID antiguo | Reiniciado exitosamente (`active (running)`) |
+
+---
+
+### 8.4. Jerarquía y Precedencia de Configuración
+
+Para garantizar alta resiliencia y desacoplamiento, la resolución de la credencial de autenticación debe seguir estrictamente la siguiente jerarquía (de mayor a menor prioridad):
+
+1. **Parámetro explícito de llamada API:**
+   `params.get("password")` o `params.get("portal_pass")` provisto en el cuerpo JSON de la petición HTTP POST a `/api/automation/create-ticket`.
+2. **Variable de entorno del sistema / proceso:**
+   `os.getenv("PORTAL_PASS")`, cargada automáticamente desde el archivo `.env` al inicio de la aplicación mediante `backend.config.load_env_file()`.
+3. **Constante predeterminada en código (Fallback):**
+   `DEFAULT_PORTAL_PASS = "Cl4r0.2026*!?"` definida en `backend/ticket_automation.py`.
+
+```python
+# En backend/ticket_automation.py:
+DEFAULT_PORTAL_URL = "https://portalti.clarocloud.cl:8443/smwebtier/index.do?lang=es"
+DEFAULT_PORTAL_USER = "Alejandro.Aguilar"
+DEFAULT_PORTAL_PASS = "Cl4r0.2026*!?"
+
+PORTAL_URL = os.getenv("PORTAL_URL", DEFAULT_PORTAL_URL)
+PORTAL_USER = os.getenv("PORTAL_USER", DEFAULT_PORTAL_USER)
+PORTAL_PASS = os.getenv("PORTAL_PASS", DEFAULT_PORTAL_PASS)
+
+# En stream_ticket_creation:
+url = params.get("url") or params.get("portal_url") or PORTAL_URL
+username = params.get("username") or params.get("portal_user") or PORTAL_USER
+password = params.get("password") or params.get("portal_pass") or os.getenv("PORTAL_PASS") or PORTAL_PASS
+```
+
+---
+
+### 8.5. Procedimiento de Implementación en Desarrollo (`bobbadeveloper`)
+
+El Coder debe realizar las siguientes modificaciones en el repositorio local `/home/bobbasystem/Desarrollos/app-lti`:
+
+#### 1. Actualización de `backend/ticket_automation.py`
+Modificar la línea 34:
+```python
+DEFAULT_PORTAL_PASS = "Cl4r0.2026*!?"
+```
+Verificar que la asignación en línea 39 mantenga:
+```python
+PORTAL_PASS = os.getenv("PORTAL_PASS", DEFAULT_PORTAL_PASS)
+```
+Y en `stream_ticket_creation` (línea ~1417):
+```python
+password = params.get("password") or params.get("portal_pass") or os.getenv("PORTAL_PASS") or PORTAL_PASS
+```
+
+#### 2. Actualización de Scripts Auxiliares (`portal_login.py` y `portal_login_v2.py`)
+En ambos archivos, actualizar la definición de `PASSWORD`:
+```python
+PASSWORD = os.getenv("PORTAL_PASS", "Cl4r0.2026*!?")
+```
+
+#### 3. Actualización de `.env` Local
+Agregar o actualizar al final de `.env` el bloque:
+```env
+# ==============================================================================
+# CONFIGURACIÓN SERVICE MANAGER (PORTAL TI)
+# ==============================================================================
+PORTAL_URL=https://portalti.clarocloud.cl:8443/smwebtier/index.do?lang=es
+PORTAL_USER=Alejandro.Aguilar
+PORTAL_PASS=Cl4r0.2026*!?
+```
+Asegurar permisos seguros:
+```bash
+chmod 600 /home/bobbasystem/Desarrollos/app-lti/.env
+```
+
+#### 4. Actualización de `.env.example`
+Agregar al final de `.env.example` la plantilla sanitizada:
+```env
+# ==============================================================================
+# CONFIGURACIÓN SERVICE MANAGER (PORTAL TI)
+# ==============================================================================
+PORTAL_URL=https://portalti.clarocloud.cl:8443/smwebtier/index.do?lang=es
+PORTAL_USER=Alejandro.Aguilar
+PORTAL_PASS=TuPasswordServiceManager
+```
+
+#### 5. Blindaje en `.gitignore`
+Asegurar que `.gitignore` incluya las entradas:
+```gitignore
+.sm_pass
+*.pass
+```
+
+#### 6. Actualización de Tests en `tests/test_functional_ticket_peticiones.py`
+En `test_stream_ticket_creation_full_flow_success`, actualizar la línea 187:
+```python
+mock_loc.input_value = AsyncMock(side_effect=["Alejandro.Aguilar", "Cl4r0.2026*!?", "Alejandro.Aguilar", "Cl4r0.2026*!?"])
+```
+Añadir un test unitario dedicado que compruebe la resolución de variables de entorno y fallbacks:
+```python
+def test_portal_pass_env_precedence(monkeypatch):
+    """Verifica que PORTAL_PASS tome prioridad sobre DEFAULT_PORTAL_PASS y respete el fallback."""
+    from backend import ticket_automation
+    
+    # 1. Caso con variable de entorno explícita
+    monkeypatch.setenv("PORTAL_PASS", "TestPassEnv123")
+    resolved = os.getenv("PORTAL_PASS", ticket_automation.DEFAULT_PORTAL_PASS)
+    assert resolved == "TestPassEnv123"
+    
+    # 2. Caso fallback a default
+    monkeypatch.delenv("PORTAL_PASS", raising=False)
+    resolved_fallback = os.getenv("PORTAL_PASS", ticket_automation.DEFAULT_PORTAL_PASS)
+    assert resolved_fallback == "Cl4r0.2026*!?"
+```
+
+---
+
+### 8.6. Procedimiento de Despliegue y Configuración en Producción (`iacdi`)
+
+El despliegue hacia el servidor remoto `iacdi` (`100.82.24.75`) debe contemplar que `deploy_to_iacdi.sh` excluye el archivo `.env` por diseño (`--exclude '.env'`). Por lo tanto, el proceso debe ejecutarse en 3 pasos secuenciales:
+
+#### Paso 1: Configurar la variable en el `.env` remoto de Producción
+Ejecutar comando remoto vía SSH para inyectar o actualizar la variable de forma segura:
+```bash
+ssh iacdi "if grep -q '^PORTAL_PASS=' /home/iacdi/Desarrollos/app-lti/.env; then \
+    sed -i 's|^PORTAL_PASS=.*|PORTAL_PASS=Cl4r0.2026\*!?|' /home/iacdi/Desarrollos/app-lti/.env; \
+else \
+    printf '\n# ==============================================================================\n# CONFIGURACIÓN SERVICE MANAGER (PORTAL TI)\n# ==============================================================================\nPORTAL_URL=https://portalti.clarocloud.cl:8443/smwebtier/index.do?lang=es\nPORTAL_USER=Alejandro.Aguilar\nPORTAL_PASS=Cl4r0.2026\*!?\n' >> /home/iacdi/Desarrollos/app-lti/.env; \
+fi && chmod 600 /home/iacdi/Desarrollos/app-lti/.env"
+```
+
+Verificar que la clave esté presente en el `.env` remoto sin imprimir la contraseña en logs abiertos:
+```bash
+ssh iacdi "grep -c '^PORTAL_PASS=' /home/iacdi/Desarrollos/app-lti/.env"
+# Debe retornar: 1
+```
+
+#### Paso 2: Sincronizar scripts actualizados mediante `deploy_to_iacdi.sh`
+Ejecutar el script de despliegue desde el entorno local:
+```bash
+./deploy_to_iacdi.sh
+```
+El comando sincronizará `backend/ticket_automation.py`, `portal_login.py`, `portal_login_v2.py`, `tests/` y `.gitignore`.
+
+#### Paso 3: Reiniciar el servicio systemd de usuario en `iacdi`
+Reiniciar la unidad systemd para que el proceso Uvicorn adopte las nuevas variables de entorno y el nuevo código:
+```bash
+ssh iacdi "systemctl --user restart app-lti"
+```
+
+Verificar estado activo:
+```bash
+ssh iacdi "systemctl --user status app-lti --no-pager"
+```
+Comprobar los últimos logs de arranque para asegurar que no existan errores de importación o sintaxis:
+```bash
+ssh iacdi "journalctl --user -u app-lti -n 25 --no-pager"
+```
+
+---
+
+### 8.7. Protocolo de Seguridad y Destrucción de Secretos
+
+Una vez validada la suite de pruebas local y ejecutado el despliegue en producción:
+
+1. **Destrucción Segura de `.sm_pass`:**
+   El archivo contiene credenciales en texto plano y no debe persistir en el filesystem:
+   ```bash
+   shred -u -z -n 3 /home/bobbasystem/Desarrollos/app-lti/.sm_pass 2>/dev/null || rm -f /home/bobbasystem/Desarrollos/app-lti/.sm_pass
+   ```
+   Validar que el archivo no exista:
+   ```bash
+   test ! -f /home/bobbasystem/Desarrollos/app-lti/.sm_pass && echo "[OK] .sm_pass destruido con éxito."
+   ```
+
+2. **Blindaje de Repositorio:**
+   Verificar con `git status` que ningún archivo con extensión `.pass`, `.sm_pass` o `.env` se encuentre en staging (`Changes to be committed`) o sin seguimiento (`Untracked files`).
+
+3. **Protección contra Fuga en Logs:**
+   Bajo ninguna circunstancia las funciones de log (`yield format_sse`, `logger.info`, etc.) deben imprimir el contenido de `password` ni de `PORTAL_PASS`. En los eventos SSE únicamente debe registrarse:
+   `"Autenticando usuario 'Alejandro.Aguilar'..."`.
+
+---
+
+### 8.8. Matriz de Criterios de Aceptación (DoD) por Rol
+
+#### Para el Coder (Implementador):
+- [ ] `DEFAULT_PORTAL_PASS` actualizado a `"Cl4r0.2026*!?"` en `backend/ticket_automation.py`.
+- [ ] Constante `PASSWORD` actualizada a `"Cl4r0.2026*!?"` como fallback en `portal_login.py` y `portal_login_v2.py`.
+- [ ] `.env` local actualizado con bloque `PORTAL_URL`, `PORTAL_USER` y `PORTAL_PASS=Cl4r0.2026*!?`. Permisos configurados en `chmod 600`.
+- [ ] `.env.example` actualizado con placeholders seguros.
+- [ ] `.gitignore` contiene `.sm_pass` y `*.pass`.
+- [ ] Mock de password en `tests/test_functional_ticket_peticiones.py` actualizado a `"Cl4r0.2026*!?"`.
+- [ ] Test unitario de precedencia de variables de entorno implementado.
+
+#### Para el Revisor (Code Reviewer):
+- [ ] Ningún secreto expuesto en commits de Git ni en logs SSE / Uvicorn.
+- [ ] Precedencia de variables de entorno consistente (`params` &rarr; `os.getenv` &rarr; `DEFAULT_PORTAL_PASS`).
+- [ ] `.gitignore` verificado para evitar commits accidentales de archivos `.pass` o `.env`.
+- [ ] Formato y sintaxis de variables en `.env` y `.env.example` libres de errores.
+
+#### Para QA (Tester):
+- [ ] Ejecución de la suite completa de pruebas de automatización:
+  ```bash
+  PYTHONPATH=. "/home/bobbasystem/Desarrollos/Carga Data SM/venv/bin/pytest" tests/test_functional_ticket_peticiones.py -v
+  ```
+  Resultado requerido: **23/23 tests pasados en verde (100%)**.
+- [ ] Verificación de que la eliminación o ausencia de `PORTAL_PASS` en el entorno utilice correctamente el fallback predeterminado sin arrojar excepciones.
+- [ ] Verificación de que un `PORTAL_PASS` personalizado en entorno sobreescriba correctamente el valor por defecto.
+
+#### Para el Validador (DevOps / Release Manager):
+- [ ] `/home/iacdi/Desarrollos/app-lti/.env` configurado en el host remoto con la nueva credencial y permisos 600.
+- [ ] Scripts sincronizados exitosamente hacia `iacdi` mediante `./deploy_to_iacdi.sh`.
+- [ ] Servicio `app-lti.service` reiniciado en `iacdi` (`systemctl --user restart app-lti`).
+- [ ] Servicio `app-lti` verificado en estado `active (running)` sin errores en `journalctl`.
+- [ ] Archivo local `.sm_pass` destruido mediante `shred -u` y confirmado ausente en el sistema de archivos.
+

@@ -7,7 +7,7 @@ from playwright.sync_api import sync_playwright
 
 URL = "https://portalti.clarocloud.cl:8443/smwebtier/index.do?lang=es"
 USERNAME = os.getenv("PORTAL_USER", "Alejandro.Aguilar")
-PASSWORD = os.getenv("PORTAL_PASS", "Cl4r0.2026**")
+PASSWORD = os.getenv("PORTAL_PASS", "Cl4r0.2026*!?")
 TIMEOUT = 30_000
 
 CONTACTO = "ALEJANDRO JAVIER AGUILAR MORALES"

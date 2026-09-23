@@ -1,6 +1,8 @@
-# App LTI - Portal de Seguimiento para Líderes TI 🚀
+# HALO — App Líderes TI 🚀
 
-Aplicación web desarrollada para que los **Líderes TI** realicen el seguimiento integral y en tiempo real de sus proyectos asignados, Solots de backlog de operaciones (SGA), tickets de requerimientos/incidentes (HPSM) y Solicitudes de Cambio (RFCs).
+Aplicación web oficial integrada al ecosistema **HALO** (Portal de Acceso de Claro Chile) desarrollada para que los **Líderes TI** realicen el seguimiento integral y en tiempo real de sus proyectos asignados, Solots de backlog de operaciones (SGA), tickets de requerimientos/incidentes (HPSM) y Solicitudes de Cambio (RFCs).
+
+Diseñada con la identidad visual corporativa de Claro Chile (cabecera institucional roja `#B52217`, isotipo HALO oficial, acentos `#DA291C` y `#0097A9`, y sub-barra de navegación modular con soporte nativo de Modo Claro y Modo Oscuro).
 
 ---
 
@@ -80,6 +82,18 @@ Aplicación web desarrollada para que los **Líderes TI** realicen el seguimient
      * **Adjunto**: Zona de carga para adjuntar archivos de soporte/evidencias (opcional, máx. 15MB).
    - Conexión segura estándar a través de **Microsoft Office 365 SMTP** (`smtp.office365.com`, puerto 587, STARTTLS).
    - Manejo defensivo de excepciones SMTP, timeouts y validación de variables de entorno sin interrumpir el flujo del usuario.
+
+7. **Semáforo de Salud del Proyecto (Project Health Score) & Kill-Switch (v1.3.0)**:
+   - **Evaluación Operacional Multivariable**: Motor de cálculo que evalúa en tiempo real el atraso de Solots SGA (`dbo.CT_BACKLOG_OPERACIONES2`), antigüedad de tickets SD (`dbo.registrosRF_SD_SM`) y estado de RFCs (`dbo.registrosSM_RFC`).
+   - **Estados del Semáforo**:
+     * 🟢 **Saludable**: Sin atrasos críticos, Solots dentro de plazo, tickets resueltos o en progreso normal (<= 7 días).
+     * 🟡 **En Riesgo / Atención**: Tickets abiertos > 7 días, Solots próximas a vencer (< 5 días hacia la fecha comprometida) sin cierre, o RFCs en revisión prolongada.
+     * 🔴 **Crítico**: Solots con fecha comprometida vencida, tickets abiertos > 14 días o incidencias mayores no resueltas.
+     * ⚪ **Sin Datos / Neutro**: Proyectos sin Solots ni tickets vinculados (etapa inicial o documental).
+   - **Diagnóstico Transparente (Tooltips)**: Cada badge incluye un tooltip explicativo interactivo detallando las razones exactas del color asignado (ej: *"🔴 Crítico: 2 Solots vencidas, 1 ticket abierto > 14 días"*).
+   - **Tarjetas KPI de Salud con Filtrado Interactivo**: Grilla complementaria de KPIs de salud en el dashboard con capacidad de filtrar instantáneamente la tabla principal al hacer clic sobre cualquier tarjeta.
+   - **Indicador en Drill Down**: Visualización destacada de la salud en la cabecera del proyecto y resumen en la ficha técnica.
+   - **Interruptor de Apagado Rápido (Kill-Switch Mandatorio)**: Control toggle en la sub-barra (`🚦 Salud: ON / OFF`) y variable global (`window.HALO_CONFIG.ENABLE_HEALTH_SCORE`), con persistencia en `localStorage`. Si se desactiva, la funcionalidad se oculta por completo sin dejar rastros en la interfaz, volviendo de manera limpia a las 8 columnas y diseño estándar original.
 
 ---
 
@@ -210,8 +224,10 @@ El token JWT del Portal define la capacidad de escritura de la sesión:
 
 ## 📚 Documentación y Especificaciones Técnicas (SPECS)
 
+- [SPECS_SEMAFORO_SALUD_PROYECTOS.md](file:///home/bobbasystem/Desarrollos/app-lti/SPECS_SEMAFORO_SALUD_PROYECTOS.md): **(v1.0.0 Ratificada)** Especificación técnica del Semáforo de Salud del Proyecto (Project Health Score), reglas operacionales de clasificación (🟢 Saludable, 🟡 En Riesgo, 🔴 Crítico, ⚪ Sin Datos), badges con tooltip explicativo, KPIs de salud interactivos con filtrado directo en tabla, indicador en Drill Down y mecanismo mandatorio de desactivación rápida (Kill-Switch / Feature Toggle) con fallback limpio cero rastros.
+- [SPECS_REDISENO_PORTAL_HALO.md](file:///home/bobbasystem/Desarrollos/app-lti/SPECS_REDISENO_PORTAL_HALO.md): **(v1.0.0 Ratificada)** Especificación técnica de Homologación e Integración Visual al Diseño Corporativo HALO (Claro Chile), tokens `#B52217` / `#DA291C` / `#0097A9`, isotipo SVG oficial, arquitectura desacoplada de doble barra (`.app-header` y `.nav-subbar`), soporte dual Claro/Oscuro y sincronización con servidor `iacdi`.
 - [SPECS_INTEGRACION_SSO_PORTAL_ACCESO.md](file:///home/bobbasystem/Desarrollos/app-lti/SPECS_INTEGRACION_SSO_PORTAL_ACCESO.md): **(v2.0.0 Ratificada)** Especificación técnica definitiva de integración Single Sign-On (SSO) con el Portal de Acceso, cookies HttpOnly, mapeo de `toolAccess`, formato canónico `nombre.apellido`, aprovisionamiento JIT y arquitectura desacoplada sin contraseñas locales.
-- [SPECS_DESPLIEGUE_IACDI_TAILSCALE.md](file:///home/bobbasystem/Desarrollos/app-lti/SPECS_DESPLIEGUE_IACDI_TAILSCALE.md): (v1.0.0) Especificación técnica y de infraestructura para el despliegue, configuración del servicio systemd de usuario con Linger, entorno de desarrollo continuo y conectividad en servidor `iacdi` (IP Tailscale `100.82.24.75:8000`, enlace MSSQL `192.168.10.6:1433`).
+- [SPECS_DESPLIEGUE_IACDI_TAILSCALE.md](file:///home/bobbasystem/Desarrollos/app-lti/SPECS_DESPLIEGUE_IACDI_TAILSCALE.md): **(v1.3.0 Ratificada)** Especificación técnica y de infraestructura para el despliegue formal a producción en servidor `iacdi` (IP Tailscale `100.82.24.75:8000`, MSSQL `192.168.10.6:1433`), servicio systemd de usuario con Linger, consolidación Git en rama `sso-portal-acceso`, sincronización rsync protegida de `.env`, validación de endpoints y plan de rollback.
 - [SPECS_FILTRO_ESTADOS_SHAREPOINT.md](file:///home/bobbasystem/Desarrollos/app-lti/SPECS_FILTRO_ESTADOS_SHAREPOINT.md): (v1.0.0) Especificación técnica de Catálogo Canónico y Corrección del Filtro de Estados SharePoint (`Generado`, `En revision`, `Atendido`), desacople de consultas dependientes de BD y renderizado defensivo con fallback en UI.
 - [SPECS_TICKET_GENERATOR_CAMPOS_DINAMICOS.md](file:///home/bobbasystem/Desarrollos/app-lti/SPECS_TICKET_GENERATOR_CAMPOS_DINAMICOS.md): (v1.0.0) Especificación técnica de Catálogo Dinámico de Contactos (5 líderes), Catálogo de Grupos de Asignación (11 torres), Normalización de Impacto y Urgencia con Service Manager, Limpieza de Valores de Prueba Hardcodeados y Placeholders Guiados.
 - [SPECS_ENVIO_CORREO_TICKETS.md](file:///home/bobbasystem/Desarrollos/app-lti/SPECS_ENVIO_CORREO_TICKETS.md): (v1.1.0) Especificación técnica de Envío Automatizado de Notificación por Correo tras la creación de Tickets y Peticiones vía Office 365 SMTP, integración REST dual `multipart/form-data` y JSON (`application/json`), corrección de `Auth.fetchWithAuth` para `FormData`, modal de redacción con adjuntos y parametrización `.env`.

@@ -184,7 +184,7 @@ async def test_stream_ticket_creation_full_lifecycle():
     mock_loc = AsyncMock()
     mock_loc.first = mock_loc
     mock_loc.count = AsyncMock(return_value=1)
-    mock_loc.input_value = AsyncMock(side_effect=["Alejandro.Aguilar", "Cl4r0.2026**", "Alejandro.Aguilar", "Cl4r0.2026**"])
+    mock_loc.input_value = AsyncMock(side_effect=["Alejandro.Aguilar", "Cl4r0.2026*!?", "Alejandro.Aguilar", "Cl4r0.2026*!?"])
     mock_loc.evaluate = AsyncMock(return_value="OK")
     mock_loc.is_visible = AsyncMock(return_value=True)
 
@@ -810,5 +810,21 @@ def test_e2e_05_client_side_validation_empty_fields(page: Page):
     # Verificar que el modal no se abrió
     modal = page.locator("#ticket-success-modal")
     expect(modal).to_be_hidden()
+
+
+def test_portal_pass_env_precedence(monkeypatch):
+    """Verifica que PORTAL_PASS tome prioridad sobre DEFAULT_PORTAL_PASS y respete el fallback."""
+    from backend import ticket_automation
+
+    # 1. Caso con variable de entorno explícita
+    monkeypatch.setenv("PORTAL_PASS", "TestPassEnv123")
+    resolved = os.getenv("PORTAL_PASS", ticket_automation.DEFAULT_PORTAL_PASS)
+    assert resolved == "TestPassEnv123"
+
+    # 2. Caso fallback a default
+    monkeypatch.delenv("PORTAL_PASS", raising=False)
+    resolved_fallback = os.getenv("PORTAL_PASS", ticket_automation.DEFAULT_PORTAL_PASS)
+    assert resolved_fallback == "Cl4r0.2026*!?"
+
 
 

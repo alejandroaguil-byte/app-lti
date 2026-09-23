@@ -2,6 +2,12 @@
  * Main Application Script for App LTI
  */
 
+// Configuración Global y Feature Flags del Sistema HALO
+window.HALO_CONFIG = window.HALO_CONFIG || {};
+if (window.HALO_CONFIG.ENABLE_HEALTH_SCORE === undefined) {
+  window.HALO_CONFIG.ENABLE_HEALTH_SCORE = true;
+}
+
 const CANONICAL_ESTADOS_SHAREPOINT = ['Generado', 'En revision', 'Atendido'];
 
 const App = {
@@ -36,9 +42,11 @@ const App = {
   usuariosData: [],
   isUserSubmitting: false,
   userToDeleteId: null,
+  activeHealthFilter: null, // null | 'HEALTHY' | 'WARNING' | 'CRITICAL' | 'NEUTRAL'
 
   async init() {
     this.initTheme();
+    this.initHealthScore();
     this.bindEvents();
     
     try {
@@ -82,6 +90,214 @@ const App = {
   },
 
   // --------------------------------------------------------------------------
+  // HEALTH SCORE / FEATURE TOGGLE (KILL-SWITCH)
+  // --------------------------------------------------------------------------
+  initHealthScore() {
+    this.applyHealthScoreState(false);
+  },
+
+  isHealthScoreActive() {
+    // 1. Si la configuración maestra en código está en false, se apaga obligatoriamente
+    if (window.HALO_CONFIG && window.HALO_CONFIG.ENABLE_HEALTH_SCORE === false) {
+      return false;
+    }
+    // 2. Si el usuario definió una preferencia en localStorage, se respeta
+    const userPref = localStorage.getItem('halo_health_score_enabled');
+    if (userPref !== null) {
+      return userPref === 'true';
+    }
+    // 3. Fallback por defecto: Habilitado (true)
+    return true;
+  },
+
+  toggleHealthScore() {
+    const current = this.isHealthScoreActive();
+    const next = !current;
+    localStorage.setItem('halo_health_score_enabled', next ? 'true' : 'false');
+    if (!next) {
+      this.activeHealthFilter = null;
+    }
+    this.applyHealthScoreState(true);
+    const msg = next ? '🚦 Semáforo de salud activado' : 'Semáforo de salud desactivado (Vista estándar)';
+    this.showToast(msg, 'info');
+  },
+
+  applyHealthScoreState(triggerRender = true) {
+    const active = this.isHealthScoreActive();
+    const toggleBtn = document.getElementById('health-score-toggle-btn');
+    const toggleLabel = document.getElementById('health-toggle-label');
+    const kpiGrid = document.getElementById('health-kpi-grid');
+    const thColSalud = document.getElementById('th-col-salud');
+    const ddHealth = document.getElementById('dd-health-status');
+
+    if (toggleBtn) {
+      if (active) {
+        toggleBtn.classList.remove('is-off');
+        toggleBtn.title = 'Desactivar el Semáforo de Salud de proyectos';
+        if (toggleLabel) toggleLabel.textContent = 'Salud: ON';
+      } else {
+        toggleBtn.classList.add('is-off');
+        toggleBtn.title = 'Activar el Semáforo de Salud de proyectos';
+        if (toggleLabel) toggleLabel.textContent = 'Salud: OFF';
+      }
+    }
+
+    if (kpiGrid) {
+      kpiGrid.style.display = active ? 'grid' : 'none';
+    }
+
+    if (thColSalud) {
+      thColSalud.style.display = active ? '' : 'none';
+    }
+
+    if (ddHealth) {
+      if (!active) {
+        ddHealth.style.display = 'none';
+      } else if (this.currentProject && this.currentProject.salud) {
+        ddHealth.style.display = 'inline-flex';
+        ddHealth.innerHTML = this.renderHealthBadgeLg(this.currentProject.salud);
+      }
+    }
+
+    if (!active) {
+      this.activeHealthFilter = null;
+      document.querySelectorAll('.health-kpi-card').forEach(c => {
+        c.classList.remove('active-health-filter');
+        c.setAttribute('aria-pressed', 'false');
+      });
+    } else {
+      this.updateHealthKpiActiveState();
+    }
+
+    if (triggerRender && this.projectsData) {
+      this.renderProjectsTable(this.getFilteredProjects());
+      const countBadge = document.getElementById('projects-count-badge');
+      if (countBadge) {
+        countBadge.textContent = this.getFilteredProjects().length;
+      }
+      if (this.currentProject) {
+        this.renderSummaryTab(this.currentProject);
+      }
+    }
+  },
+
+  filterByHealthScore(score) {
+    if (!this.isHealthScoreActive()) return;
+
+    if (this.activeHealthFilter === score) {
+      this.activeHealthFilter = null;
+      this.showToast('Filtro de salud removido: mostrando todos los proyectos', 'info');
+    } else {
+      this.activeHealthFilter = score;
+      const labelMap = {
+        HEALTHY: 'Saludables',
+        WARNING: 'En Riesgo',
+        CRITICAL: 'Críticos / Vencidos',
+        NEUTRAL: 'Sin Datos Operacionales'
+      };
+      this.showToast(`Filtrando proyectos: ${labelMap[score] || score}`, 'info');
+    }
+
+    this.updateHealthKpiActiveState();
+    const filtered = this.getFilteredProjects();
+    this.renderProjectsTable(filtered);
+    const countBadge = document.getElementById('projects-count-badge');
+    if (countBadge) {
+      countBadge.textContent = filtered.length;
+    }
+  },
+
+  updateHealthKpiActiveState() {
+    const cards = [
+      { id: 'health-card-healthy', score: 'HEALTHY' },
+      { id: 'health-card-warning', score: 'WARNING' },
+      { id: 'health-card-critical', score: 'CRITICAL' },
+      { id: 'health-card-neutral', score: 'NEUTRAL' }
+    ];
+
+    cards.forEach(({ id, score }) => {
+      const card = document.getElementById(id);
+      if (card) {
+        const isActive = this.activeHealthFilter === score;
+        card.classList.toggle('active-health-filter', isActive);
+        card.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+      }
+    });
+  },
+
+  getFilteredProjects() {
+    if (!this.projectsData) return [];
+    if (!this.isHealthScoreActive() || !this.activeHealthFilter) {
+      return this.projectsData;
+    }
+    return this.projectsData.filter(p => p.salud && p.salud.score === this.activeHealthFilter);
+  },
+
+  renderHealthBadge(salud) {
+    if (!salud) return '';
+    const score = salud.score || 'NEUTRAL';
+    let badgeClass = 'health-badge-neutral';
+    let dotClass = '';
+    let label = salud.label || 'Sin Datos';
+
+    if (score === 'HEALTHY') {
+      badgeClass = 'health-badge-healthy';
+    } else if (score === 'WARNING') {
+      badgeClass = 'health-badge-warning';
+    } else if (score === 'CRITICAL') {
+      badgeClass = 'health-badge-critical';
+      dotClass = 'pulse-critical';
+    }
+
+    const motivos = salud.motivos && salud.motivos.length > 0 
+      ? salud.motivos 
+      : ['Sin detalles adicionales'];
+
+    const icon = score === 'CRITICAL' ? '🔴' : (score === 'WARNING' ? '🟡' : (score === 'HEALTHY' ? '🟢' : '⚪'));
+    const motivosHtml = motivos.map(m => `<li><span>${icon}</span> <span>${this.escapeHtml(m)}</span></li>`).join('');
+
+    return `
+      <div class="health-badge-wrapper" tabindex="0" role="status" aria-label="Salud: ${this.escapeHtml(label)}">
+        <span class="health-badge ${badgeClass}">
+          <span class="health-indicator-dot ${dotClass}"></span>
+          ${this.escapeHtml(label)}
+        </span>
+        <div class="health-tooltip">
+          <div class="health-tooltip-header">Diagnóstico de Salud Operacional</div>
+          <ul class="health-tooltip-list">
+            ${motivosHtml}
+          </ul>
+          <div class="health-tooltip-footer">Click en 🔍 para ver Solots y Tickets en detalle</div>
+        </div>
+      </div>
+    `;
+  },
+
+  renderHealthBadgeLg(salud) {
+    if (!salud) return '';
+    const score = salud.score || 'NEUTRAL';
+    let badgeClass = 'health-badge-neutral';
+    let dotClass = '';
+    let label = salud.label || 'Sin Datos';
+
+    if (score === 'HEALTHY') {
+      badgeClass = 'health-badge-healthy';
+    } else if (score === 'WARNING') {
+      badgeClass = 'health-badge-warning';
+    } else if (score === 'CRITICAL') {
+      badgeClass = 'health-badge-critical';
+      dotClass = 'pulse-critical';
+    }
+
+    return `
+      <span class="health-badge health-badge-lg ${badgeClass}" title="Salud Operacional: ${this.escapeHtml(label)}">
+        <span class="health-indicator-dot ${dotClass}"></span>
+        Salud: ${this.escapeHtml(label)}
+      </span>
+    `;
+  },
+
+  // --------------------------------------------------------------------------
   // EVENT BINDINGS
   // --------------------------------------------------------------------------
   bindEvents() {
@@ -108,11 +324,16 @@ const App = {
       navUsuariosBtn.addEventListener('click', () => this.switchModule('usuarios'));
     }
 
-    // Logout Button
-    const logoutBtn = document.getElementById('logout-btn');
-    if (logoutBtn) {
-      logoutBtn.addEventListener('click', () => Auth.logout());
-    }
+    // Logout Button (Soporte dual #btn-logout y #logout-btn)
+    ['btn-logout', 'logout-btn'].forEach(id => {
+      const btn = document.getElementById(id);
+      if (btn) {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          Auth.logout();
+        });
+      }
+    });
 
     // Module 1 Filter changes
     const searchInput = document.getElementById('filter-search');
@@ -146,6 +367,33 @@ const App = {
         }
       });
     }
+
+    // Health Score Toggle Button
+    const healthToggleBtn = document.getElementById('health-score-toggle-btn');
+    if (healthToggleBtn) {
+      healthToggleBtn.addEventListener('click', () => this.toggleHealthScore());
+    }
+
+    // Health Score KPI Cards Interactive Filtering
+    const healthCards = [
+      { id: 'health-card-healthy', score: 'HEALTHY' },
+      { id: 'health-card-warning', score: 'WARNING' },
+      { id: 'health-card-critical', score: 'CRITICAL' },
+      { id: 'health-card-neutral', score: 'NEUTRAL' }
+    ];
+
+    healthCards.forEach(({ id, score }) => {
+      const card = document.getElementById(id);
+      if (card) {
+        card.addEventListener('click', () => this.filterByHealthScore(score));
+        card.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ' || e.code === 'Space') {
+            e.preventDefault();
+            this.filterByHealthScore(score);
+          }
+        });
+      }
+    });
 
     // Back to projects button
     const backBtn = document.getElementById('back-to-projects-btn');
@@ -753,10 +1001,31 @@ const App = {
 
     const user = Auth.getUser();
     if (user) {
+      const displayName = user.nombre_completo || user.username || 'Líder TI';
       const userDisplay = document.getElementById('user-display-name');
       if (userDisplay) {
-        userDisplay.textContent = user.nombre_completo || user.username;
+        userDisplay.textContent = displayName;
       }
+      const usernameLabel = document.getElementById('username-label');
+      if (usernameLabel) {
+        usernameLabel.textContent = displayName;
+      }
+
+      // Calcular e inyectar iniciales de usuario en mayúsculas (ej: 'AA', 'LT')
+      const userAvatar = document.getElementById('user-avatar');
+      if (userAvatar) {
+        let initials = 'LT';
+        const parts = displayName.trim().split(/\s+/);
+        if (parts.length >= 2) {
+          initials = (parts[0][0] + parts[1][0]).toUpperCase();
+        } else if (parts.length === 1 && parts[0].length >= 2) {
+          initials = parts[0].slice(0, 2).toUpperCase();
+        } else if (parts.length === 1 && parts[0].length === 1) {
+          initials = parts[0].toUpperCase();
+        }
+        userAvatar.textContent = initials;
+      }
+
       const userRole = document.getElementById('user-role-badge');
       if (userRole) {
         const rol = (user.rol || ((user.adminLevel >= 2 || user.is_super_admin) ? 'ADMIN' : 'PM')).toUpperCase();
@@ -799,6 +1068,18 @@ const App = {
     document.getElementById('dd-lt-assigned').textContent = project.LT_Asignado || 'No asignado';
     document.getElementById('dd-status').innerHTML = this.renderStatusBadge(project.Estado);
     
+    // Render Health Badge in Drill Down Header (if active)
+    const ddHealth = document.getElementById('dd-health-status');
+    if (ddHealth) {
+      if (this.isHealthScoreActive() && project.salud) {
+        ddHealth.style.display = 'inline-flex';
+        ddHealth.innerHTML = this.renderHealthBadgeLg(project.salud);
+      } else {
+        ddHealth.style.display = 'none';
+        ddHealth.innerHTML = '';
+      }
+    }
+
     const btnDdDelete = document.getElementById('btn-dd-delete-project');
     if (btnDdDelete) {
       const user = Auth.getUser();
@@ -941,7 +1222,20 @@ const App = {
       if (valTickets) valTickets.textContent = kpis.total_tickets || 0;
       if (valRfcs) valRfcs.textContent = kpis.total_rfcs || 0;
 
+      // Health Score KPIs
+      const valHealthHealthy = document.getElementById('health-kpi-val-healthy');
+      const valHealthWarning = document.getElementById('health-kpi-val-warning');
+      const valHealthCritical = document.getElementById('health-kpi-val-critical');
+      const valHealthNeutral = document.getElementById('health-kpi-val-neutral');
+
+      const saludKpis = kpis.salud || {};
+      if (valHealthHealthy) valHealthHealthy.textContent = saludKpis.saludables || 0;
+      if (valHealthWarning) valHealthWarning.textContent = saludKpis.en_riesgo || 0;
+      if (valHealthCritical) valHealthCritical.textContent = saludKpis.criticos || 0;
+      if (valHealthNeutral) valHealthNeutral.textContent = saludKpis.sin_datos || 0;
+
       this.updateKPIActiveState();
+      this.updateHealthKpiActiveState();
     } catch (e) {
       console.error('Error al cargar KPIs:', e);
     }
@@ -988,7 +1282,8 @@ const App = {
 
     this._projectsRequestId = (Number(this._projectsRequestId) || 0) + 1;
     const currentReqId = this._projectsRequestId;
-    tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 2rem;"><span class="badge badge-info">Cargando proyectos...</span></td></tr>`;
+    const cols = this.isHealthScoreActive() ? 9 : 8;
+    tbody.innerHTML = `<tr><td colspan="${cols}" style="text-align: center; padding: 2rem;"><span class="badge badge-info">Cargando proyectos...</span></td></tr>`;
 
     const search = document.getElementById('filter-search')?.value || '';
     const estadoSp = document.getElementById('filter-estado-sp')?.value || '';
@@ -1006,16 +1301,17 @@ const App = {
       if (this._projectsRequestId !== currentReqId) return;
 
       this.projectsData = data;
-      this.renderProjectsTable(this.projectsData);
+      const filtered = this.getFilteredProjects();
+      this.renderProjectsTable(filtered);
 
       // Update count badge
       const countBadge = document.getElementById('projects-count-badge');
       if (countBadge) {
-        countBadge.textContent = this.projectsData.length;
+        countBadge.textContent = filtered.length;
       }
     } catch (e) {
       if (this._projectsRequestId !== currentReqId) return;
-      tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 2rem; color: var(--status-danger-text);">Error al cargar proyectos: ${e.message}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="${cols}" style="text-align: center; padding: 2rem; color: var(--status-danger-text);">Error al cargar proyectos: ${e.message}</td></tr>`;
       const countBadge = document.getElementById('projects-count-badge');
       if (countBadge) countBadge.textContent = '0';
     }
@@ -1023,10 +1319,13 @@ const App = {
 
   renderProjectsTable(proyectos) {
     const tbody = document.getElementById('projects-table-body');
+    const isHealthActive = this.isHealthScoreActive();
+    const cols = isHealthActive ? 9 : 8;
+
     if (!proyectos || proyectos.length === 0) {
       tbody.innerHTML = `
         <tr>
-          <td colspan="8">
+          <td colspan="${cols}">
             <div class="empty-state">
               <div class="empty-icon">📁</div>
               <h3>No se encontraron proyectos</h3>
@@ -1064,6 +1363,7 @@ const App = {
             }
           </td>
           <td style="white-space: nowrap;">${this.renderStatusBadge(p.Estado)}</td>
+          ${isHealthActive ? `<td class="col-health-cell">${this.renderHealthBadge(p.salud)}</td>` : ''}
           <td style="white-space: nowrap;"><small style="color: var(--text-secondary); font-weight: 600;">${this.formatDateDMY(p.Creado)}</small></td>
           <td class="col-project-detalle" title="${this.escapeHtml(p.Detalle || '')}">
             ${this.escapeHtml(p.Detalle || 'Sin detalle')}
@@ -1275,6 +1575,17 @@ const App = {
               : `<p style="background: var(--bg-surface-secondary); padding: 0.75rem; border-radius: var(--radius-sm); font-size: 0.88rem; line-height: 1.4; color: var(--text-muted); font-style: italic;">Sin comentarios de cierre</p>`
             }
           </div>
+          ${(this.isHealthScoreActive() && p.salud) ? `
+            <div class="health-summary-card summary-${p.salud.score === 'HEALTHY' ? 'healthy' : (p.salud.score === 'WARNING' ? 'warning' : (p.salud.score === 'CRITICAL' ? 'critical' : 'neutral'))}">
+              <div class="health-summary-header">
+                <span class="health-summary-title">Salud Operacional: ${this.escapeHtml(p.salud.label || 'N/A')}</span>
+                ${this.renderHealthBadge(p.salud)}
+              </div>
+              <ul class="health-summary-items">
+                ${(p.salud.motivos || []).map(m => `<li>• ${this.escapeHtml(m)}</li>`).join('')}
+              </ul>
+            </div>
+          ` : ''}
         </div>
       </div>
     `;
@@ -2945,17 +3256,31 @@ const App = {
     if (this.currentProject) {
       alert('Exportando detalle del proyecto actual a CSV...');
     } else {
-      if (!this.projectsData || this.projectsData.length === 0) return;
-      const headers = ['Cliente', 'N_Proyecto', 'LT_Asignado', 'Solicitante', 'Estado', 'Fecha_Solicitud_LTI', 'Detalle'];
-      const rows = this.projectsData.map(p => [
-        `"${(p.Cliente || '').replace(/"/g, '""')}"`,
-        `"${(this.formatNumeroProyecto(p.Numero_Proyecto) || '').replace(/"/g, '""')}"`,
-        `"${(p.LT_Asignado || '').replace(/"/g, '""')}"`,
-        `"${(this.formatSolicitante(p.Solicitante) || '').replace(/"/g, '""')}"`,
-        `"${(p.Estado || '').replace(/"/g, '""')}"`,
-        `"${this.formatDateDMY(p.Creado)}"`,
-        `"${(p.Detalle || '').replace(/"/g, '""')}"`
-      ]);
+      const dataToExport = this.getFilteredProjects();
+      if (!dataToExport || dataToExport.length === 0) return;
+
+      const isHealthActive = this.isHealthScoreActive();
+      const headers = isHealthActive 
+        ? ['Cliente', 'N_Proyecto', 'LT_Asignado', 'Solicitante', 'Estado', 'Salud', 'Fecha_Solicitud_LTI', 'Detalle']
+        : ['Cliente', 'N_Proyecto', 'LT_Asignado', 'Solicitante', 'Estado', 'Fecha_Solicitud_LTI', 'Detalle'];
+
+      const rows = dataToExport.map(p => {
+        const baseRow = [
+          `"${(p.Cliente || '').replace(/"/g, '""')}"`,
+          `"${(this.formatNumeroProyecto(p.Numero_Proyecto) || '').replace(/"/g, '""')}"`,
+          `"${(p.LT_Asignado || '').replace(/"/g, '""')}"`,
+          `"${(this.formatSolicitante(p.Solicitante) || '').replace(/"/g, '""')}"`,
+          `"${(p.Estado || '').replace(/"/g, '""')}"`
+        ];
+
+        if (isHealthActive) {
+          baseRow.push(`"${(p.salud?.label || '').replace(/"/g, '""')}"`);
+        }
+
+        baseRow.push(`"${this.formatDateDMY(p.Creado)}"`);
+        baseRow.push(`"${(p.Detalle || '').replace(/"/g, '""')}"`);
+        return baseRow;
+      });
 
       const csvContent = '\uFEFF' + [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });

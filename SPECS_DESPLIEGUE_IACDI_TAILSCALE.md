@@ -2,8 +2,8 @@
 ## Módulo: Despliegue, Configuración de Servicio Systemd y Entorno de Desarrollo en Servidor IACDI vía Tailscale (`app-lti`)
 
 - **Documento:** SPECS-LTI-DEP-008
-- **Versión:** 1.0.0
-- **Fecha:** 2026-09-08
+- **Versión:** 1.3.0
+- **Fecha:** 2026-09-22
 - **Autor:** Subagente Planificador & Diseñador de Specs (`planificador_specs`)
 - **Destinatario:** Subagente Codificador & Implementador (`coder`) / Subagente QA (`tester`)
 - **Ubicación del Proyecto Local:** `/home/bobbasystem/Desarrollos/app-lti`
@@ -16,6 +16,7 @@
 | Versión | Fecha | Autor | Descripción del Cambio |
 |---|---|---|---|
 | **1.0.0** | 2026-09-08 | Subagente Planificador | Versión inicial de especificación técnica de despliegue en servidor `iacdi` (Ubuntu Linux, Python 3.14.4, IP Tailscale `100.82.24.75`, puerto 8000, enlace MSSQL `192.168.10.6:1433`, servicio systemd de usuario con Linger habilitado, sincronización rsync y modo desarrollo continuo con hot reload). |
+| **1.3.0** | 2026-09-22 | Subagente Planificador | Despliegue formal de la versión v1.3.0 en producción IACDI: Semáforo de Salud de Proyectos (Verde/Amarillo/Rojo/Gris), Kill-Switch reactivo persistente en UI, Rediseño corporativo HALO, filtros integrados de salud y actualización de contratos API. Incluye procedimiento de consolidación Git en rama `sso-portal-acceso`, sincronización rsync sin pisar `.env`, verificación de servicio systemd y plan de contingencia/rollback. |
 
 ---
 
@@ -451,9 +452,210 @@ chmod +x deploy_to_iacdi.sh
 
 ## 11. CHECKLIST PARA EL SUBAGENTE CODER
 
-- [ ] Crear el script de sincronización local `deploy_to_iacdi.sh` con permisos de ejecución (`chmod +x`).
-- [ ] Actualizar `run.sh` con detección adaptativa de entornos virtuales (`venv/bin/python3` prioritario).
-- [ ] Generar el archivo de unidad systemd de usuario `app-lti.service` listo para su instalación en `~/.config/systemd/user/`.
-- [ ] Actualizar la documentación `README.md` incorporando las instrucciones de despliegue, arquitectura Tailscale y comandos systemd.
-- [ ] Ejecutar el despliegue inicial hacia el servidor `iacdi` (creación de venv, instalación de dependencias, configuración de .env, habilitación de linger y activación de `app-lti.service`).
-- [ ] Verificar la correcta ejecución del servicio y reportar el estado al Subagente QA/Tester.
+- [x] Crear el script de sincronización local `deploy_to_iacdi.sh` con permisos de ejecución (`chmod +x`).
+- [x] Actualizar `run.sh` con detección adaptativa de entornos virtuales (`venv/bin/python3` prioritario).
+- [x] Generar el archivo de unidad systemd de usuario `app-lti.service` listo para su instalación en `~/.config/systemd/user/`.
+- [x] Actualizar la documentación `README.md` incorporando las instrucciones de despliegue, arquitectura Tailscale y comandos systemd.
+- [x] Ejecutar el despliegue inicial hacia el servidor `iacdi` (creación de venv, instalación de dependencias, configuración de .env, habilitación de linger y activación de `app-lti.service`).
+- [x] Verificar la correcta ejecución del servicio y reportar el estado al Subagente QA/Tester.
+
+---
+
+## 12. PLAN FORMAL DE DESPLIEGUE A PRODUCCIÓN IACDI (v1.3.0)
+
+### 12.1. Alcance y Nuevas Capacidades en Versión 1.3.0
+La versión **v1.3.0** introduce en producción una suite integral de monitoreo operativo y rediseño corporativo:
+1. **Semáforo de Salud de Proyectos (Health Score):**
+   - Algoritmo de ponderación en backend (`backend/db.py`) y serialización REST en `/api/proyectos`.
+   - Estados: `CRITICAL` (Rojo: Solots vencidas o tickets estancados > 14 días), `WARNING` (Amarillo: Solots próximas a vencer <= 7 días o tickets en atención > 7 días), `HEALTHY` (Verde: Solots/Tickets al día y en curso) y `NEUTRAL` (Gris: Sin Solots ni tickets asociados).
+   - Badges visuales con tooltip interactivo detallando motivos.
+2. **Kill-Switch Reactivo Persistente:**
+   - Toggle interactivo en la barra superior (`#toggle-health-score`).
+   - Persistencia local mediante `localStorage.setItem('healthScoreEnabled', ...)`.
+   - Desactivación instantánea sin recarga: oculta columnas, badges y filtros de salud sin impactar la estabilidad del sistema ni generar errores JS.
+3. **Rediseño Corporativo HALO:**
+   - Estandarización de tipografía Google Fonts (*Plus Jakarta Sans* y *Roboto*).
+   - Paleta de diseño institucional Claro/VTR y nuevo isotipo/favicon SVG (`frontend/favicon.svg`).
+   - KPIs de salud interactivos (`kpi-critico`, `kpi-riesgo`, `kpi-saludable`) con filtrado cruzado bidireccional.
+4. **Módulo de Peticiones y Automatización de Tickets:**
+   - Soporte para creación de peticiones LTI con streaming de logs y notificaciones SMTP Office 365.
+
+---
+
+### 12.2. Estrategia de Consolidación Git (Rama `sso-portal-acceso`)
+Antes de transferir a producción, todo cambio debe quedar versionado de manera limpia e inmutable:
+
+1. **Rama de trabajo:** `sso-portal-acceso`.
+2. **Revisión de cambios pendientes:**
+   - Archivos de Backend: `backend/db.py`, `backend/main.py`, `backend/ticket_automation.py`.
+   - Archivos de Frontend: `frontend/index.html`, `frontend/css/styles.css`, `frontend/js/app.js`, `frontend/favicon.svg`.
+   - Documentación Técnica: `SPECS_SEMAFORO_SALUD_PROYECTOS.md`, `SPECS_REDISENO_PORTAL_HALO.md`, `SPECS_DESPLIEGUE_IACDI_TAILSCALE.md`, `SPECS_TICKET_GENERATOR_PETICIONES.md`, `README.md`.
+   - Batería de Pruebas: `tests/test_health_score.py`, `tests/test_functional_health_score.py`, `tests/test_functional_rediseno_halo.py`, `tests/test_functional_ticket_peticiones.py`, `tests/test_functional_filtro_estados_sharepoint.py`.
+3. **Comando de Commit Semántico:**
+   ```bash
+   git add backend/ frontend/ tests/ SPECS_*.md README.md .env.example .gitignore portal_login.py portal_login_v2.py
+   git commit -m "feat(salud): implementar semaforo de salud de proyectos, kill-switch ui y rediseno halo v1.3.0"
+   ```
+
+---
+
+### 12.3. Procedimiento de Sincronización Remota (rsync)
+La sincronización se realiza mediante el script oficial `deploy_to_iacdi.sh` o su comando directo `rsync`.
+
+> [!CAUTION]
+> **Protección del archivo `.env` en producción:** El archivo `/home/iacdi/Desarrollos/app-lti/.env` contiene las credenciales activas del servidor MSSQL y Office 365 SMTP. Está estrictamente protegido por la directiva `--exclude '.env'`. Bajo ninguna circunstancia debe ser sobrescrito desde el entorno local.
+
+```bash
+# 1. Asegurar permisos de ejecución en local
+chmod +x deploy_to_iacdi.sh
+
+# 2. Ejecutar sincronización hacia IACDI
+./deploy_to_iacdi.sh
+```
+
+**Comando equivalente exacto ejecutado por el script:**
+```bash
+rsync -avz --progress \
+    --exclude 'venv/' \
+    --exclude '.git/' \
+    --exclude '__pycache__/' \
+    --exclude '*.pyc' \
+    --exclude '.pytest_cache/' \
+    --exclude '.env' \
+    --exclude '.DS_Store' \
+    /home/bobbasystem/Desarrollos/app-lti/ iacdi:/home/iacdi/Desarrollos/app-lti/
+```
+
+**Verificación posterior a la sincronización en IACDI:**
+```bash
+# Verificar que .env mantenga permisos 600 y propietario iacdi
+ssh iacdi "ls -la /home/iacdi/Desarrollos/app-lti/.env"
+```
+
+---
+
+### 12.4. Ciclo de Vida del Servicio Systemd Remoto y Verificación
+Dado que el servicio `app-lti.service` está configurado con `--reload`, los cambios en código Python y estáticos son detectados automáticamente. Sin embargo, para garantizar una carga limpia de memoria, limpieza de módulos cacheados y reinicio controlado, se ejecuta el ciclo systemd explícito:
+
+```bash
+# 1. Reinicio del servicio systemd de usuario
+ssh iacdi "systemctl --user restart app-lti.service"
+
+# 2. Comprobación del estado activo
+ssh iacdi "systemctl --user is-active app-lti.service"
+# Debe responder: active
+
+# 3. Inspección detallada del status
+ssh iacdi "systemctl --user status app-lti.service --no-pager"
+
+# 4. Lectura de las últimas líneas del journal para verificar ausencia de excepciones
+ssh iacdi "journalctl --user -u app-lti.service -n 35 --no-pager"
+
+# 5. Confirmación de permanencia de Linger
+ssh iacdi "loginctl show-user iacdi --property=Linger"
+# Debe retornar: Linger=yes
+```
+
+---
+
+### 12.5. Batería de Pruebas de Humo y Validación en Vivo (Tailscale 100.82.24.75)
+Una vez reiniciado el servicio en `iacdi`, se ejecutan las siguientes pruebas de validación HTTP directas a través de la IP Tailscale `100.82.24.75:8000`:
+
+#### TC-PROD-01: Disponibilidad y Carga del Frontend SPA (HALO)
+```bash
+curl -s http://100.82.24.75:8000/ | grep -E "HALO — App Líderes TI|favicon.svg|toggle-health-score"
+```
+*Criterio:* Debe retornar las etiquetas HTML correspondientes al nuevo branding, favicon y el switch del semáforo.
+
+#### TC-PROD-02: Endpoint de Proyectos con Estructura de Salud
+```bash
+curl -s http://100.82.24.75:8000/api/proyectos | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+assert isinstance(data, list), 'Formato de respuesta debe ser lista'
+assert len(data) > 0, 'Debe retornar proyectos'
+sample = data[0]
+assert 'salud' in sample, 'Falta campo salud en proyecto'
+assert 'score' in sample['salud'], 'Falta score'
+assert 'color' in sample['salud'], 'Falta color'
+assert 'label' in sample['salud'], 'Falta label'
+print(f'✅ API Proyectos OK: {len(data)} proyectos analizados. Muestra salud: {sample[\"salud\"][\"label\"]} ({sample[\"salud\"][\"score\"]})')
+"
+```
+*Criterio:* Código 200, serialización válida y presencia del objeto `salud` estructurado.
+
+#### TC-PROD-03: Endpoint de KPIs de Salud
+```bash
+curl -s http://100.82.24.75:8000/api/dashboard-kpis | python3 -c "
+import sys, json
+kpis = json.load(sys.stdin)
+print('✅ KPIs obtenidos:', kpis)
+"
+```
+*Criterio:* Código 200 y métricas consolidadas sin excepciones MSSQL.
+
+#### TC-PROD-04: Recurso de Favicon SVG
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" http://100.82.24.75:8000/favicon.svg
+```
+*Criterio:* HTTP 200 OK.
+
+---
+
+### 12.6. Plan de Contingencia y Rollback Operativo
+
+En caso de detectarse cualquier anomalía operativa, inconsistencia de datos o degradación del servicio tras el despliegue, se aplicará el siguiente protocolo de contingencia según el nivel de impacto:
+
+```mermaid
+flowchart TD
+    Incident[Alerta de Incidente en Producción] --> CheckSeverity{¿Nivel de Afectación?}
+    
+    CheckSeverity -->|UI / Visual / Usabilidad| SoftRollback[NIVEL 1: Activación Kill-Switch UI]
+    CheckSeverity -->|Error 500 / Excepción Backend / Caída| HardRollback[NIVEL 2: Rollback Git & Re-sync]
+
+    SoftRollback --> KillSwitchAction["Desmarcar toggle 'Semáforo de Salud' o inyectar:<br>localStorage.setItem('healthScoreEnabled', 'false')"]
+    KillSwitchAction --> SoftVerified[La interfaz oculta instantáneamente el semáforo y vuelve a modo clásico sin downtime]
+
+    HardRollback --> RevertGit["Revertir commit local:<br>git checkout HEAD~1"]
+    RevertGit --> Resync["Sincronizar versión anterior:<br>./deploy_to_iacdi.sh"]
+    Resync --> RestartSystemd["Reiniciar servicio:<br>ssh iacdi 'systemctl --user restart app-lti'"]
+    RestartSystemd --> HardVerified[Servicio restaurado al estado inmediatamente anterior]
+```
+
+#### Protocolo de Rollback Nivel 1 (Kill-Switch sin intervención de servidor):
+Si la incidencia es meramente de presentación visual o confusión de usuarios con el semáforo:
+- Indicar a los usuarios desactivar el toggle en el navbar superior `#toggle-health-score`.
+- O inyectar de forma preventiva en el frontend el valor `false` para la clave `healthScoreEnabled`.
+- **Efecto:** Cero downtime, el sistema oculta badges, motivos y filtros sin necesidad de reiniciar el servicio ni sincronizar código.
+
+#### Protocolo de Rollback Nivel 2 (Rollback de Código Completo):
+Si se presenta una excepción fatal no capturada en FastAPI o falla de inicio del servicio:
+1. Revertir el árbol local al commit inmediatamente anterior:
+   ```bash
+   git reset --hard HEAD~1
+   ```
+2. Ejecutar la sincronización rsync:
+   ```bash
+   ./deploy_to_iacdi.sh
+   ```
+3. Reiniciar el servicio en `iacdi`:
+   ```bash
+   ssh iacdi "systemctl --user restart app-lti.service"
+   ```
+4. Verificar retorno a estado operativo:
+   ```bash
+   ssh iacdi "systemctl --user status app-lti.service"
+   curl -s http://100.82.24.75:8000/ | grep "<title>"
+   ```
+
+---
+
+### 12.7. Checklist de Ejecución para el Subagente Coder
+
+- [ ] **1. Consolidación Git:** Ejecutar `git add` y `git commit` semántico en la rama `sso-portal-acceso`.
+- [ ] **2. Ejecución de Sync:** Ejecutar `./deploy_to_iacdi.sh` asegurando exclusión de `.env` y `.git`.
+- [ ] **3. Reinicio de Servicio:** Ejecutar `systemctl --user restart app-lti.service` vía SSH en `iacdi`.
+- [ ] **4. Comprobación de Logs:** Revisar `journalctl --user -u app-lti.service -n 35` verificando arranque limpio de Uvicorn.
+- [ ] **5. Smoke Tests en Vivo:** Ejecutar verificaciones HTTP contra `http://100.82.24.75:8000` (`/`, `/favicon.svg`, `/api/proyectos`, `/api/dashboard-kpis`).
+- [ ] **6. Reporte Final:** Entregar los resultados al Subagente Tester para validación final.
+
