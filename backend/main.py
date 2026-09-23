@@ -45,7 +45,8 @@ from .db import (
     delete_proyecto,
     get_diagnostico_proyecto,
     get_ficha_ejecutiva_data,
-    generar_ficha_ejecutiva_html
+    generar_ficha_ejecutiva_html,
+    get_timeline_proyecto
 )
 from .seed_users import seed_default_users
 from .ticket_automation import stream_ticket_creation
@@ -287,6 +288,23 @@ def obtener_ficha_html_proyecto(
         )
     html_content = generar_ficha_ejecutiva_html(data, auto_print=auto_print)
     return HTMLResponse(content=html_content, media_type="text/html; charset=utf-8")
+
+@app.get("/api/proyectos/{proyecto_id}/timeline")
+def obtener_timeline_proyecto(
+    proyecto_id: int,
+    current_user: dict = Depends(require_lti_or_admin)
+):
+    """
+    Retorna el JSON estructurado consolidado para la Línea de Tiempo Visual del proyecto.
+    Unifica cronológicamente SharePoint, Solots SGA, Tickets HPSM y RFCs.
+    """
+    data = get_timeline_proyecto(proyecto_id)
+    if not data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Proyecto con ID {proyecto_id} no fue encontrado."
+        )
+    return data
 
 @app.put("/api/proyectos/{proyecto_id}")
 def actualizar_proyecto(

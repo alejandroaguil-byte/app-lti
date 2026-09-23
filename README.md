@@ -118,6 +118,15 @@ Diseñada con la identidad visual corporativa de Claro Chile (cabecera instituci
    - **Arquitectura Desacoplada sin Dependencias C**: Motor cliente-servidor de alta fidelidad vía iframe aislado y CSS `@media print` A4, complementado con endpoints backend `/api/proyectos/{id}/ficha-ejecutiva` y `/api/proyectos/{id}/ficha-html`. Cero binarios nativos de Chromium o librerías C (`pango`/`cairo`), garantizando 100% de compatibilidad tanto en `bobbadeveloper` como en `iacdi` (producción).
    - **Kill-Switch Mandatorio & Política de Cero Rastros**: Botón toggle en sub-barra (`📄 Ficha PDF: ON / OFF`), flag global `window.HALO_CONFIG.ENABLE_PDF_EXPORT` y persistencia en `localStorage` (`halo_export_pdf_enabled`). Al desactivarse, el botón del Drill Down desaparece de forma invisible sin dejar espacios en blanco ni alterar la alineación de los otros controles.
 
+10. **Timeline / Línea de Tiempo Visual del Proyecto (Visual Roadmap) & Kill-Switch (v1.6.0)**:
+    - **Visual Roadmap Unificado**: Nueva pestaña interactiva en el Drill Down (`📈 Línea de Tiempo` / `data-tab="timeline"`) que consolida cronológicamente el ciclo de vida completo del proyecto unificando 4 fuentes maestras: SharePoint (`dbo.Proyectos`), Solots SGA (`dbo.CT_BACKLOG_OPERACIONES2`), Tickets Service Manager (`dbo.registrosRF_SD_SM`) y RFCs (`dbo.registrosSM_RFC`).
+    - **Medición de Lapsos & Cuellos de Botella**: Cálculo automático de días transcurridos entre eventos consecutivos (`⏱️ +X d`), permitiendo a gerentes y líderes TI detectar visualmente retrasos entre la apertura de Solots, derivaciones a torres técnicas y ventanas de ejecución.
+    - **Métricas Ejecutivas en Cabecera**: Tarjetas KPI en la pestaña con Total de Hitos, Lead Time Total (días desde el inicio), Último Hito Registrado y Próximo Compromiso (o alerta roja de atraso con días transcurridos).
+    - **Filtros Rápidos por Categoría**: Píldoras de filtrado instantáneo (`🌟 Todos`, `📁 SharePoint`, `⚡ SGA Solots`, `🎫 Tickets SD`, `🔄 RFCs`) con conteos en caliente y recálculo dinámico de lapsos sin recarga.
+    - **Alertas de Compromisos y Atrasos**: Destacado cromático diferenciado para hitos programados a futuro (`⏳`) y compromisos vencidos no cerrados (`⚠️ Vencido (+X d)` con borde rojo pulsante `#B52217`).
+    - **Endpoint REST Dedicado**: `GET /api/proyectos/{id}/timeline` de alto rendimiento y ordenamiento cronológico ascendente.
+    - **Mecanismo Mandatorio Kill-Switch & Cero Rastros**: Botón toggle en sub-barra (`⏱️ Timeline: ON / OFF`), variable global `window.HALO_CONFIG.ENABLE_TIMELINE` y persistencia en `localStorage` (`halo_timeline_enabled`). Si se desactiva, la pestaña desaparece de la vista con política estricta de Cero Rastros (auto-conmutando a la pestaña `📋 Resumen` si estaba activa).
+
 ---
 
 ## 🛠️ Stack Tecnológico

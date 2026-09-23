@@ -123,6 +123,12 @@
             <span class="pdf-toggle-label" id="pdf-toggle-label">Ficha PDF: ON</span>
           </button>
 
+          <!-- Botón Kill-Switch / Toggle de Timeline Visual -->
+          <button id="timeline-toggle-btn" class="btn-subbar-toggle" title="Activar o desactivar Línea de Tiempo Visual del Proyecto" aria-label="Toggle Timeline Visual" aria-pressed="true">
+            <span class="timeline-toggle-icon">⏱️</span>
+            <span class="timeline-toggle-label" id="timeline-toggle-label">Timeline: ON</span>
+          </button>
+
           <span id="user-role-badge" class="badge badge-info">Líder</span>
           <button id="theme-toggle-btn" class="btn-icon-subbar" title="Cambiar Modo Claro / Oscuro" aria-label="Cambiar tema">
             <span id="theme-icon">🌙</span>
@@ -353,6 +359,9 @@
             <button class="tab-btn active" data-tab="summary">
               📋 Resumen del Proyecto
             </button>
+            <button class="tab-btn" data-tab="timeline" id="tab-btn-timeline">
+              📈 Línea de Tiempo <span class="tab-badge" id="tab-count-timeline">0</span>
+            </button>
             <button class="tab-btn" data-tab="solots">
               ⚡ Solot (Backlog Operaciones) <span class="tab-badge" id="tab-count-solots">0</span>
             </button>
@@ -367,6 +376,79 @@
           <!-- Tab 1: Resumen -->
           <div id="tab-pane-summary" class="tab-pane">
             <div id="summary-content"></div>
+          </div>
+
+          <!-- Tab: Línea de Tiempo Visual (Visual Roadmap) -->
+          <div id="tab-pane-timeline" class="tab-pane" style="display: none;">
+            <!-- Cabecera Ejecutiva de Métricas del Timeline -->
+            <div class="timeline-kpi-grid" id="timeline-kpi-grid">
+              <div class="timeline-kpi-card">
+                <div class="timeline-kpi-icon">📊</div>
+                <div>
+                  <div class="timeline-kpi-val" id="timeline-metric-total">0</div>
+                  <div class="timeline-kpi-title">TOTAL HITOS</div>
+                </div>
+              </div>
+              <div class="timeline-kpi-card">
+                <div class="timeline-kpi-icon">⏱️</div>
+                <div>
+                  <div class="timeline-kpi-val" id="timeline-metric-leadtime">0 días</div>
+                  <div class="timeline-kpi-title">LEAD TIME TOTAL</div>
+                </div>
+              </div>
+              <div class="timeline-kpi-card">
+                <div class="timeline-kpi-icon">📍</div>
+                <div>
+                  <div class="timeline-kpi-val-text" id="timeline-metric-ultimo">—</div>
+                  <div class="timeline-kpi-title">ÚLTIMO HITO</div>
+                </div>
+              </div>
+              <div class="timeline-kpi-card" id="timeline-card-compromiso">
+                <div class="timeline-kpi-icon" id="timeline-icon-compromiso">📅</div>
+                <div>
+                  <div class="timeline-kpi-val-text" id="timeline-metric-compromiso">—</div>
+                  <div class="timeline-kpi-title" id="timeline-title-compromiso">PRÓXIMO COMPROMISO</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Barra de Filtros Rápidos por Categoría -->
+            <div class="timeline-filters-bar">
+              <div class="timeline-filters-label">Filtrar por:</div>
+              <div class="timeline-pills-group">
+                <button class="timeline-pill-btn active" data-timeline-filter="all">
+                  🌟 Todos <span class="pill-count" id="pill-count-all">0</span>
+                </button>
+                <button class="timeline-pill-btn" data-timeline-filter="sharepoint">
+                  📁 SharePoint <span class="pill-count" id="pill-count-sp">0</span>
+                </button>
+                <button class="timeline-pill-btn" data-timeline-filter="solot">
+                  ⚡ SGA Solots <span class="pill-count" id="pill-count-solot">0</span>
+                </button>
+                <button class="timeline-pill-btn" data-timeline-filter="ticket">
+                  🎫 Tickets SD <span class="pill-count" id="pill-count-ticket">0</span>
+                </button>
+                <button class="timeline-pill-btn" data-timeline-filter="rfc">
+                  🔄 RFCs <span class="pill-count" id="pill-count-rfc">0</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Contenedor del Roadmap Visual -->
+            <div class="timeline-visual-roadmap" id="timeline-visual-roadmap">
+              <div class="timeline-loading-state" id="timeline-loading-state">
+                <div class="spinner"></div>
+                <p>Cargando cronología del proyecto...</p>
+              </div>
+              <div class="timeline-roadmap-track" id="timeline-roadmap-track" style="display: none;">
+                <!-- Nodos inyectados dinámicamente -->
+              </div>
+              <div class="timeline-empty-state" id="timeline-empty-state" style="display: none;">
+                <div class="empty-icon">📭</div>
+                <h3>No hay eventos registrados</h3>
+                <p>No se encontraron hitos cronológicos para los filtros seleccionados.</p>
+              </div>
+            </div>
           </div>
 
           <!-- Tab 2: Solots (CT_BACKLOG_OPERACIONES2) -->

@@ -3990,6 +3990,396 @@ button, input, select, textarea, optgroup {
   color: var(--text-primary);
 }
 
+/* ==========================================================================
+   TIMELINE / LÍNEA DE TIEMPO VISUAL DEL PROYECTO (VISUAL ROADMAP)
+   ========================================================================== */
+
+/* Sub-Barra Toggle State */
+#timeline-toggle-btn.is-off {
+  opacity: 0.65;
+  background: var(--bg-surface-tertiary);
+  color: var(--text-muted);
+  border-color: var(--border-color);
+}
+
+#timeline-toggle-btn.is-off:hover {
+  opacity: 0.9;
+  color: var(--text-primary);
+}
+
+/* Grilla de Métricas de Cabecera */
+.timeline-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.timeline-kpi-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 0.85rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-fast);
+}
+
+.timeline-kpi-card:hover {
+  border-color: var(--primary);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.timeline-kpi-card.is-critical {
+  border-color: #B52217;
+  background: rgba(181, 34, 23, 0.05);
+}
+
+[data-theme="dark"] .timeline-kpi-card.is-critical {
+  background: rgba(181, 34, 23, 0.15);
+}
+
+.timeline-kpi-card.is-future {
+  border-color: #0097A9;
+  background: rgba(0, 151, 169, 0.05);
+}
+
+[data-theme="dark"] .timeline-kpi-card.is-future {
+  background: rgba(0, 151, 169, 0.15);
+}
+
+.timeline-kpi-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.timeline-kpi-val {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.timeline-kpi-val-text {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
+.timeline-kpi-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+/* Barra de Filtros Rápidos (Píldoras) */
+.timeline-filters-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 1rem;
+  background: var(--bg-surface-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  margin-bottom: 1.5rem;
+}
+
+.timeline-filters-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.timeline-pills-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.timeline-pill-btn {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-full);
+  padding: 0.3rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: all var(--transition-fast);
+}
+
+.timeline-pill-btn:hover {
+  border-color: var(--primary);
+  background: var(--bg-surface-tertiary);
+}
+
+.timeline-pill-btn.active {
+  background: var(--primary);
+  color: #ffffff;
+  border-color: var(--primary);
+}
+
+.timeline-pill-btn.active .pill-count {
+  background: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+}
+
+.pill-count {
+  background: var(--bg-surface-secondary);
+  color: var(--text-muted);
+  border-radius: var(--radius-full);
+  padding: 0.1rem 0.45rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+/* Roadmap Visual Vertical con Columna Espinal */
+.timeline-visual-roadmap {
+  position: relative;
+  padding: 1rem 0.5rem;
+}
+
+.timeline-loading-state,
+.timeline-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1rem;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.timeline-loading-state .spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(0, 151, 169, 0.15);
+  border-top-color: #0097A9;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-bottom: 0.75rem;
+}
+
+.timeline-empty-state .empty-icon {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.timeline-empty-state h3 {
+  font-size: 1.1rem;
+  color: var(--text-primary);
+  margin-bottom: 0.25rem;
+}
+
+.timeline-roadmap-track {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.roadmap-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  position: relative;
+  margin-bottom: 0.5rem;
+}
+
+/* Punto Espinal / Nodo */
+.roadmap-node-dot {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--bg-surface);
+  border: 2px solid var(--node-accent, var(--primary));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  box-shadow: 0 0 0 4px rgba(0, 151, 169, 0.1);
+  flex-shrink: 0;
+  z-index: 2;
+  transition: all var(--transition-fast);
+}
+
+.roadmap-item:hover .roadmap-node-dot {
+  transform: scale(1.15);
+  box-shadow: 0 0 0 6px rgba(0, 151, 169, 0.2);
+}
+
+.roadmap-item.item-overdue .roadmap-node-dot {
+  border-color: #B52217;
+  box-shadow: 0 0 0 4px rgba(181, 34, 23, 0.2);
+  animation: pulse-border-red 2s infinite;
+}
+
+@keyframes pulse-border-red {
+  0% { box-shadow: 0 0 0 2px rgba(181, 34, 23, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(181, 34, 23, 0.1); }
+  100% { box-shadow: 0 0 0 2px rgba(181, 34, 23, 0.4); }
+}
+
+/* Conector Vertical con Badge de Lapso */
+.roadmap-connector {
+  position: relative;
+  margin-left: 17px;
+  padding: 0.75rem 0 0.75rem 1.75rem;
+  display: flex;
+  align-items: center;
+}
+
+.roadmap-spine-line {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--border-color);
+}
+
+.roadmap-lapse-badge {
+  background: var(--bg-surface-secondary);
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-full);
+  padding: 0.15rem 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* Tarjeta del Hito */
+.roadmap-card {
+  flex: 1;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1rem;
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-fast);
+}
+
+.roadmap-item:hover .roadmap-card {
+  border-color: var(--primary);
+  box-shadow: var(--shadow-md);
+}
+
+.roadmap-item.item-overdue .roadmap-card {
+  border-left: 4px solid #B52217;
+  background: rgba(181, 34, 23, 0.02);
+}
+
+[data-theme="dark"] .roadmap-item.item-overdue .roadmap-card {
+  background: rgba(181, 34, 23, 0.08);
+}
+
+.roadmap-card-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.badge-cat {
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.badge-cat-sharepoint { background: rgba(181, 34, 23, 0.1); color: #B52217; }
+.badge-cat-solot { background: rgba(0, 151, 169, 0.1); color: #0097A9; }
+.badge-cat-ticket { background: rgba(59, 130, 246, 0.1); color: #2563EB; }
+.badge-cat-rfc { background: rgba(139, 92, 246, 0.1); color: #7C3AED; }
+
+.badge-date {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.badge-alert-overdue {
+  background: #B52217;
+  color: #ffffff;
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.badge-future-pending {
+  background: #D97706;
+  color: #ffffff;
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.badge-status {
+  margin-left: auto;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.roadmap-card-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.25rem;
+}
+
+.roadmap-card-desc {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* Metadatos adicionales compactos */
+.roadmap-metadata-row {
+  margin-top: 0.45rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-color);
+  padding-top: 0.35rem;
+}
+
+.roadmap-meta-item strong {
+  color: var(--text-secondary);
+}
+
+/* Responsivo para pantallas pequeñas */
+@media (max-width: 768px) {
+  .timeline-kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .roadmap-card-header {
+    gap: 0.3rem;
+  }
+}
+
+
 
 
 

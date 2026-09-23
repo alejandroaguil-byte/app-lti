@@ -13,12 +13,17 @@ if (window.HALO_CONFIG.ENABLE_EXECUTIVE_DIAGNOSIS === undefined) {
 if (window.HALO_CONFIG.ENABLE_PDF_EXPORT === undefined) {
   window.HALO_CONFIG.ENABLE_PDF_EXPORT = true;
 }
+if (window.HALO_CONFIG.ENABLE_TIMELINE === undefined) {
+  window.HALO_CONFIG.ENABLE_TIMELINE = true;
+}
 
 const CANONICAL_ESTADOS_SHAREPOINT = ['Generado', 'En revision', 'Atendido'];
 
 const App = {
   currentProject: null,
   currentDiagnosticoData: null,
+  currentTimelineData: null,
+  currentTimelineFilter: 'all',
   projectsData: [],
   lideresList: [],
   estadosSharepoint: [],
@@ -56,6 +61,7 @@ const App = {
     this.initHealthScore();
     this.initExecutiveDiagnosis();
     this.initPdfExport();
+    this.initTimeline();
     this.bindEvents();
     
     try {
@@ -681,6 +687,272 @@ const App = {
   },
 
   // --------------------------------------------------------------------------
+  // TIMELINE VISUAL ROADMAP & KILL-SWITCH (FEATURE 4)
+  // --------------------------------------------------------------------------
+  initTimeline() {
+    this.applyTimelineState(false);
+  },
+
+  isTimelineActive() {
+    // 1. Configuración maestra en runtime
+    if (window.HALO_CONFIG && window.HALO_CONFIG.ENABLE_TIMELINE === false) {
+      return false;
+    }
+    // 2. Preferencia de usuario persistida
+    const pref = localStorage.getItem('halo_timeline_enabled');
+    if (pref !== null) {
+      return pref === 'true';
+    }
+    // 3. Fallback por defecto: Habilitado (true)
+    return true;
+  },
+
+  toggleTimeline() {
+    const current = this.isTimelineActive();
+    const next = !current;
+    localStorage.setItem('halo_timeline_enabled', next ? 'true' : 'false');
+    this.applyTimelineState(true);
+    const msg = next ? '⏱️ Línea de Tiempo activada' : '⏱️ Línea de Tiempo desactivada';
+    this.showToast(msg, 'info');
+  },
+
+  applyTimelineState(triggerTabSwitch = true) {
+    const active = this.isTimelineActive();
+    const toggleBtn = document.getElementById('timeline-toggle-btn');
+    const toggleLabel = document.getElementById('timeline-toggle-label');
+    const tabBtn = document.getElementById('tab-btn-timeline');
+    const tabPane = document.getElementById('tab-pane-timeline');
+
+    if (toggleBtn) {
+      toggleBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
+      if (active) {
+        toggleBtn.classList.remove('is-off');
+        toggleBtn.title = 'Desactivar Línea de Tiempo Visual';
+        if (toggleLabel) toggleLabel.textContent = 'Timeline: ON';
+      } else {
+        toggleBtn.classList.add('is-off');
+        toggleBtn.title = 'Activar Línea de Tiempo Visual';
+        if (toggleLabel) toggleLabel.textContent = 'Timeline: OFF';
+      }
+    }
+
+    // Política estricta de Cero Rastros
+    if (tabBtn) {
+      tabBtn.style.setProperty('display', active ? 'inline-flex' : 'none', 'important');
+    }
+
+    // Si se apaga mientras el usuario estaba en la pestaña de Timeline, conmutar a Resumen
+    if (!active && this.activeTab === 'timeline') {
+      this.switchTab('summary');
+    }
+  },
+
+  async loadTimeline(projectId) {
+    if (!this.isTimelineActive()) return;
+
+    const loading = document.getElementById('timeline-loading-state');
+    const track = document.getElementById('timeline-roadmap-track');
+    const empty = document.getElementById('timeline-empty-state');
+    const badge = document.getElementById('tab-count-timeline');
+
+    if (loading) loading.style.display = 'flex';
+    if (track) track.style.display = 'none';
+    if (empty) empty.style.display = 'none';
+
+    try {
+      const res = await Auth.fetchWithAuth(`/api/proyectos/${projectId}/timeline`);
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      this.currentTimelineData = data;
+
+      // Actualizar badge de conteo en la pestaña
+      if (badge) {
+        badge.textContent = data.metricas?.total_eventos || 0;
+      }
+
+      // Renderizar métricas de cabecera
+      this.renderTimelineMetrics(data);
+
+      // Actualizar contadores de las píldoras de filtro
+      this.updateTimelinePillCounts(data.metricas);
+
+      // Renderizar eventos con el filtro activo actual (default: 'all')
+      this.renderTimelineEvents(this.currentTimelineFilter || 'all');
+
+    } catch (err) {
+      console.error('Error al cargar timeline:', err);
+      if (loading) loading.style.display = 'none';
+      if (empty) {
+        empty.style.display = 'block';
+        const p = empty.querySelector('p');
+        if (p) p.textContent = 'No se pudo cargar la línea de tiempo del proyecto.';
+      }
+    } finally {
+      if (loading) loading.style.display = 'none';
+    }
+  },
+
+  renderTimelineMetrics(data) {
+    const m = data.metricas || {};
+
+    const elTotal = document.getElementById('timeline-metric-total');
+    const elLead = document.getElementById('timeline-metric-leadtime');
+    const elUltimo = document.getElementById('timeline-metric-ultimo');
+    const elComp = document.getElementById('timeline-metric-compromiso');
+    const cardComp = document.getElementById('timeline-card-compromiso');
+    const iconComp = document.getElementById('timeline-icon-compromiso');
+    const titleComp = document.getElementById('timeline-title-compromiso');
+
+    if (elTotal) elTotal.textContent = m.total_eventos || 0;
+    if (elLead) elLead.textContent = `${data.lead_time_total_dias || 0} días`;
+
+    if (elUltimo) {
+      if (m.ultimo_hito) {
+        elUltimo.textContent = `${m.ultimo_hito.titulo} (${m.ultimo_hito.fecha_formateada})`;
+        elUltimo.title = m.ultimo_hito.titulo;
+      } else {
+        elUltimo.textContent = 'Sin eventos';
+      }
+    }
+
+    if (elComp && cardComp) {
+      if (m.proximo_compromiso) {
+        const pc = m.proximo_compromiso;
+        if (pc.es_atrasado) {
+          cardComp.classList.add('is-critical');
+          cardComp.classList.remove('is-future');
+          if (iconComp) iconComp.textContent = '🚨';
+          if (titleComp) titleComp.textContent = 'COMPROMISO ATRASADO';
+          elComp.textContent = `${pc.titulo} (+${pc.dias_atraso}d de atraso)`;
+          elComp.title = `${pc.titulo} vencido el ${pc.fecha_formateada}`;
+        } else {
+          cardComp.classList.remove('is-critical');
+          cardComp.classList.add('is-future');
+          if (iconComp) iconComp.textContent = '📅';
+          if (titleComp) titleComp.textContent = 'PRÓXIMO COMPROMISO';
+          const labelRest = pc.dias_restantes === 0 ? 'hoy' : (pc.dias_restantes === 1 ? 'en 1 día' : `en ${pc.dias_restantes} días`);
+          elComp.textContent = `${pc.titulo} (${pc.fecha_formateada} - ${labelRest})`;
+          elComp.title = `${pc.titulo} el ${pc.fecha_formateada}`;
+        }
+      } else {
+        cardComp.classList.remove('is-critical', 'is-future');
+        if (iconComp) iconComp.textContent = '✅';
+        if (titleComp) titleComp.textContent = 'COMPROMISOS';
+        elComp.textContent = 'Todos al día / Completados';
+      }
+    }
+  },
+
+  updateTimelinePillCounts(m = {}) {
+    const elAll = document.getElementById('pill-count-all');
+    const elSp = document.getElementById('pill-count-sp');
+    const elSolot = document.getElementById('pill-count-solot');
+    const elTicket = document.getElementById('pill-count-ticket');
+    const elRfc = document.getElementById('pill-count-rfc');
+
+    if (elAll) elAll.textContent = m.total_eventos || 0;
+    if (elSp) elSp.textContent = m.eventos_sharepoint || 0;
+    if (elSolot) elSolot.textContent = m.eventos_solot || 0;
+    if (elTicket) elTicket.textContent = m.eventos_ticket || 0;
+    if (elRfc) elRfc.textContent = m.eventos_rfc || 0;
+  },
+
+  renderTimelineEvents(filterCategory = 'all') {
+    this.currentTimelineFilter = filterCategory;
+    const track = document.getElementById('timeline-roadmap-track');
+    const empty = document.getElementById('timeline-empty-state');
+    if (!track || !this.currentTimelineData) return;
+
+    const rawEvents = this.currentTimelineData.eventos || [];
+    const filteredEvents = filterCategory === 'all'
+      ? rawEvents
+      : rawEvents.filter(e => e.categoria === filterCategory);
+
+    if (filteredEvents.length === 0) {
+      track.style.display = 'none';
+      if (empty) empty.style.display = 'block';
+      return;
+    }
+
+    if (empty) empty.style.display = 'none';
+    track.style.display = 'flex';
+
+    let html = '';
+    for (let i = 0; i < filteredEvents.length; i++) {
+      const ev = filteredEvents[i];
+      const isOverdue = ev.es_atrasado;
+      const isFuture = ev.es_futuro;
+
+      // Conector con cálculo de lapso respecto al evento visible anterior
+      if (i > 0) {
+        const prevEv = filteredEvents[i - 1];
+        const d1 = new Date(prevEv.fecha);
+        const d2 = new Date(ev.fecha);
+        let diffDays = 0;
+        if (!isNaN(d1) && !isNaN(d2)) {
+          diffDays = Math.max(0, Math.round((d2 - d1) / (1000 * 60 * 60 * 24)));
+        }
+        const lapseText = diffDays === 0 ? 'Mismo día' : `+${diffDays} d`;
+
+        html += `
+          <div class="roadmap-connector">
+            <div class="roadmap-spine-line"></div>
+            <div class="roadmap-lapse-badge" title="Tiempo transcurrido desde el hito anterior: ${diffDays} días">
+              ⏱️ ${lapseText}
+            </div>
+          </div>
+        `;
+      }
+
+      // Nodo y tarjeta del hito
+      html += `
+        <div class="roadmap-item ${isOverdue ? 'item-overdue' : ''} ${isFuture ? 'item-future' : ''} cat-${ev.categoria}">
+          <div class="roadmap-node-dot" style="--node-accent: ${ev.color_tipo || '#0097A9'}">
+            <span class="node-icon">${ev.icono || '📍'}</span>
+          </div>
+          <div class="roadmap-card">
+            <div class="roadmap-card-header">
+              <span class="badge-cat badge-cat-${ev.categoria}">${this.escapeHtml(ev.categoria_label)}</span>
+              <span class="badge-date">📅 ${ev.fecha_formateada}</span>
+              ${isOverdue ? `<span class="badge-alert-overdue">⚠️ Vencido (+${ev.dias_atraso}d)</span>` : ''}
+              ${isFuture ? `<span class="badge-future-pending">⏳ Programado</span>` : ''}
+              <span class="badge-status">${this.escapeHtml(ev.estado)}</span>
+            </div>
+            <div class="roadmap-card-title">${this.escapeHtml(ev.titulo)}</div>
+            <div class="roadmap-card-desc">${this.escapeHtml(ev.descripcion || '')}</div>
+            ${this.renderTimelineMetadata(ev.metadata)}
+          </div>
+        </div>
+      `;
+    }
+
+    track.innerHTML = html;
+  },
+
+  renderTimelineMetadata(metadata) {
+    if (!metadata || typeof metadata !== 'object' || Object.keys(metadata).length === 0) {
+      return '';
+    }
+    const items = [];
+    if (metadata.id_otp) items.push(`<span class="roadmap-meta-item"><strong>OTP:</strong> ${this.escapeHtml(String(metadata.id_otp))}</span>`);
+    if (metadata.servicio) items.push(`<span class="roadmap-meta-item"><strong>Servicio:</strong> ${this.escapeHtml(String(metadata.servicio))}</span>`);
+    if (metadata.producto) items.push(`<span class="roadmap-meta-item"><strong>Producto:</strong> ${this.escapeHtml(String(metadata.producto))}</span>`);
+    if (metadata.grupo_asignado) items.push(`<span class="roadmap-meta-item"><strong>Grupo:</strong> ${this.escapeHtml(String(metadata.grupo_asignado))}</span>`);
+    if (metadata.incident_id) items.push(`<span class="roadmap-meta-item"><strong>Ticket:</strong> ${this.escapeHtml(String(metadata.incident_id))}</span>`);
+    if (metadata.rfc_number) items.push(`<span class="roadmap-meta-item"><strong>RFC:</strong> ${this.escapeHtml(String(metadata.rfc_number))}</span>`);
+    if (metadata.depto) items.push(`<span class="roadmap-meta-item"><strong>Depto:</strong> ${this.escapeHtml(String(metadata.depto))}</span>`);
+    if (metadata.solicitante) items.push(`<span class="roadmap-meta-item"><strong>Solicitante:</strong> ${this.escapeHtml(String(metadata.solicitante))}</span>`);
+    if (metadata.tipo_servicio) items.push(`<span class="roadmap-meta-item"><strong>Tipo Serv.:</strong> ${this.escapeHtml(String(metadata.tipo_servicio))}</span>`);
+    if (metadata.lt_asignado) items.push(`<span class="roadmap-meta-item"><strong>Líder TI:</strong> ${this.escapeHtml(String(metadata.lt_asignado))}</span>`);
+
+    if (items.length === 0) return '';
+    return `<div class="roadmap-metadata-row">${items.join('')}</div>`;
+  },
+
+  // --------------------------------------------------------------------------
   // EVENT BINDINGS
   // --------------------------------------------------------------------------
   bindEvents() {
@@ -768,6 +1040,21 @@ const App = {
     if (pdfToggleBtn) {
       pdfToggleBtn.addEventListener('click', () => this.togglePdfExport());
     }
+
+    // Timeline Toggle Button
+    const timelineToggleBtn = document.getElementById('timeline-toggle-btn');
+    if (timelineToggleBtn) {
+      timelineToggleBtn.addEventListener('click', () => this.toggleTimeline());
+    }
+
+    // Timeline Filter Pills
+    document.querySelectorAll('.timeline-pill-btn[data-timeline-filter]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const filter = btn.dataset.timelineFilter;
+        document.querySelectorAll('.timeline-pill-btn').forEach(b => b.classList.toggle('active', b === btn));
+        this.renderTimelineEvents(filter);
+      });
+    });
 
     // Health Score KPI Cards Interactive Filtering
     const healthCards = [
@@ -1541,6 +1828,7 @@ const App = {
       btnDdDiag.style.display = this.isExecutiveDiagnosisActive() ? 'inline-flex' : 'none';
     }
 
+    this.applyTimelineState(false);
     this.switchTab('summary');
     this.loadProjectDetails(project.ID);
   },
@@ -1870,11 +2158,16 @@ const App = {
     document.querySelectorAll('.tab-pane').forEach(pane => {
       pane.style.display = pane.id === `tab-pane-${tabId}` ? 'block' : 'none';
     });
+
+    if (tabId === 'timeline' && this.currentProject && !this.currentTimelineData) {
+      this.loadTimeline(this.currentProject.ID);
+    }
   },
 
   async loadProjectDetails(projectId) {
     this.renderSummaryTab(this.currentProject);
     this.renderProjectTimeline(this.currentProject);
+    this.loadTimeline(projectId);
     this.loadSolots(projectId);
     this.loadTickets(projectId);
     this.loadRFCs(projectId);

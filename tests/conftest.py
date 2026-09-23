@@ -6,7 +6,7 @@ from playwright.sync_api import sync_playwright
 from backend.db import get_db_connection
 from backend.config import PORTAL_JWT_SECRET, JWT_ALGORITHM
 
-BASE_URL = os.getenv("BASE_URL", "http://100.82.24.75:8000")
+BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
 
 def create_portal_jwt(
     username: str = "alejandro.aguilar",

@@ -2974,4 +2974,401 @@ def generar_ficha_ejecutiva_html(data: dict, auto_print: bool = False) -> str:
     return document_html
 
 
+def _parse_timeline_dt(val):
+    """
+    Normaliza valores de fecha/hora heterogéneos (datetime, date, str ISO o formatos comunes)
+    a un objeto datetime.datetime con resolución horaria o None si es inválido.
+    """
+    if not val:
+        return None
+    if isinstance(val, datetime.datetime):
+        return val
+    if isinstance(val, datetime.date):
+        return datetime.datetime.combine(val, datetime.time.min)
+    if isinstance(val, str):
+        clean_str = val.strip().replace("Z", "")
+        if not clean_str or clean_str.upper() in ("NONE", "NULL", "INVALID DATE", "N/A", "-"):
+            return None
+        for fmt in (
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%d %H:%M:%S.%f",
+            "%Y-%m-%dT%H:%M:%S.%f",
+            "%Y-%m-%d",
+            "%d/%m/%Y %H:%M:%S",
+            "%d/%m/%Y",
+            "%Y/%m/%d",
+            "%d-%m-%Y"
+        ):
+            try:
+                return datetime.datetime.strptime(clean_str[:26], fmt)
+            except Exception:
+                pass
+        try:
+            d = datetime.date.fromisoformat(clean_str[:10])
+            return datetime.datetime.combine(d, datetime.time.min)
+        except Exception:
+            pass
+    return None
+
+
+def get_timeline_proyecto(proyecto_id: int) -> dict | None:
+    """
+    Consolida, unifica y ordena cronológicamente todos los hitos del proyecto
+    a partir de dbo.Proyectos, dbo.CT_BACKLOG_OPERACIONES2, dbo.registrosRF_SD_SM
+    y dbo.registrosSM_RFC.
+    """
+    proyecto = get_proyecto_by_id(proyecto_id)
+    if not proyecto:
+        return None
+
+    numero_proyecto = proyecto.get("Numero_Proyecto")
+    solots = get_solots_by_proyecto(proyecto_id, numero_proyecto) or []
+    tickets = get_tickets_by_proyecto(proyecto_id, numero_proyecto) or []
+    rfcs = get_rfcs_by_proyecto(proyecto_id, numero_proyecto) or []
+
+    hoy = datetime.date.today()
+    eventos = []
+
+    # 1. Extracción de Hitos de SharePoint (dbo.Proyectos)
+    # 1.1 Creación / Solicitud LTI
+    fecha_creacion = _parse_timeline_dt(proyecto.get("fecha_solicitud_lti") or proyecto.get("Creado"))
+    if fecha_creacion:
+        eventos.append({
+            "id": f"sp-creacion-{proyecto_id}",
+            "categoria": "sharepoint",
+            "categoria_label": "SharePoint",
+            "tipo_evento": "creacion",
+            "titulo": "Ingreso de Proyecto / Solicitud LTI",
+            "descripcion": f"Solicitud ingresada para {proyecto.get('Cliente', 'Sin Cliente')} por {proyecto.get('Solicitante') or 'Usuario LTI'}",
+            "fecha": fecha_creacion.isoformat(),
+            "estado": proyecto.get("Estado", "Generado"),
+            "es_futuro": False,
+            "es_atrasado": False,
+            "icono": "📁",
+            "color_tipo": "#B52217",
+            "metadata": {
+                "tipo_servicio": proyecto.get("Tipo_Servicio"),
+                "lt_asignado": proyecto.get("LT_Asignado")
+            }
+        })
+
+    # 1.2 Modificación de SharePoint (si es posterior y existe)
+    fecha_mod = _parse_timeline_dt(proyecto.get("Modificado"))
+    if fecha_mod and fecha_creacion and fecha_mod.date() > fecha_creacion.date():
+        eventos.append({
+            "id": f"sp-mod-{proyecto_id}",
+            "categoria": "sharepoint",
+            "categoria_label": "SharePoint",
+            "tipo_evento": "actualizacion",
+            "titulo": "Actualización en SharePoint",
+            "descripcion": f"Última modificación registrada. Estado: {proyecto.get('Estado')}",
+            "fecha": fecha_mod.isoformat(),
+            "estado": proyecto.get("Estado", "En revision"),
+            "es_futuro": False,
+            "es_atrasado": False,
+            "icono": "📝",
+            "color_tipo": "#64748B",
+            "metadata": {}
+        })
+
+    # 2. Extracción de Hitos de Solots SGA (dbo.CT_BACKLOG_OPERACIONES2)
+    estados_cerrados_solot = {
+        'cerrada', '5- ejecutada', '5- ejecutada tareas pendientes',
+        'abortado', 'en aborcion', 'eliminada', 'aprobado'
+    }
+
+    for s in solots:
+        otp_id = s.get("ID_OTP")
+        descr = s.get("DESCR_OTP") or f"Solot {otp_id}"
+        estado_otp = (s.get("ESTADO_OTP") or "").strip()
+        is_cerrada = estado_otp.lower() in estados_cerrados_solot
+
+        # 2.1 Apertura / Inserción Solot
+        dt_insert = _parse_timeline_dt(s.get("FECHA_INSERT"))
+        if dt_insert:
+            eventos.append({
+                "id": f"solot-insert-{otp_id}",
+                "categoria": "solot",
+                "categoria_label": "SGA Solots",
+                "tipo_evento": "creacion",
+                "titulo": f"Apertura Solot SGA #{otp_id}",
+                "descripcion": descr,
+                "fecha": dt_insert.isoformat(),
+                "estado": estado_otp or "Ingresada",
+                "es_futuro": False,
+                "es_atrasado": False,
+                "icono": "⚡",
+                "color_tipo": "#0097A9",
+                "metadata": {
+                    "id_otp": otp_id,
+                    "servicio": s.get("SERVICIO"),
+                    "producto": s.get("PRODUCTO"),
+                    "grupo_asignado": s.get("GRUPO_ASIGNADO_OTP")
+                }
+            })
+
+        # 2.2 Fecha Compromiso Solot
+        dt_comp = _parse_timeline_dt(s.get("FECHA_COMPROMETIDA"))
+        if dt_comp:
+            es_atrasado = (not is_cerrada) and (dt_comp.date() < hoy)
+            es_futuro = dt_comp.date() >= hoy
+            dias_atraso = (hoy - dt_comp.date()).days if es_atrasado else 0
+            dias_restantes = (dt_comp.date() - hoy).days if es_futuro else 0
+
+            eventos.append({
+                "id": f"solot-comp-{otp_id}",
+                "categoria": "solot",
+                "categoria_label": "SGA Solots",
+                "tipo_evento": "compromiso",
+                "titulo": f"Compromiso Solot SGA #{otp_id}",
+                "descripcion": f"Fecha comprometida: {descr}",
+                "fecha": dt_comp.isoformat(),
+                "estado": "Vencido" if es_atrasado else ("Pendiente" if not is_cerrada else "Cumplido"),
+                "es_atrasado": es_atrasado,
+                "es_futuro": es_futuro,
+                "dias_atraso": dias_atraso,
+                "dias_restantes": dias_restantes,
+                "icono": "⚠️" if es_atrasado else ("⏳" if es_futuro else "📅"),
+                "color_tipo": "#DC2626" if es_atrasado else ("#D97706" if es_futuro else "#0097A9"),
+                "metadata": {
+                    "id_otp": otp_id
+                }
+            })
+
+        # 2.3 Fecha Realización / Cierre Solot
+        dt_realiz = _parse_timeline_dt(s.get("FECHA_REALIZACION"))
+        if dt_realiz:
+            eventos.append({
+                "id": f"solot-cierre-{otp_id}",
+                "categoria": "solot",
+                "categoria_label": "SGA Solots",
+                "tipo_evento": "cierre",
+                "titulo": f"Cierre / Realización Solot #{otp_id}",
+                "descripcion": descr,
+                "fecha": dt_realiz.isoformat(),
+                "estado": estado_otp or "Cerrada",
+                "es_futuro": False,
+                "es_atrasado": False,
+                "icono": "✅",
+                "color_tipo": "#10B981",
+                "metadata": {
+                    "id_otp": otp_id
+                }
+            })
+
+    # 3. Extracción de Hitos de Tickets HPSM / SD (dbo.registrosRF_SD_SM)
+    estados_cerrados_tickets = {'closed', 'resolved', 'cerrado', 'resuelto'}
+    for t in tickets:
+        inc_id = t.get("CC_INCIDENT_ID") or t.get("RF_ID") or "SD"
+        titulo_t = t.get("BRIEF_DESCRIPTION") or f"Incidente {inc_id}"
+        estado_t = (t.get("STATUS") or "").strip()
+        is_cerrado_t = estado_t.lower() in estados_cerrados_tickets
+
+        # 3.1 Apertura / Reporte del Ticket
+        dt_submit = _parse_timeline_dt(t.get("SUBMIT_DATE"))
+        if dt_submit:
+            eventos.append({
+                "id": f"ticket-submit-{inc_id}",
+                "categoria": "ticket",
+                "categoria_label": "Tickets SD",
+                "tipo_evento": "creacion",
+                "titulo": f"Reporte Ticket SD #{inc_id}",
+                "descripcion": f"{titulo_t} (Grupo: {t.get('ASSIGNED_GROUP') or 'Sin Grupo'})",
+                "fecha": dt_submit.isoformat(),
+                "estado": estado_t or "Open",
+                "es_futuro": False,
+                "es_atrasado": False,
+                "icono": "🎫",
+                "color_tipo": "#3B82F6",
+                "metadata": {
+                    "incident_id": inc_id,
+                    "grupo_asignado": t.get("ASSIGNED_GROUP"),
+                    "solicitante": t.get("REQUESTOR_NAME"),
+                    "categoria": t.get("CATEGORY")
+                }
+            })
+
+        # 3.2 Cierre del Ticket
+        dt_close = _parse_timeline_dt(t.get("CLOSE_DATE"))
+        if dt_close:
+            eventos.append({
+                "id": f"ticket-close-{inc_id}",
+                "categoria": "ticket",
+                "categoria_label": "Tickets SD",
+                "tipo_evento": "cierre",
+                "titulo": f"Resolución Ticket SD #{inc_id}",
+                "descripcion": titulo_t,
+                "fecha": dt_close.isoformat(),
+                "estado": estado_t or "Closed",
+                "es_futuro": False,
+                "es_atrasado": False,
+                "icono": "✅",
+                "color_tipo": "#10B981",
+                "metadata": {
+                    "incident_id": inc_id
+                }
+            })
+
+    # 4. Extracción de Hitos de RFCs (dbo.registrosSM_RFC)
+    for r in rfcs:
+        rfc_num = r.get("NUMBER") or "RFC"
+        rfc_desc = r.get("BRIEF_DESCRIPTION") or r.get("DESCRIPTION") or f"Cambio {rfc_num}"
+
+        # 4.1 Creación RFC
+        dt_rfc_enter = _parse_timeline_dt(r.get("ORIG_DATE_ENTERED"))
+        if dt_rfc_enter:
+            eventos.append({
+                "id": f"rfc-create-{rfc_num}",
+                "categoria": "rfc",
+                "categoria_label": "RFCs",
+                "tipo_evento": "creacion",
+                "titulo": f"Creación RFC #{rfc_num}",
+                "descripcion": f"{rfc_desc} (Depto: {r.get('ASSIGN_DEPT') or 'Sin Depto'})",
+                "fecha": dt_rfc_enter.isoformat(),
+                "estado": r.get("STATUS") or "Ingresada",
+                "es_futuro": False,
+                "es_atrasado": False,
+                "icono": "🔄",
+                "color_tipo": "#8B5CF6",
+                "metadata": {
+                    "rfc_number": rfc_num,
+                    "depto": r.get("ASSIGN_DEPT"),
+                    "solicitante": r.get("REQUESTED_BY")
+                }
+            })
+
+        # 4.2 Cierre RFC
+        dt_rfc_close = _parse_timeline_dt(r.get("CLOSE_TIME"))
+        if dt_rfc_close:
+            eventos.append({
+                "id": f"rfc-close-{rfc_num}",
+                "categoria": "rfc",
+                "categoria_label": "RFCs",
+                "tipo_evento": "cierre",
+                "titulo": f"Cierre / Implementación RFC #{rfc_num}",
+                "descripcion": rfc_desc,
+                "fecha": dt_rfc_close.isoformat(),
+                "estado": r.get("STATUS") or "Cerrada",
+                "es_futuro": False,
+                "es_atrasado": False,
+                "icono": "✅",
+                "color_tipo": "#10B981",
+                "metadata": {
+                    "rfc_number": rfc_num
+                }
+            })
+
+    # 5. Ordenamiento Cronológico Estricto (Fecha Ascendente) con desempate por ciclo natural
+    tipo_prioridad = {
+        ("sharepoint", "creacion"): 1,
+        ("sharepoint", "actualizacion"): 2,
+        ("solot", "creacion"): 3,
+        ("ticket", "creacion"): 4,
+        ("rfc", "creacion"): 5,
+        ("solot", "compromiso"): 6,
+        ("solot", "cierre"): 7,
+        ("ticket", "cierre"): 8,
+        ("rfc", "cierre"): 9
+    }
+
+    def sort_key(ev):
+        raw_dt = _parse_timeline_dt(ev.get("fecha"))
+        prio = tipo_prioridad.get((ev.get("categoria"), ev.get("tipo_evento")), 99)
+        return (raw_dt or datetime.datetime.min, prio)
+
+    eventos.sort(key=sort_key)
+
+    # 6. Cálculo de Lapsos Temporales entre Hitos Consecutivos y Formateo DMY
+    prev_dt = None
+    first_dt = None
+
+    for idx, ev in enumerate(eventos):
+        ev_dt = _parse_timeline_dt(ev.get("fecha"))
+        if ev_dt:
+            if first_dt is None:
+                first_dt = ev_dt
+
+            # Formateo DD/MM/YYYY
+            ev["fecha_formateada"] = ev_dt.strftime("%d/%m/%Y")
+
+            # Cálculo de lapso con el hito anterior
+            if prev_dt is not None:
+                dias_diff = max(0, (ev_dt.date() - prev_dt.date()).days)
+                ev["lapso_dias"] = dias_diff
+            else:
+                ev["lapso_dias"] = 0
+
+            prev_dt = ev_dt
+        else:
+            ev["fecha_formateada"] = "Fecha no disponible"
+            ev["lapso_dias"] = 0
+
+    # 7. Cálculo de Lead Time Total
+    lead_time_total_dias = 0
+    if first_dt:
+        lead_time_total_dias = max(0, (hoy - first_dt.date()).days)
+
+    # 8. Consolidación de Métricas de Cabecera
+    total_eventos = len(eventos)
+    ev_sp = sum(1 for e in eventos if e["categoria"] == "sharepoint")
+    ev_solot = sum(1 for e in eventos if e["categoria"] == "solot")
+    ev_ticket = sum(1 for e in eventos if e["categoria"] == "ticket")
+    ev_rfc = sum(1 for e in eventos if e["categoria"] == "rfc")
+
+    comp_vencidos = sum(1 for e in eventos if e.get("es_atrasado"))
+    comp_pendientes = sum(1 for e in eventos if e.get("es_futuro"))
+
+    # Último hito pasado registrado
+    hitos_pasados = [e for e in eventos if not e.get("es_futuro")]
+    ultimo_hito = hitos_pasados[-1] if hitos_pasados else (eventos[-1] if eventos else None)
+
+    # Próximo compromiso futuro o el más vencido
+    hitos_vencidos = [e for e in eventos if e.get("es_atrasado")]
+    hitos_futuros = [e for e in eventos if e.get("es_futuro")]
+
+    proximo_compromiso = None
+    if hitos_vencidos:
+        # Priorizar alerta del compromiso con mayor atraso
+        hitos_vencidos.sort(key=lambda x: x.get("dias_atraso", 0), reverse=True)
+        critico = hitos_vencidos[0]
+        proximo_compromiso = {
+            "titulo": critico["titulo"],
+            "categoria": critico["categoria"],
+            "fecha": critico["fecha"],
+            "fecha_formateada": critico["fecha_formateada"],
+            "dias_atraso": critico.get("dias_atraso", 0),
+            "es_atrasado": True
+        }
+    elif hitos_futuros:
+        proximo_compromiso = {
+            "titulo": hitos_futuros[0]["titulo"],
+            "categoria": hitos_futuros[0]["categoria"],
+            "fecha": hitos_futuros[0]["fecha"],
+            "fecha_formateada": hitos_futuros[0]["fecha_formateada"],
+            "dias_restantes": hitos_futuros[0].get("dias_restantes", 0),
+            "es_atrasado": False
+        }
+
+    return {
+        "proyecto_id": proyecto_id,
+        "numero_proyecto": numero_proyecto,
+        "cliente": proyecto.get("Cliente", "Sin Cliente"),
+        "lt_asignado": proyecto.get("LT_Asignado", "Sin Asignar"),
+        "lead_time_total_dias": lead_time_total_dias,
+        "metricas": {
+            "total_eventos": total_eventos,
+            "eventos_sharepoint": ev_sp,
+            "eventos_solot": ev_solot,
+            "eventos_ticket": ev_ticket,
+            "eventos_rfc": ev_rfc,
+            "compromisos_pendientes": comp_pendientes,
+            "compromisos_vencidos": comp_vencidos,
+            "ultimo_hito": ultimo_hito,
+            "proximo_compromiso": proximo_compromiso
+        },
+        "eventos": eventos
+    }
+
+
 

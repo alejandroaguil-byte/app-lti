@@ -35,14 +35,19 @@
    - **Kill-Switch**: Botón `📄 Ficha PDF: ON / OFF` (`#pdf-export-toggle-btn`), switch maestro en runtime y política estricta de Cero Rastros.
    - **Pruebas Automatizadas:** Suite completa en `tests/test_ficha_ejecutiva_pdf.py` y `tests/test_functional_ficha_ejecutiva_pdf.py` (13/13 aprobadas).
 
+4. **Funcionalidad 4: Timeline / Línea de Tiempo Visual del Proyecto (Visual Roadmap) & Kill-Switch**:
+   - **Estado:** ✅ **IMPLEMENTADA, INTEGRADA Y VALIDADA (100%)**.
+   - Pestaña interactiva `📈 Línea de Tiempo` (`data-tab="timeline"`) con unificación cronológica de 4 subsistemas (SharePoint, Solots SGA, Tickets HPSM, RFCs).
+   - Medición visual de lapsos entre hitos consecutivos (`⏱️ +X d`) y cálculo de Lead Time Total.
+   - Grilla de 4 tarjetas KPI en cabecera (Total Hitos, Lead Time, Último Hito, Próximo Compromiso / Alerta de Atraso con borde pulsante `#B52217`).
+   - Barra de filtros rápidos por categoría tipo píldora (`🌟 Todos`, `📁 SharePoint`, `⚡ SGA Solots`, `🎫 Tickets SD`, `🔄 RFCs`).
+   - Endpoint backend dedicado: `GET /api/proyectos/{id}/timeline` protegido con `Depends(require_lti_or_admin)`.
+   - **Kill-Switch Mandatorio**: Botón `⏱️ Timeline: ON / OFF` en sub-barra, switch global `window.HALO_CONFIG.ENABLE_TIMELINE`, `localStorage` y política estricta de Cero Rastros (auto-conmutación inmediata a `📋 Resumen` si estaba activa al apagar).
+   - **Pruebas Automatizadas:** 18/18 pruebas aprobadas (10 unitarias en `tests/test_timeline_visual.py` y 8 funcionales/E2E en `tests/test_functional_timeline_visual.py`). Total suite de regresión: 37/37 aprobadas.
+
 ---
 
 ## 🚀 ROADMAP PENDIENTE PARA MAÑANA (SESIÓN PREVIA A LA DEMO DEL JUEVES)
-
-### ⏱️ Funcionalidad 4: Timeline / Línea de Tiempo Visual del Proyecto (Visual Roadmap)
-- **Objetivo:** Nueva pestaña en el Drill Down que unifique cronológicamente los hitos del proyecto: Creación en SharePoint ➔ Asignación de Líder ➔ Apertura de Solots SGA ➔ Generación de Tickets HPSM ➔ Creación de RFCs ➔ Hitos pendientes.
-- **Valor para el Gerente:** Visibilidad histórica inmediata del ciclo de vida del proyecto en una sola gráfica interactiva.
-- **Requerimiento:** Pestaña `📈 Línea de Tiempo` en modal de proyecto con Kill-Switch.
 
 ### 🔔 Funcionalidad 5: Centro de Alertas Tempranas y Escalamiento Rápido (SLA Warnings)
 - **Objetivo:** Icono de campanita / panel flotante de alertas en la cabecera que resuma los incidentes que exceden SLAs operacionales (>14 días en torres, Solots vencidas sin fecha compromiso).
