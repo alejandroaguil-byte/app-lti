@@ -7,7 +7,7 @@ set -e
 
 REMOTE_HOST="iacdi"
 REMOTE_IP="100.82.24.75"
-REMOTE_USER="iacdi"
+REMOTE_USER="bobbasystem"
 REMOTE_DIR="/home/iacdi/Desarrollos/app-lti"
 
 LOCAL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,7 +18,7 @@ echo "Destino: $REMOTE_USER@$REMOTE_HOST ($REMOTE_IP):$REMOTE_DIR"
 echo "=================================================="
 
 # Sincronización con rsync excluyendo venv, git, cache y .env remoto
-rsync -avz --progress \
+rsync -rtvz --no-o --no-g --omit-dir-times --progress \
     --exclude 'venv/' \
     --exclude '.git/' \
     --exclude '__pycache__/' \
