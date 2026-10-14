@@ -219,7 +219,7 @@ def build_announcement_html(is_test: bool = False) -> str:
                 HALO — Ecosistema de Plataformas TI
               </div>
               <div style="color: #94A3B8; font-size: 11px; line-height: 1.4;">
-                Dirección de Operaciones TI • Claro Chile / VTR<br>
+                PCDI • Claro Chile / VTR<br>
                 Este es un mensaje institucional automatizado generado por el sistema HALO App LTI.
               </div>
             </td>
@@ -318,33 +318,28 @@ def main():
 
     if args.send_all:
         pms = get_pm_recipients()
-        print(f"⚠️ ATENCIÓN: Se enviará el comunicado a {len(pms)} Project Managers.")
+        # Filtrar destinatarios oficiales (31 PMs del listado corporativo)
+        to_list = [email for email in sorted(pms.keys()) if not email.startswith("camila.albornoz")]
+        bcc_list = ["alejandro.aguilarm@clarovtr.cl", "pablo.castillo@clarovtr.cl"]
+
+        print(f"==================================================")
+        print(f"🚀 INICIANDO DIFUSIÓN OFICIAL")
+        print(f"Total Destinatarios To ({len(to_list)} PMs):")
+        for i, email in enumerate(to_list, 1):
+            print(f"  {i:02d}. {pms.get(email, 'PM')} <{email}>")
+        print(f"Copia Oculta BCC ({len(bcc_list)}): {', '.join(bcc_list)}")
+        print(f"==================================================")
+
         html = build_announcement_html(is_test=False)
         subject = "[COMUNICADO OFICIAL] Nuevo Canal Exclusivo para Solicitud de Líder Técnico (LTI) — Migración a App LTI"
-        
-        sent_count = 0
-        error_count = 0
-        for email, name in sorted(pms.items()):
-            try:
-                print(f"Enviando a: {name} <{email}>...")
-                res = send_email_notification(
-                    to_emails=email,
-                    subject=subject,
-                    html_body=html
-                )
-                if res.get("success"):
-                    sent_count += 1
-                else:
-                    print(f"  ❌ Fallo: {res.get('error')}")
-                    error_count += 1
-                time.sleep(0.5)  # Breve pausa para no saturar SMTP
-            except Exception as e:
-                print(f"  ❌ Excepción enviando a {email}: {e}")
-                error_count += 1
 
-        print("==================================================")
-        print(f"RESUMEN: Enviados: {sent_count} | Errores: {error_count}")
-        print("==================================================")
+        res = send_email_notification(
+            to_emails=to_list,
+            subject=subject,
+            html_body=html,
+            bcc_emails=bcc_list
+        )
+        print("Resultado del Envío:", res)
         return
 
     parser.print_help()

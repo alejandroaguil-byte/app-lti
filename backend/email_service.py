@@ -337,13 +337,14 @@ def send_email_notification(
     html_body: Optional[str] = None,
     text_body: Optional[str] = None,
     cc_emails: Optional[Union[str, List[str]]] = None,
+    bcc_emails: Optional[Union[str, List[str]]] = None,
     attachment_bytes: Optional[bytes] = None,
     attachment_filename: Optional[str] = None,
     attachment_content_type: Optional[str] = None,
     smtp_config_override: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Envía un correo electrónico con soporte para To, CC, HTML y texto plano multipart/alternative.
+    Envía un correo electrónico con soporte para To, CC, BCC, HTML y texto plano multipart/alternative.
     Aplica STARTTLS sobre Microsoft Office 365 y sanitización contra Email Header Injection.
     """
     import html as html_lib
@@ -362,12 +363,13 @@ def send_email_notification(
             "El servicio de correo no está configurado (SMTP_USER y SMTP_PASS no definidos)."
         )
 
-    # 2. Destinatarios To y CC
+    # 2. Destinatarios To, CC y BCC
     clean_to = parse_and_validate_recipients(to_emails)
     if not clean_to:
         raise ValueError(f"Destinatario(s) inválido(s) o vacío(s): {to_emails}")
 
     clean_cc = parse_and_validate_recipients(cc_emails) if cc_emails else []
+    clean_bcc = parse_and_validate_recipients(bcc_emails) if bcc_emails else []
 
     # 3. Asunto y Cuerpos
     clean_subject = (subject or "").strip()
@@ -389,7 +391,7 @@ def send_email_notification(
             f"El archivo adjunto supera el tamaño máximo de {MAX_ATTACHMENT_SIZE_BYTES // (1024 * 1024)} MB."
         )
 
-    # 5. Construcción del mensaje MIME
+    # 5. Construcción del mensaje MIME (BCC no se incluye en las cabeceras para mantenerlo oculto)
     msg = build_mime_message(
         from_addr=smtp_from,
         to_addrs=clean_to,
@@ -402,8 +404,8 @@ def send_email_notification(
         cc_addrs=clean_cc if clean_cc else None,
     )
 
-    # 6. Envío SMTP
-    envelope_recipients = list(dict.fromkeys(clean_to + clean_cc))
+    # 6. Envío SMTP en sobre a To + CC + BCC
+    envelope_recipients = list(dict.fromkeys(clean_to + clean_cc + clean_bcc))
     server = None
     try:
         logger.info(f"Conectando a SMTP {smtp_host}:{smtp_port} para enviar '{clean_subject}'...")
@@ -413,7 +415,7 @@ def send_email_notification(
         server.ehlo()
         server.login(smtp_user, smtp_pass)
         server.sendmail(smtp_from, envelope_recipients, msg.as_string())
-        logger.info(f"Correo enviado exitosamente a To={clean_to}, CC={clean_cc}")
+        logger.info(f"Correo enviado exitosamente a To={clean_to}, CC={clean_cc}, BCC={clean_bcc}")
 
         now_iso = datetime.now(timezone.utc).isoformat()
         return {
@@ -422,6 +424,7 @@ def send_email_notification(
             "data": {
                 "to": clean_to,
                 "cc": clean_cc,
+                "bcc": clean_bcc,
                 "subject": clean_subject,
                 "sent_at": now_iso,
             }
@@ -560,7 +563,7 @@ def build_solicitud_creada_email_html(proyecto_data: dict, solicitante_nombre: O
                     <!-- Footer Corporativo -->
                     <tr>
                         <td style="background-color: #F8FAFC; border-top: 1px solid #E2E8F0; padding: 16px 28px; text-align: center; font-size: 12px; color: #64748B;">
-                            <div>Este correo fue generado automáticamente por <strong>Portal HALO ClaroVTR</strong>.</div>
+                            <div>Este correo fue generado automáticamente por <strong>Portal HALO ClaroVTR — PCDI</strong>.</div>
                             <div style="margin-top: 4px;">Por favor, no responda directamente a este remitente desatendido.</div>
                         </td>
                     </tr>
@@ -667,7 +670,7 @@ def build_solicitud_recordatorio_email_html(
                     <tr>
                         <td style="background-color: #F8FAFC; border-top: 1px solid #E2E8F0; padding: 16px 28px; text-align: center; font-size: 12px; color: #64748B;">
                             <div>Este recordatorio se emite automáticamente cada 6 horas hasta que cada requerimiento cuente con Líder Técnico.</div>
-                            <div style="margin-top: 4px;">Plataforma HALO ClaroVTR • Gestión y Asignación de Solicitudes LTI.</div>
+                            <div style="margin-top: 4px;">Plataforma HALO ClaroVTR • PCDI • Gestión y Asignación de Solicitudes LTI.</div>
                         </td>
                     </tr>
                 </table>
@@ -769,7 +772,7 @@ def build_solicitud_asignada_email_html(
                     <tr>
                         <td style="background-color: #F8FAFC; border-top: 1px solid #E2E8F0; padding: 16px 28px; text-align: center; font-size: 12px; color: #64748B;">
                             <div>Este correo fue despachado al PM solicitante con copia (CC) al Líder Técnico asignado.</div>
-                            <div style="margin-top: 4px;">Suite HALO ClaroVTR • Gestión Integrada de Proyectos TI.</div>
+                            <div style="margin-top: 4px;">Suite HALO ClaroVTR • PCDI • Gestión Integrada de Proyectos TI.</div>
                         </td>
                     </tr>
                 </table>
