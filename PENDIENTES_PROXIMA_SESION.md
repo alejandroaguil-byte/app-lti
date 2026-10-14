@@ -1,91 +1,78 @@
 # 📌 MEMORIA Y REGISTRO DE SESIÓN — APP LTI / HALO
 
-**Fecha de Registro:** 2026-10-06  
+**Fecha de Registro:** 2026-10-14  
 **Proyecto:** HALO — App Líderes TI (`/home/bobbasystem/Desarrollos/app-lti`)  
-**Rama Git Activa:** `sso-portal-acceso`  
+**Rama Git Activa:** `main` / `sso-portal-acceso`  
+**Versión / Tag Oficial:** `v1.8.0` ([GitHub Release v1.8.0](https://github.com/alejandroaguil-byte/app-lti/releases/tag/v1.8.0))  
 **Servidores Sincronizados:**
 - Desarrollo: `bobbadeveloper` (Localhost:8000)
-- Producción: `iacdi` (Tailscale `100.82.24.75:8000` / Nginx `http://127.0.0.1:8000/app-lti/`)
+- Producción: `iacdi` (Tailscale `100.82.24.75:8000` / Nginx `https://200.14.222.162/app-lti/`)
 
 ---
 
-## 🛠️ TRABAJO COMPLETADO EN ESTA SESIÓN (2026-10-06)
+## 🛠️ TRABAJO COMPLETADO EN ESTA SESIÓN (2026-10-14)
 
-### 1. Item 2.4: Integración en Health-Check & Auto-Restart en Producción (`iacdi`)
-- **Estado:** ✅ **100% COMPLETADO Y CERTIFICADO**.
-- **Instalación:** Se ejecutó con `sudo` el script de despliegue `/home/iacdi/portal-acceso/deploy/install-health-check.sh`, actualizando la copia que corre periódicamente en `/usr/local/sbin/portal-acceso-healthcheck.sh`.
-- **Verificación de Health-Check:** Muestra las 6 líneas "OK" operativas (incluyendo `app-lti.service`).
-- **Verificaciones de Seguridad y Resiliencia:**
-  1. **Firewall / UFW:** Se ejecutó `sudo ufw status`. El puerto `8000` **no** está expuesto al exterior. El servicio `uvicorn` escucha exclusivamente en `127.0.0.1:8000` (acceso únicamente vía proxy reverso Nginx con TLS y rate-limiting).
-  2. **Playwright bajo usuario `iacdi`:** Se validó la ejecución desatendida del motor Chromium v151 con el venv de producción bajo la configuración de hardening systemd (`PrivateTmp=true`, sin `MemoryDenyWriteExecute`).
-  3. **Prueba de Recuperación (Auto-Restart):** Se detuvo intencionalmente `app-lti.service` y se ejecutó el health-check. El sistema detectó la caída y reinició el servicio automáticamente en 2 segundos, dejándolo nuevamente en `active (running)`.
-
----
-
-### 2. Blindaje RBAC para Rol PM en Endpoints de Tickets
-- **Estado:** ✅ **100% COMPLETADO Y VALIDADO**.
-- **Requerimiento:** Asegurar que los usuarios con rol `PM` únicamente puedan interactuar con el formulario de Solicitud Líder TI.
-- **Implementación en Backend (`backend/main.py`):**
-  - Se actualizaron los decoradores de `/api/automation/create-ticket` y `/api/automation/send-ticket-email` de `get_current_user` a `require_lti_or_admin`.
-  - Ahora cualquier intento de un usuario con rol `PM` de interactuar con la generación de tickets o envío de correos vía API directa es rechazado con `403 Forbidden` (`detail: "Permiso denegado. Los usuarios con rol PM solo tienen acceso al módulo de Solicitud LTI."`).
-- **Pruebas Automatizadas:** Se añadió el caso `test_pm_forbidden_from_ticket_automation` en `tests/test_sso_portal_auth.py` (13/13 pruebas aprobadas).
+### 1. Pipeline de 5 Subagentes (`flujo-5-agentes`): Módulo Notificaciones Solicitud LTI
+- **Estado:** ✅ **100% COMPLETADO, TESTEADO Y CERTIFICADO**.
+- **Planificador de Specs (`planificador_specs`)**: Generó `SPECS_NOTIFICACIONES_CORREO_SOLICITUD_LTI.md` con los 3 eventos de correo, contratos REST, esquema MSSQL y plantillas HTML con paleta HALO.
+- **Coder (`coder`)**: Implementó:
+  1. *Evento 1 (Creación)*: Correo automático a `alejandro.aguilarm@clarovtr.cl` y `pablo.castillo@clarovtr.cl` con la ficha completa del requerimiento (N° Proyecto, Cliente, PM Solicitante, Estado 'Generado' y Detalle con Solots Liray).
+  2. *Evento 2 (Recordatorio)*: Worker asíncrono en segundo plano (`lifespan` + `asyncio`) que audita cada 6 horas solicitudes sin líder técnico asignado, con control de persistencia en MSSQL (`Ultimo_Recordatorio` y `Contador_Recordatorios` en `dbo.Proyectos`) para evitar spam o duplicados.
+  3. *Evento 3 (Asignación)*: Al asignar un líder técnico en `PUT /api/proyectos/{id}`, notificación automática al PM solicitante con copia (**CC**) al Líder Técnico asignado.
+  4. *Resolución de Identidad*: Integración con el directorio de usuarios de Portal Halo, aprovisionamiento JIT y resolución empresarial `@clarovtr.cl`.
+- **Revisor de Código (`code_reviewer`)**: Auditó seguridad (prevención CRLF y SQL injection), resiliencia SMTP y aprobó con **0 errores**.
+- **QA Tester (`qa_tester`)**: Ejecutó 90/90 tests (26 unitarios de notificaciones + 64 integración/regresión), certificando el **100% de éxito**.
+- **Validador de Specs (`specs_validator`)**: Certificó estricto cumplimiento del principio *"Ni más ni menos"*.
 
 ---
 
-### 3. Homologación de Tipografía Institucional con el Resto del Portal
-- **Estado:** ✅ **100% COMPLETADO Y HOMOLOGADO**.
-- **Auditoría:** Se analizaron las demás apps del portal (`asignacion-ingenieros-app`, `cv-certificaciones`, `mapa-proyecto`, `provision-plataformas`, `ausencias`, `portal-acceso`).
-- **Implementación (`frontend/index.html` y `frontend/css/styles.css`):**
-  - Se eliminó la dependencia externa a Google Fonts *Roboto* en `frontend/index.html`.
-  - Se estandarizó la variable global `--font-sans` a la pila tipográfica nativa del sistema:
-    `-apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;`
-  - Se estandarizó `--font-mono` a `ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;`.
-  - La apariencia visual ahora es 100% homogénea con las demás aplicaciones del Portal HALO.
+### 2. Saneamiento y Filtro Anti-Dummy de Recordatorios
+- **Estado:** ✅ **100% OPERATIVO EN PRODUCCIÓN**.
+- **Detección:** Los recordatorios de 6 horas estaban considerando 11 proyectos dummy históricos de SharePoint (ej. `0001111111`, tipo `Reunión`, demos).
+- **Corrección:** Implementación de `is_valid_project_number()` y cláusulas SQL en `backend/db.py` y `backend/main.py` para ignorar permanentemente números dummy y tipos no operacionales.
+- **Verificación en Producción:** Endpoint `/api/solicitudes/recordatorios/estado` confirmó:
+  - `total_proyectos_sin_asignar: 1` (proyecto real legítimo).
+  - `total_proyectos_requieren_recordatorio: 0`.
 
 ---
 
-### 4. Rediseño UI: Barra Lateral Expandible (Sidebar) & Agrupador "Configuraciones"
-- **Estado:** ✅ **100% IMPLEMENTADO, TESTEADO Y DESPLEGADO**.
-- **Diseño General:**
-  - Se eliminó la acumulación horizontal de botones superiores.
-  - Se implementó una barra lateral sticky fija a la izquierda (`.nav-subbar` / `.app-sidebar`) con el área de trabajo ocupando el 100% restante con layout fluido flexbox.
-  - **Botón de Toggle Expandir / Contraer:**
-    * Botón hamburguesa `#sidebar-toggle-btn` en la cabecera superior junto a la marca HALO.
-    * Botón chevron `#sidebar-inner-toggle-btn` en el encabezado interno del sidebar.
-  - **Modo Expandido (~250px):** Muestra iconos y nombres completos de secciones y switches.
-  - **Modo Colapsado (~68px):** Modo compacto con tooltips nativos en cada icono al pasar el mouse.
-  - **Persistencia:** Guarda el estado en `localStorage` (`halo_sidebar_collapsed`).
-- **Secciones del Sidebar:**
-  1. **📌 MÓDULOS DE NAVEGACIÓN:**
-     - 📊 `Seguimiento Proyectos` (`#nav-btn-projects`)
-     - 🔎 `Búsqueda Directa en Tablas` (`#nav-btn-direct-search`)
-     - 🤖 `Generador de Tickets` (`#nav-btn-tickets`)
-     - 📝 `Solicitud LTI` (`#nav-btn-solicitud-lti`)
-     - 👥 `Usuarios` (`#nav-btn-usuarios`, protegido por RBAC, sólo ADMIN).
-  2. **⚙️ CONFIGURACIONES (Switches ON/OFF):**
-     - 🚦 `Salud: ON / OFF` (`#health-score-toggle-btn`)
-     - ⚡ `Diagnóstico: ON / OFF` (`#diag-toggle-btn`)
-     - 📄 `Ficha PDF: ON / OFF` (`#pdf-export-toggle-btn`)
-     - ⏱️ `Timeline: ON / OFF` (`#timeline-toggle-btn`)
-     - 🔔 `Alertas: ON / OFF` (`#alerts-toggle-btn`)
-     - *Regla RBAC para PM:* Para rol PM, la sección completa de configuraciones se oculta automáticamente (`display: none;`).
-  3. **👤 PIE DEL SIDEBAR:**
-     - Badge de Rol (`#user-role-badge`)
-     - Conmutador de Tema Claro / Oscuro (`#theme-toggle-btn`)
-- **Versionado de Assets:** Cache busters actualizados a `css/styles.css?v=9.0` y `js/app.js?v=9.0`.
+### 3. Emisión del Comunicado Oficial a Project Managers (PMs)
+- **Estado:** ✅ **DESPACHADO Y RECIBIDO EXITOSAMENTE**.
+- **Herramienta:** Script `scripts/enviar_comunicado_pms.py` con soporte para destinatarios múltiples y Copia Oculta (**BCC**) vía RFC SMTP.
+- **Destinatarios `To`:** 31 Project Managers oficiales extraídos del directorio corporativo.
+- **Destinatarios `BCC`:** `alejandro.aguilarm@clarovtr.cl` y `pablo.castillo@clarovtr.cl`.
+- **Contenido:** Aviso formal de migración obligatoria desde SharePoint hacia la App LTI a partir del Lunes 08:30 AM, con enlace oficial `https://200.14.222.162/login.html`.
+- **Confirmación:** Correo recibido conforme en bandeja de entrada.
 
 ---
 
-## 🧪 RESULTADOS DE PRUEBAS AUTOMATIZADAS
-- `tests/test_sso_portal_auth.py`: **13/13 pasadas (100%)**
-- `tests/test_functional_mantenedor_usuarios.py`: **18/18 pasadas (100%)**
-- `tests/test_functional_solicitud_lti.py`: **20/20 pasadas (100%)**
-- `tests/test_timeline_visual.py` & `tests/test_alertas_sla.py` & `tests/test_ficha_ejecutiva_pdf.py`: **34/34 pasadas (100%)**
-- Total suites ejecutadas: **0 fallos, 100% aprobadas**.
+### 4. Estandarización de Identidad Institucional PCDI
+- **Estado:** ✅ **HOMOLOGADO Y REGISTRADO COMO REGLA PERMANENTE**.
+- **Acción:** Se erradicó la denominación *"Dirección de Operaciones TI"* de todas las plantillas de correo y scripts.
+- **Nuevo Estándar:** **`PCDI • Claro Chile / VTR`**.
+- **Regla Obligatoria:** Fijada en `AGENTS.md` y `.agents/rules/flujo_5_agentes.md` para todos los desarrollos futuros.
 
 ---
 
-## 🚀 ESTADO DE PRODUCCIÓN EN SERVIDOR `iacdi`
-- Código fuente sincronizado vía `rsync` con `deploy_to_iacdi.sh`.
-- Servicio `app-lti.service` reiniciado y respondiendo `200 OK` en `/api/health`.
-- Todo limpio y listo para el cierre de sesión.
+### 5. Control de Versiones, GitHub y Release Oficial
+- **Estado:** ✅ **PUBLICADO EN GITHUB**.
+- **Ramas:** `main` y `sso-portal-acceso` sincronizadas al último commit (`fe67539`).
+- **Documentación:** `README.md` actualizado y `RELEASE_v1.8.0.md` generado.
+- **Release:** Publicado formalmente en [GitHub Release v1.8.0](https://github.com/alejandroaguil-byte/app-lti/releases/tag/v1.8.0).
+
+---
+
+## 🚀 ESTADO EN PRODUCCIÓN (`iacdi` / `100.82.24.75`)
+- Archivos sincronizados en `/home/iacdi/Desarrollos/app-lti`.
+- Servicio `app-lti.service` activo y verificado en ejecución (`active (running)`).
+- Endpoints operativos:
+  - `GET /api/health` &rarr; `200 OK`
+  - `GET /api/solicitudes/recordatorios/estado` &rarr; `200 OK`
+- URL de acceso institucional: **`https://200.14.222.162/login.html`** &rarr; App LTI.
+
+---
+
+## 📋 PENDIENTES PARA LA PRÓXIMA SESIÓN
+- **0 pendientes bloqueantes.**
+- Monitoreo preventivo del ingreso de solicitudes por los PMs a partir del lunes a las 08:30 AM.
+- Sesión cerrada en estado 100% operativo y certificado.
