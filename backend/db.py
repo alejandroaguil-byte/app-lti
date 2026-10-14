@@ -162,9 +162,10 @@ def calcular_salud_proyecto(row: dict) -> dict:
 
 
 def init_auth_tables():
-    """Ensures dbo.App_Usuarios table exists with updated_at column and nullable password_hash."""
+    """Ensures dbo.App_Usuarios table exists with updated_at, email, and dbo.Proyectos has reminder tracking columns."""
     conn = get_db_connection()
     try:
+        # 1. dbo.App_Usuarios
         with conn.cursor() as cursor:
             cursor.execute("""
             IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'App_Usuarios')
@@ -175,6 +176,7 @@ def init_auth_tables():
                     nombre_completo VARCHAR(150) NOT NULL,
                     lt_asignado VARCHAR(150) NULL,
                     rol VARCHAR(50) NOT NULL DEFAULT 'PM',
+                    email VARCHAR(150) NULL,
                     activo BIT NOT NULL DEFAULT 1,
                     created_at DATETIME NOT NULL DEFAULT GETDATE(),
                     updated_at DATETIME NOT NULL DEFAULT GETDATE()
@@ -186,13 +188,62 @@ def init_auth_tables():
                 BEGIN
                     ALTER TABLE dbo.App_Usuarios ADD updated_at DATETIME NOT NULL DEFAULT GETDATE();
                 END
+                IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'App_Usuarios' AND COLUMN_NAME = 'email')
+                BEGIN
+                    ALTER TABLE dbo.App_Usuarios ADD email VARCHAR(150) NULL;
+                END
                 IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'App_Usuarios' AND COLUMN_NAME = 'password_hash' AND IS_NULLABLE = 'NO')
                 BEGIN
                     ALTER TABLE dbo.App_Usuarios ALTER COLUMN password_hash VARCHAR(255) NULL;
                 END
             END
             """)
-            conn.commit()
+        conn.commit()
+
+        # 2. Tracking de recordatorios en dbo.Proyectos
+        with conn.cursor() as cursor:
+            cursor.execute("""
+            IF NOT EXISTS (
+                SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS 
+                WHERE TABLE_NAME = 'Proyectos' AND COLUMN_NAME = 'Ultimo_Recordatorio'
+            )
+            BEGIN
+                ALTER TABLE dbo.Proyectos ADD Ultimo_Recordatorio DATETIME NULL;
+            END
+
+            IF NOT EXISTS (
+                SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS 
+                WHERE TABLE_NAME = 'Proyectos' AND COLUMN_NAME = 'Contador_Recordatorios'
+            )
+            BEGIN
+                ALTER TABLE dbo.Proyectos ADD Contador_Recordatorios INT NOT NULL DEFAULT 0;
+            END
+            """)
+        conn.commit()
+
+        # 3. Índice para optimizar consulta periódica del scheduler cada 6 horas
+        # Nota: En dbo.Proyectos, Estado es NVARCHAR(MAX) por lo que no puede ser key column; se usan LT_Asignado, Creado, Ultimo_Recordatorio.
+        with conn.cursor() as cursor:
+            try:
+                cursor.execute("""
+                IF NOT EXISTS (
+                    SELECT 1 FROM sys.indexes 
+                    WHERE name = 'IX_Proyectos_LT_Asignado_Ultimo_Recordatorio' 
+                      AND object_id = OBJECT_ID('dbo.Proyectos')
+                )
+                BEGIN
+                    CREATE NONCLUSTERED INDEX IX_Proyectos_LT_Asignado_Ultimo_Recordatorio
+                    ON dbo.Proyectos (LT_Asignado, Creado, Ultimo_Recordatorio)
+                    INCLUDE (ID, Cliente, Numero_Proyecto, Solicitante);
+                END
+                """)
+                conn.commit()
+            except Exception as idx_err:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                logger.warning(f"Advertencia al verificar/crear índice IX_Proyectos_LT_Asignado_Ultimo_Recordatorio: {idx_err}")
     finally:
         conn.close()
 
@@ -225,13 +276,15 @@ def get_usuario_by_username(username):
 def get_or_create_jit_user(
     username: str,
     nombre_completo: Optional[str] = None,
-    default_rol: str = "PM"
+    default_rol: str = "PM",
+    email: Optional[str] = None
 ) -> dict:
-    """Busca por LOWER(username) y si no existe lo inserta con activo=1 y rol=default_rol (JIT Provisioning)."""
+    """Busca por LOWER(username) y si no existe lo inserta con activo=1, email y rol=default_rol (JIT Provisioning)."""
     if not username:
         return None
     uname = username.strip().lower()
     full_name = (nombre_completo.strip() if nombre_completo and str(nombre_completo).strip() else uname.replace(".", " ").title())
+    user_email = email.strip().lower() if email and str(email).strip() else None
 
     canonical_lt = None
     lideres_map = {
@@ -253,26 +306,39 @@ def get_or_create_jit_user(
     try:
         with conn.cursor() as cursor:
             cursor.execute("""
-                SELECT id, username, nombre_completo, lt_asignado, rol, activo, created_at, updated_at
+                SELECT id, username, nombre_completo, lt_asignado, rol, activo, email, created_at, updated_at
                 FROM dbo.App_Usuarios
                 WHERE LOWER(username) = %s
             """, (uname,))
             existing = cursor.fetchone()
             if existing:
+                # Si existe pero no tenía email (o viene un nuevo email válido), actualizarlo
+                if user_email and (not existing.get('email') or existing.get('email').strip().lower() != user_email):
+                    try:
+                        cursor.execute("""
+                            UPDATE dbo.App_Usuarios
+                            SET email = %s, updated_at = GETDATE()
+                            WHERE id = %s
+                        """, (user_email, existing['id']))
+                        conn.commit()
+                        existing['email'] = user_email
+                    except Exception as e:
+                        logger.warning(f"Aviso actualizando email de usuario JIT {uname}: {e}")
                 return serialize_row(existing)
 
             # Insertar nuevo usuario JIT
             cursor.execute("""
-                INSERT INTO dbo.App_Usuarios (username, nombre_completo, lt_asignado, rol, activo, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, 1, GETDATE(), GETDATE())
+                INSERT INTO dbo.App_Usuarios (username, nombre_completo, lt_asignado, rol, email, activo, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, 1, GETDATE(), GETDATE())
             """, (
                 uname,
                 full_name,
                 canonical_lt,
-                (default_rol.strip().upper() if default_rol else "PM")
+                (default_rol.strip().upper() if default_rol else "PM"),
+                user_email
             ))
             cursor.execute("""
-                SELECT id, username, nombre_completo, lt_asignado, rol, activo, created_at, updated_at
+                SELECT id, username, nombre_completo, lt_asignado, rol, activo, email, created_at, updated_at
                 FROM dbo.App_Usuarios
                 WHERE LOWER(username) = %s
             """, (uname,))
@@ -294,15 +360,15 @@ def get_all_usuarios(search=None, rol=None, activo=None):
     try:
         with conn.cursor() as cursor:
             sql = """
-                SELECT id, username, nombre_completo, lt_asignado, rol, activo, created_at, updated_at
+                SELECT id, username, nombre_completo, lt_asignado, rol, email, activo, created_at, updated_at
                 FROM dbo.App_Usuarios
                 WHERE 1=1
             """
             params = []
             if search and search.strip():
                 term = f"%{search.strip()}%"
-                sql += " AND (username LIKE %s OR nombre_completo LIKE %s OR ISNULL(lt_asignado, '') LIKE %s)"
-                params.extend([term, term, term])
+                sql += " AND (username LIKE %s OR nombre_completo LIKE %s OR ISNULL(lt_asignado, '') LIKE %s OR ISNULL(email, '') LIKE %s)"
+                params.extend([term, term, term, term])
 
             if rol and rol.strip():
                 sql += " AND rol = %s"
@@ -326,7 +392,7 @@ def get_usuario_by_id(user_id: int):
     try:
         with conn.cursor() as cursor:
             cursor.execute("""
-                SELECT id, username, nombre_completo, lt_asignado, rol, activo, created_at, updated_at
+                SELECT id, username, nombre_completo, lt_asignado, rol, email, activo, created_at, updated_at
                 FROM dbo.App_Usuarios
                 WHERE id = %s
             """, (user_id,))
@@ -340,7 +406,8 @@ def update_usuario(
     nombre_completo: str,
     lt_asignado: Optional[str] = None,
     rol: str = "PM",
-    activo: bool = True
+    activo: bool = True,
+    email: Optional[str] = None
 ) -> dict:
     """Actualiza datos de un usuario existente sin contraseñas."""
     conn = get_db_connection()
@@ -350,12 +417,15 @@ def update_usuario(
             if not cursor.fetchone():
                 return {"success": False, "error": "not_found", "message": f"Usuario ID {user_id} no encontrado"}
 
+            user_email = email.strip().lower() if email and str(email).strip() else None
+
             cursor.execute("""
                 UPDATE dbo.App_Usuarios
                 SET nombre_completo = %s,
                     lt_asignado = %s,
                     rol = %s,
                     activo = %s,
+                    email = COALESCE(%s, email),
                     updated_at = GETDATE()
                 WHERE id = %s
             """, (
@@ -363,6 +433,7 @@ def update_usuario(
                 (lt_asignado.strip() if lt_asignado and str(lt_asignado).strip() else None),
                 rol.strip().upper(),
                 1 if activo else 0,
+                user_email,
                 user_id
             ))
             conn.commit()
@@ -1507,14 +1578,27 @@ def update_proyecto(
     tipo_servicio: Optional[str] = "Otros",
     comentario: Optional[str] = None
 ) -> dict:
-    """Actualiza los campos operativos y estado de un proyecto en dbo.Proyectos."""
+    """Actualiza los campos operativos y estado de un proyecto en dbo.Proyectos detectando asignaciones."""
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            # 1. Verificar existencia del proyecto
-            cursor.execute("SELECT ID FROM dbo.Proyectos WHERE ID = %s", (proyecto_id,))
-            if not cursor.fetchone():
+            # 1. Verificar existencia del proyecto y capturar estado previo
+            cursor.execute("""
+                SELECT ID, Cliente, Numero_Proyecto, LT_Asignado, Estado, Detalle, Tipo_Servicio, Solicitante
+                FROM dbo.Proyectos WHERE ID = %s
+            """, (proyecto_id,))
+            prev_row = cursor.fetchone()
+            if not prev_row:
                 return {"success": False, "error": "not_found", "message": f"Proyecto ID {proyecto_id} no encontrado"}
+
+            prev_lt = prev_row.get("LT_Asignado")
+            prev_lt_str = str(prev_lt).strip() if prev_lt and str(prev_lt).strip() else None
+            new_lt_str = str(lt_asignado).strip() if lt_asignado and str(lt_asignado).strip() else None
+
+            is_prev_unassigned = not prev_lt_str or prev_lt_str.lower() in ('sin asignar', 'none', 'null')
+            is_new_assigned = bool(new_lt_str and new_lt_str.lower() not in ('sin asignar', 'none', 'null'))
+            was_assigned = is_prev_unassigned and is_new_assigned
+            solicitante_val = prev_row.get("Solicitante")
 
             # 2. Ejecutar UPDATE parametrizado
             sql_update = """
@@ -1530,7 +1614,7 @@ def update_proyecto(
             """
             cursor.execute(sql_update, (
                 cliente.strip()[:100],
-                (lt_asignado.strip()[:50] if lt_asignado and str(lt_asignado).strip() else None),
+                new_lt_str[:50] if new_lt_str else None,
                 estado.strip(),
                 detalle.strip(),
                 (tipo_servicio.strip()[:30] if tipo_servicio and str(tipo_servicio).strip() else "Otros"),
@@ -1551,8 +1635,254 @@ def update_proyecto(
     updated_data = get_proyecto_by_id(proyecto_id)
     return {
         "success": True,
-        "data": updated_data
+        "data": updated_data,
+        "was_assigned": was_assigned,
+        "prev_lt": prev_lt_str,
+        "new_lt": new_lt_str,
+        "solicitante": solicitante_val
     }
+
+# -----------------------------------------------------------------------------
+# HELPERS DE CORREO Y RECORDATORIOS (MÓDULO SOLICITUD LTI)
+# -----------------------------------------------------------------------------
+CANONICAL_EMAIL_MAP = {
+    "alejandro aguilar": "alejandro.aguilarm@clarovtr.cl",
+    "alejandro.aguilar": "alejandro.aguilarm@clarovtr.cl",
+    "aaguilar": "alejandro.aguilarm@clarovtr.cl",
+    "pablo castillo": "pablo.castillo@clarovtr.cl",
+    "pablo.castillo": "pablo.castillo@clarovtr.cl",
+    "pcastillo": "pablo.castillo@clarovtr.cl",
+    "erwin sandoval": "erwin.sandoval@clarovtr.cl",
+    "erwin.sandoval": "erwin.sandoval@clarovtr.cl",
+    "esandoval": "erwin.sandoval@clarovtr.cl",
+    "juan barrera": "juan.barrera@clarovtr.cl",
+    "juan.barrera": "juan.barrera@clarovtr.cl",
+    "jbarrera": "juan.barrera@clarovtr.cl",
+    "samuel paredes": "samuel.paredes@clarovtr.cl",
+    "samuel.paredes": "samuel.paredes@clarovtr.cl",
+    "sparedes": "samuel.paredes@clarovtr.cl",
+    "solange ortiz": "solange.ortiz@clarovtr.cl",
+    "solange.ortiz": "solange.ortiz@clarovtr.cl",
+    "sortiz": "solange.ortiz@clarovtr.cl",
+}
+
+EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+$")
+
+def normalize_text_for_username(text: str) -> str:
+    """Normaliza un texto quitando tildes y caracteres especiales, separando palabras con punto."""
+    if not text:
+        return ""
+    import unicodedata
+    nfkd = unicodedata.normalize('NFKD', str(text))
+    ascii_text = ''.join([c for c in nfkd if not unicodedata.combining(c)])
+    clean = re.sub(r"[^a-zA-Z0-9.\s_-]", "", ascii_text).strip().lower()
+    return re.sub(r"\s+", ".", clean)
+
+def resolve_user_email(user_identifier: Optional[str], conn=None) -> Optional[str]:
+    """
+    Resuelve el correo institucional corporativo de un usuario (PM o LTI):
+    1. Si ya tiene formato sintáctico de email -> sanitiza y retorna en minúsculas.
+    2. Consulta en catálogo canónico de coordinadores y líderes TI.
+    3. Consulta en dbo.App_Usuarios (por username, nombre_completo o lt_asignado).
+    4. Heurística empresarial normalizada (nombre.apellido@clarovtr.cl).
+    """
+    if not user_identifier:
+        return None
+
+    raw_ident = str(user_identifier).strip()
+    if not raw_ident or raw_ident.upper() in ('N/A', 'NONE', 'NULL', '-'):
+        return None
+
+    # 1. Si ya tiene formato de correo válido
+    if EMAIL_REGEX.match(raw_ident):
+        return raw_ident.lower()
+
+    # Normalizar identificador
+    ident_clean = raw_ident.lower()
+    ident_normalized = normalize_text_for_username(raw_ident)
+
+    # 2. Catálogo canónico estático
+    if ident_clean in CANONICAL_EMAIL_MAP:
+        return CANONICAL_EMAIL_MAP[ident_clean]
+    if ident_normalized in CANONICAL_EMAIL_MAP:
+        return CANONICAL_EMAIL_MAP[ident_normalized]
+
+    # Quitar posibles prefijos de PM como "Corp1 - ", etc.
+    cleaned_ident = clean_solicitante(raw_ident)
+    if cleaned_ident and cleaned_ident != UNMATCHED_SOLICITANTE:
+        cleaned_norm = normalize_text_for_username(cleaned_ident)
+        if cleaned_norm in CANONICAL_EMAIL_MAP:
+            return CANONICAL_EMAIL_MAP[cleaned_norm]
+
+    # 3. Consulta a dbo.App_Usuarios
+    should_close = False
+    active_conn = conn
+    if active_conn is None:
+        try:
+            active_conn = get_db_connection()
+            should_close = True
+        except Exception as conn_err:
+            logger.warning(f"No se pudo conectar a BD para resolver email de '{raw_ident}': {conn_err}")
+            active_conn = None
+
+    if active_conn is not None:
+        try:
+            with active_conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT TOP 1 email, username, nombre_completo 
+                    FROM dbo.App_Usuarios 
+                    WHERE (LOWER(username) = %s OR LOWER(nombre_completo) = %s OR LOWER(lt_asignado) = %s)
+                      AND email IS NOT NULL AND LTRIM(RTRIM(email)) <> ''
+                """, (ident_clean, ident_clean, ident_clean))
+                row = cursor.fetchone()
+                if row and row.get('email'):
+                    found_email = str(row['email']).strip().lower()
+                    if EMAIL_REGEX.match(found_email):
+                        return found_email
+        except Exception as e:
+            logger.warning(f"Error consultando dbo.App_Usuarios para resolver email de '{raw_ident}': {e}")
+        finally:
+            if should_close:
+                try:
+                    active_conn.close()
+                except Exception:
+                    pass
+
+    # 4. Heurística Corporativa Fallback (@clarovtr.cl)
+    parts = [p for p in ident_normalized.split('.') if p]
+    if len(parts) >= 2:
+        candidate_email = f"{parts[0]}.{parts[1]}@clarovtr.cl"
+        if EMAIL_REGEX.match(candidate_email):
+            return candidate_email
+    elif len(parts) == 1 and len(parts[0]) > 2:
+        candidate_email = f"{parts[0]}@clarovtr.cl"
+        if EMAIL_REGEX.match(candidate_email):
+            return candidate_email
+
+    return None
+
+def get_proyectos_pendientes_recordatorio(intervalo_minutos: int = 360, conn=None) -> List[dict]:
+    """
+    Obtiene los proyectos sin Líder Técnico asignado que requieren recordatorio:
+    - Estado <> 'Atendido'
+    - LT_Asignado IS NULL o vacío o 'sin asignar'
+    - Creado >= intervalo_minutos (si Ultimo_Recordatorio es NULL)
+      O Ultimo_Recordatorio >= intervalo_minutos
+    """
+    should_close = False
+    active_conn = conn
+    if active_conn is None:
+        active_conn = get_db_connection()
+        should_close = True
+
+    try:
+        with active_conn.cursor() as cursor:
+            sql = """
+                SELECT 
+                    p.ID,
+                    p.Cliente,
+                    p.Numero_Proyecto,
+                    p.LT_Asignado,
+                    p.Estado,
+                    p.Detalle,
+                    p.Tipo_Servicio,
+                    p.Creado,
+                    p.Solicitante,
+                    p.Ultimo_Recordatorio,
+                    ISNULL(p.Contador_Recordatorios, 0) AS Contador_Recordatorios,
+                    DATEDIFF(MINUTE, p.Creado, GETDATE()) AS Minutos_Desde_Creacion,
+                    CASE 
+                        WHEN p.Ultimo_Recordatorio IS NULL THEN DATEDIFF(MINUTE, p.Creado, GETDATE())
+                        ELSE DATEDIFF(MINUTE, p.Ultimo_Recordatorio, GETDATE())
+                    END AS Minutos_Desde_Ultimo_Hito
+                FROM dbo.Proyectos p WITH (NOLOCK)
+                WHERE (p.LT_Asignado IS NULL OR LTRIM(RTRIM(p.LT_Asignado)) = '' OR LOWER(LTRIM(RTRIM(p.LT_Asignado))) = 'sin asignar')
+                  AND ISNULL(p.Estado, '') <> 'Atendido'
+                  AND (
+                      (p.Ultimo_Recordatorio IS NULL AND DATEDIFF(MINUTE, p.Creado, GETDATE()) >= %s)
+                      OR
+                      (p.Ultimo_Recordatorio IS NOT NULL AND DATEDIFF(MINUTE, p.Ultimo_Recordatorio, GETDATE()) >= %s)
+                  )
+                ORDER BY p.Creado ASC;
+            """
+            cursor.execute(sql, (intervalo_minutos, intervalo_minutos))
+            rows = cursor.fetchall()
+            return serialize_rows(rows)
+    finally:
+        if should_close:
+            active_conn.close()
+
+# Alias de compatibilidad
+get_unassigned_solicitudes_pending_reminder = get_proyectos_pendientes_recordatorio
+
+def registrar_recordatorio_enviado(proyecto_id: int, conn=None) -> bool:
+    """Actualiza Ultimo_Recordatorio a GETDATE() e incrementa Contador_Recordatorios para un proyecto."""
+    should_close = False
+    active_conn = conn
+    if active_conn is None:
+        active_conn = get_db_connection()
+        should_close = True
+
+    try:
+        with active_conn.cursor() as cursor:
+            cursor.execute("""
+                UPDATE dbo.Proyectos
+                SET Ultimo_Recordatorio = GETDATE(),
+                    Contador_Recordatorios = ISNULL(Contador_Recordatorios, 0) + 1
+                WHERE ID = %s
+            """, (proyecto_id,))
+            active_conn.commit()
+            return True
+    except Exception as e:
+        logger.error(f"Error registrando recordatorio enviado para proyecto ID {proyecto_id}: {e}")
+        try:
+            active_conn.rollback()
+        except Exception:
+            pass
+        return False
+    finally:
+        if should_close:
+            active_conn.close()
+
+def mark_solicitudes_reminder_sent(project_ids: Union[int, List[int]], conn=None) -> bool:
+    """Actualiza Ultimo_Recordatorio y Contador_Recordatorios para uno o varios proyectos."""
+    if isinstance(project_ids, int):
+        return registrar_recordatorio_enviado(project_ids, conn=conn)
+
+    if not project_ids:
+        return True
+
+    clean_ids = [int(p) for p in project_ids if p is not None]
+    if not clean_ids:
+        return True
+
+    should_close = False
+    active_conn = conn
+    if active_conn is None:
+        active_conn = get_db_connection()
+        should_close = True
+
+    try:
+        with active_conn.cursor() as cursor:
+            placeholders = ", ".join(["%s"] * len(clean_ids))
+            cursor.execute(f"""
+                UPDATE dbo.Proyectos
+                SET Ultimo_Recordatorio = GETDATE(),
+                    Contador_Recordatorios = ISNULL(Contador_Recordatorios, 0) + 1
+                WHERE ID IN ({placeholders})
+            """, tuple(clean_ids))
+            active_conn.commit()
+            return True
+    except Exception as e:
+        logger.error(f"Error actualizando recordatorios para proyectos {clean_ids}: {e}")
+        try:
+            active_conn.rollback()
+        except Exception:
+            pass
+        return False
+    finally:
+        if should_close:
+            active_conn.close()
 
 def delete_proyecto(proyecto_id: int) -> dict:
     """Elimina físicamente un proyecto de dbo.Proyectos."""

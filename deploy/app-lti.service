@@ -1,0 +1,33 @@
+[Unit]
+Description=App LTI (Líderes TI) - app del Portal de Acceso
+After=network.target
+
+[Service]
+Type=simple
+# User=iacdi: mismo criterio que portal-acceso, provision-plataformas, etc.
+# (antes corría a mano desde la sesión de un desarrollador).
+User=iacdi
+WorkingDirectory=/home/iacdi/Desarrollos/app-lti
+# La app lee su propio .env (backend/config.py), no hace falta EnvironmentFile.
+# - 127.0.0.1: nginx (/app-lti/) es la única entrada; antes 0.0.0.0 la dejaba
+#   accesible directo por la LAN y Tailscale, sin TLS ni límite de peticiones.
+# - Sin --reload: el modo desarrollo recarga el código en vivo al guardar archivos.
+# - --proxy-headers: la IP real del cliente viene de nginx (X-Forwarded-For).
+ExecStart=/home/iacdi/Desarrollos/app-lti/venv/bin/uvicorn backend.main:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips 127.0.0.1
+Restart=on-failure
+RestartSec=3
+
+# Hardening. La app no escribe archivos propios; Chromium (Playwright, para la
+# automatización de tickets) usa /tmp (privado) y corre con --no-sandbox, por
+# eso NO se usan MemoryDenyWriteExecute (rompe el JIT de V8) ni RestrictNamespaces.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+
+[Install]
+WantedBy=multi-user.target

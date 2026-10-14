@@ -1,8 +1,9 @@
 import os
 import base64
 import logging
+import asyncio
 from typing import Optional, List
-from fastapi import FastAPI, Depends, HTTPException, status, Query, UploadFile, File, Form, Request
+from fastapi import FastAPI, Depends, HTTPException, status, Query, UploadFile, File, Form, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse, HTMLResponse
@@ -48,23 +49,118 @@ from .db import (
     generar_ficha_ejecutiva_html,
     get_timeline_proyecto,
     get_alertas_tempranas_sla,
-    get_alertas_sla
+    get_alertas_sla,
+    get_proyectos_pendientes_recordatorio,
+    registrar_recordatorio_enviado,
+    resolve_user_email
 )
 from .seed_users import seed_default_users
 from .ticket_automation import stream_ticket_creation
-from .email_service import send_ticket_notification_email
+from .email_service import (
+    send_ticket_notification_email,
+    send_solicitud_creada_email,
+    send_solicitud_recordatorio_email,
+    send_solicitud_asignada_email,
+    COORDINADORES_LTI_EMAILS
+)
 
 from contextlib import asynccontextmanager
 
+_reminder_task: Optional[asyncio.Task] = None
+REMINDER_CHECK_SECONDS = int(os.getenv("REMINDER_CHECK_SECONDS", "600"))
+REMINDER_INTERVAL_HOURS = int(os.getenv("REMINDER_INTERVAL_HOURS", "6"))
+REMINDER_INTERVAL_MINUTES = REMINDER_INTERVAL_HOURS * 60
+
+
+async def reminder_scheduler_loop():
+    """Loop asíncrono para verificar y despachar recordatorios periódicos cada 6 horas."""
+    logger.info(f"[SCHEDULER] Loop de recordatorios de Solicitud LTI activo (check cada {REMINDER_CHECK_SECONDS}s, umbral {REMINDER_INTERVAL_HOURS}h).")
+    while True:
+        try:
+            await asyncio.sleep(REMINDER_CHECK_SECONDS)
+            logger.debug("[SCHEDULER] Evaluando solicitudes LTI sin asignar pendientes de recordatorio...")
+            pendientes = get_proyectos_pendientes_recordatorio(intervalo_minutos=REMINDER_INTERVAL_MINUTES)
+            if pendientes:
+                logger.info(f"[SCHEDULER] Se encontraron {len(pendientes)} solicitudes pendientes para recordatorio.")
+                send_solicitud_recordatorio_email(pendientes, horas_transcurridas=REMINDER_INTERVAL_HOURS)
+                for p in pendientes:
+                    registrar_recordatorio_enviado(p["ID"])
+                    logger.info(f"[SCHEDULER] Recordatorio marcado en BD para proyecto ID {p['ID']} (N° {p.get('Numero_Proyecto')}).")
+            else:
+                logger.debug("[SCHEDULER] No hay solicitudes pendientes de recordatorio en este ciclo.")
+        except asyncio.CancelledError:
+            logger.info("[SCHEDULER] Tarea de recordatorios cancelada limpiamente.")
+            break
+        except Exception as e:
+            logger.error(f"[SCHEDULER] Error inesperado en el ciclo de recordatorios: {e}", exc_info=True)
+
+
+def notificar_creacion_solicitud_bg(proyecto_data: dict, solicitante_user: Optional[dict] = None):
+    """Tarea en segundo plano para notificar a los coordinadores al crear una nueva solicitud LTI."""
+    try:
+        solicitante_nombre = None
+        if solicitante_user:
+            solicitante_nombre = solicitante_user.get("nombre_completo") or solicitante_user.get("username")
+        send_solicitud_creada_email(proyecto_data, solicitante_nombre=solicitante_nombre)
+    except Exception as e:
+        logger.error(f"Error en tarea en segundo plano notificar_creacion_solicitud_bg: {e}", exc_info=True)
+
+
+def notificar_asignacion_lti_bg(
+    proyecto_data: dict,
+    prev_lt: Optional[str] = None,
+    new_lt: Optional[str] = None,
+    actor_user: Optional[dict] = None
+):
+    """Tarea en segundo plano para notificar al PM y al LTI al producirse la asignación."""
+    try:
+        lt_val = new_lt or proyecto_data.get("LT_Asignado")
+        pm_ident = proyecto_data.get("Solicitante")
+        pm_email = resolve_user_email(pm_ident)
+        lt_email = resolve_user_email(lt_val)
+        send_solicitud_asignada_email(
+            proyecto_data=proyecto_data,
+            pm_email=pm_email,
+            lti_email=lt_email,
+            lt_nombre=lt_val
+        )
+    except Exception as e:
+        logger.error(f"Error en tarea en segundo plano notificar_asignacion_lti_bg: {e}", exc_info=True)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _reminder_task
     try:
         seed_default_users()
     except Exception as e:
         print(f"[ERROR] Error al inicializar tablas y usuarios: {e}")
+
+    # Iniciar worker de recordatorios en background
+    _reminder_task = asyncio.create_task(reminder_scheduler_loop())
+    logger.info("[SCHEDULER] Worker de recordatorios de Solicitud LTI iniciado en lifespan.")
+
     yield
 
-app = FastAPI(title="App LTI - Seguimiento Líderes TI", version="2.0.0", lifespan=lifespan)
+    # Shutdown: cancelación limpia del worker
+    if _reminder_task and not _reminder_task.done():
+        logger.info("[SCHEDULER] Cancelando worker de recordatorios...")
+        _reminder_task.cancel()
+        try:
+            await _reminder_task
+        except asyncio.CancelledError:
+            logger.info("[SCHEDULER] Worker de recordatorios finalizado correctamente.")
+
+# Desactivar documentación interactiva en producción (Observación 6)
+_is_dev = os.getenv("ENV", "").lower() in ("dev", "development") or os.getenv("APP_ENV", "").lower() in ("dev", "development")
+app = FastAPI(
+    title="App LTI - Seguimiento Líderes TI",
+    version="2.0.0",
+    lifespan=lifespan,
+    docs_url="/docs" if _is_dev else None,
+    redoc_url="/redoc" if _is_dev else None,
+    openapi_url="/openapi.json" if _is_dev else None
+)
 
 # Enable CORS with credentials for SSO Portal de Acceso and local environments
 app.add_middleware(
@@ -339,6 +435,7 @@ def get_alertas_sla_endpoint(
 def actualizar_proyecto(
     proyecto_id: int,
     req: ProyectoUpdateRequest,
+    background_tasks: BackgroundTasks,
     current_user: dict = Depends(require_lti_or_admin)
 ):
     cliente = (req.cliente or "").strip()
@@ -385,6 +482,20 @@ def actualizar_proyecto(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=result.get("message", "Error al actualizar el proyecto")
+        )
+
+    # Detectar si pasó de sin asignar a asignado y despachar correo en background
+    if result.get("was_assigned"):
+        logger.info(
+            f"Asignación detectada para Proyecto ID {proyecto_id}: Asignado a '{result.get('new_lt')}'. "
+            "Programando despacho asíncrono de notificación..."
+        )
+        background_tasks.add_task(
+            notificar_asignacion_lti_bg,
+            proyecto_data=result.get("data"),
+            prev_lt=result.get("prev_lt"),
+            new_lt=result.get("new_lt"),
+            actor_user=current_user
         )
 
     return {
@@ -594,6 +705,7 @@ def get_solots_liray_endpoint(
 @app.post("/api/solicitudes/crear", status_code=status.HTTP_201_CREATED)
 def crear_solicitud(
     req: SolicitudCreacionRequest,
+    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user)
 ):
     cliente = (req.cliente or "").strip()
@@ -637,20 +749,95 @@ def crear_solicitud(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=result.get("error", "Error al crear la solicitud")
         )
+
+    created_data = result.get("data")
+
+    # Despachar notificación formal de creación en background (no bloquea UI)
+    background_tasks.add_task(
+        notificar_creacion_solicitud_bg,
+        proyecto_data=created_data,
+        solicitante_user=current_user
+    )
+
     return JSONResponse(
         status_code=status.HTTP_201_CREATED,
         content={
             "message": "Solicitud LTI creada exitosamente",
-            "data": result.get("data")
+            "data": created_data
         }
     )
+
+# -----------------------------------------------------------------------------
+# ENDPOINTS ADMINISTRATIVOS: RECORDATORIOS DE SOLICITUD LTI
+# -----------------------------------------------------------------------------
+@app.get("/api/solicitudes/recordatorios/estado")
+def get_recordatorios_estado(current_user: dict = Depends(require_admin)):
+    """Audita el estado del worker de recordatorios y lista de solicitudes pendientes."""
+    is_active = bool(_reminder_task and not _reminder_task.done())
+    pendientes = get_proyectos_pendientes_recordatorio(intervalo_minutos=REMINDER_INTERVAL_MINUTES)
+    todos_sin_asignar = get_proyectos_pendientes_recordatorio(intervalo_minutos=0)
+
+    return {
+        "scheduler_active": is_active,
+        "check_interval_seconds": REMINDER_CHECK_SECONDS,
+        "check_interval_minutes": round(REMINDER_CHECK_SECONDS / 60, 1),
+        "reminder_threshold_hours": REMINDER_INTERVAL_HOURS,
+        "total_proyectos_sin_asignar": len(todos_sin_asignar),
+        "total_proyectos_requieren_recordatorio": len(pendientes),
+        "destinatarios_coordinadores": COORDINADORES_LTI_EMAILS,
+        "proyectos_pendientes": [
+            {
+                "id": p.get("ID"),
+                "numero_proyecto": p.get("Numero_Proyecto"),
+                "cliente": p.get("Cliente"),
+                "creado": p.get("Creado"),
+                "ultimo_recordatorio": p.get("Ultimo_Recordatorio"),
+                "contador_recordatorios": p.get("Contador_Recordatorios"),
+                "minutos_desde_creacion": p.get("Minutos_Desde_Creacion"),
+                "solicitante": p.get("Solicitante")
+            }
+            for p in pendientes
+        ]
+    }
+
+@app.post("/api/solicitudes/recordatorios/ejecutar-manual")
+def ejecutar_recordatorios_manual(current_user: dict = Depends(require_admin)):
+    """Dispara un chequeo forzado manual de recordatorios para verificación o contingencia."""
+    pendientes = get_proyectos_pendientes_recordatorio(intervalo_minutos=REMINDER_INTERVAL_MINUTES)
+    if not pendientes:
+        return {
+            "success": True,
+            "message": "No hay solicitudes pendientes que requieran recordatorio en este momento.",
+            "recordatorios_enviados": 0,
+            "detalles": []
+        }
+
+    email_res = send_solicitud_recordatorio_email(pendientes, horas_transcurridas=REMINDER_INTERVAL_HOURS)
+    detalles = []
+    for p in pendientes:
+        registrar_recordatorio_enviado(p["ID"])
+        detalles.append({
+            "id": p.get("ID"),
+            "numero_proyecto": p.get("Numero_Proyecto"),
+            "cliente": p.get("Cliente"),
+            "recordatorio_num": int(p.get("Contador_Recordatorios") or 0) + 1,
+            "destinatarios": COORDINADORES_LTI_EMAILS
+        })
+
+    return {
+        "success": True,
+        "message": f"Chequeo manual ejecutado exitosamente. Se notificaron {len(pendientes)} solicitudes.",
+        "recordatorios_enviados": len(pendientes),
+        "email_delivery": email_res.get("success", False),
+        "detalles": detalles
+    }
 
 # Automation Endpoints
 @app.post("/api/automation/create-ticket")
 @app.post("/api/automation/create-ticket/", include_in_schema=False)
 async def create_ticket(
     req: TicketCreationRequest,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_lti_or_admin)
 ):
     request_data = req.model_dump()
     return StreamingResponse(
@@ -677,7 +864,7 @@ async def send_ticket_email(
     peticion_id: Optional[str] = Form(None),
     attachment: Optional[UploadFile] = File(None),
     adjunto: Optional[UploadFile] = File(None),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(require_lti_or_admin)
 ):
     content_type = request.headers.get("content-type", "").lower()
     
@@ -904,6 +1091,8 @@ def serve_index():
 
 @app.get("/{full_path:path}")
 def serve_catch_all(full_path: str):
+    if not _is_dev and full_path in ("docs", "redoc", "openapi.json"):
+        raise HTTPException(status_code=404, detail="Not Found")
     file_path = os.path.join(frontend_dir, full_path)
     if os.path.exists(file_path) and os.path.isfile(file_path):
         return FileResponse(file_path)

@@ -244,3 +244,39 @@ def test_retired_endpoints_return_404_or_405():
     res_rp = client.post("/api/usuarios/1/reset-password", json={})
     assert res_rp.status_code in (404, 405)
     client.cookies.clear()
+
+
+def test_pm_forbidden_from_ticket_automation():
+    """13. Usuario con rol PM recibe 403 Forbidden al intentar acceder a endpoints de tickets."""
+    pm_token = create_portal_jwt(
+        username="pm.tester",
+        admin_level=0,
+        tool_access={"app-lti": "lectura"},
+        name="PM Tester"
+    )
+    client.cookies.set("access_token", pm_token)
+
+    # 1. Intentar crear ticket
+    res_ticket = client.post(
+        "/api/automation/create-ticket",
+        json={
+            "titulo": "Ticket Intento PM",
+            "descripcion": "Descripción de prueba"
+        }
+    )
+    assert res_ticket.status_code == 403
+    assert "solo tienen acceso al módulo de solicitud lti" in res_ticket.json()["detail"].lower()
+
+    # 2. Intentar enviar correo de ticket
+    res_email = client.post(
+        "/api/automation/send-ticket-email",
+        data={
+            "to_email": "test@claro.cl",
+            "subject": "Test",
+            "body": "Cuerpo"
+        }
+    )
+    assert res_email.status_code == 403
+    assert "solo tienen acceso al módulo de solicitud lti" in res_email.json()["detail"].lower()
+
+    client.cookies.clear()

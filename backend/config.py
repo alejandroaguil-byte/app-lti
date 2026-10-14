@@ -46,8 +46,9 @@ def load_db_config():
     return config
 
 DB_CONFIG = load_db_config()
-JWT_SECRET = os.getenv('JWT_SECRET', 'app-lti-super-secret-key-2026-claro')
-JWT_ACCESS_SECRET = os.getenv('JWT_ACCESS_SECRET') or os.getenv('PORTAL_JWT_SECRET') or JWT_SECRET
+JWT_ACCESS_SECRET = os.getenv('JWT_ACCESS_SECRET') or os.getenv('PORTAL_JWT_SECRET')
+if not JWT_ACCESS_SECRET:
+    raise RuntimeError('Falta JWT_ACCESS_SECRET (o PORTAL_JWT_SECRET) en .env: debe ser el mismo valor que en el Portal de Acceso')
 PORTAL_JWT_SECRET = JWT_ACCESS_SECRET
 PORTAL_BASE_URL = os.getenv('PORTAL_BASE_URL', 'https://200.14.222.162')
 JWT_ALGORITHM = 'HS256'

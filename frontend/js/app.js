@@ -63,6 +63,7 @@ const App = {
   activeHealthFilter: null, // null | 'HEALTHY' | 'WARNING' | 'CRITICAL' | 'NEUTRAL'
 
   async init() {
+    this.initSidebar();
     this.initTheme();
     this.initHealthScore();
     this.initExecutiveDiagnosis();
@@ -83,6 +84,37 @@ const App = {
       console.warn('[SSO] No autenticado:', err);
       Auth.redirectToLogin();
     }
+  },
+
+  // --------------------------------------------------------------------------
+  // SIDEBAR MANAGEMENT (Expandible / Colapsable)
+  // --------------------------------------------------------------------------
+  initSidebar() {
+    const sidebar = document.getElementById('nav-subbar');
+    const toggleBtn = document.getElementById('sidebar-toggle-btn');
+    const innerToggleBtn = document.getElementById('sidebar-inner-toggle-btn');
+    
+    if (!sidebar) return;
+
+    // Recuperar preferencia de colapso desde localStorage
+    const isCollapsed = localStorage.getItem('halo_sidebar_collapsed') === 'true';
+    if (isCollapsed) {
+      sidebar.classList.add('collapsed');
+      if (toggleBtn) toggleBtn.classList.add('is-collapsed');
+    }
+
+    const toggle = () => {
+      sidebar.classList.toggle('collapsed');
+      const nowCollapsed = sidebar.classList.contains('collapsed');
+      localStorage.setItem('halo_sidebar_collapsed', nowCollapsed ? 'true' : 'false');
+      if (toggleBtn) toggleBtn.classList.toggle('is-collapsed', nowCollapsed);
+      if (innerToggleBtn) {
+        innerToggleBtn.title = nowCollapsed ? 'Expandir barra lateral' : 'Contraer barra lateral';
+      }
+    };
+
+    if (toggleBtn) toggleBtn.addEventListener('click', toggle);
+    if (innerToggleBtn) innerToggleBtn.addEventListener('click', toggle);
   },
 
   // --------------------------------------------------------------------------
@@ -2130,6 +2162,11 @@ const App = {
       if (navTickets) navTickets.style.display = 'inline-flex';
       if (navSolicitud) navSolicitud.style.display = 'inline-flex';
       if (navUsuarios) navUsuarios.style.display = 'inline-flex';
+    }
+
+    const configSection = document.getElementById('sidebar-config-section');
+    if (configSection) {
+      configSection.style.display = rolUpper === 'PM' ? 'none' : 'block';
     }
   },
 

@@ -1,68 +1,91 @@
-# 📌 TAREAS PENDIENTES — PRÓXIMA SESIÓN (DEMO JUEVES APP LTI / HALO)
+# 📌 MEMORIA Y REGISTRO DE SESIÓN — APP LTI / HALO
 
-**Fecha de Registro:** 2026-09-23 (Cierre de sesión nocturna)  
+**Fecha de Registro:** 2026-10-06  
 **Proyecto:** HALO — App Líderes TI (`/home/bobbasystem/Desarrollos/app-lti`)  
 **Rama Git Activa:** `sso-portal-acceso`  
 **Servidores Sincronizados:**
 - Desarrollo: `bobbadeveloper` (Localhost:8000)
-- Producción: `iacdi` (Tailscale `100.82.24.75:8000` / `https://200.14.222.162/app-lti/`)
+- Producción: `iacdi` (Tailscale `100.82.24.75:8000` / Nginx `http://127.0.0.1:8000/app-lti/`)
 
 ---
 
-## ✅ ESTADO ACTUAL: FUNCIONALIDADES YA COMPLETADAS Y DESPLEGADAS
+## 🛠️ TRABAJO COMPLETADO EN ESTA SESIÓN (2026-10-06)
 
-1. **Funcionalidad 1: Semáforo de Salud Operacional (Health Score)**:
-   - Clasificación cuádruple: 🟢 Saludable, 🟡 En Riesgo, 🔴 Crítico (con pulso sutil), ⚪ Sin Datos.
-   - Tarjetas KPI interactivas con filtrado y desfiltrado al clic.
-   - Tooltips flotantes con desglose de diagnóstico.
-   - **Kill-Switch**: Botón `🚦 Salud: ON / OFF` en sub-barra, `localStorage` y política de Cero Rastros (8 vs 9 columnas).
-
-2. **Funcionalidad 2: Diagnóstico Ejecutivo en 1 Clic & Minuta**:
-   - Análisis multivariable en tiempo real de Solots (SGA), Tickets (HPSM) y RFCs.
-   - Identificación de cuellos de botella por Torre Operativa (`Torre Linux`, etc.) y días de atraso.
-   - Recomendaciones de escalamiento priorizadas por severidad.
-   - Botón `📋 Copiar Minuta` (texto plano) y botón `📧 Enviar Minuta por Correo` (modal Office 365 prellenado).
-   - **Kill-Switch**: Botón `⚡ Diagnóstico: ON / OFF` en sub-barra, `localStorage` y política de Cero Rastros.
-   - **Pruebas Automatizadas:** 206/206 aprobadas (100% pass rate).
-
-3. **Funcionalidad 3: Exportación de 'Ficha Ejecutiva de Proyecto' a PDF Corporativo & Kill-Switch**:
-   - Descarga con 1 clic de documento PDF/imprimible A4 corporativo Claro HALO.
-   - Membrete institucional con logotipo SVG oficial vectorizado, paleta `#B52217` / `#0097A9`, tipografía de alta fidelidad.
-   - Indicador de Salud Operacional, KPIs de avance, resumen, diagnóstico sintético, cuellos de botella y recomendaciones.
-   - Tablas compactas de Solots SGA (con días de atraso), Tickets HPSM/SD (con permanencia y alertas) y RFCs.
-   - Generación de Folio determinista único (`HALO-FE-YYYY-XXXXXX-HASH`), firmas institucionales y disclaimer de confidencialidad.
-   - Endpoints REST `/api/proyectos/{id}/ficha-ejecutiva` y `/api/proyectos/{id}/ficha-html`.
-   - **Kill-Switch**: Botón `📄 Ficha PDF: ON / OFF` (`#pdf-export-toggle-btn`), switch maestro en runtime y política estricta de Cero Rastros.
-   - **Pruebas Automatizadas:** Suite completa en `tests/test_ficha_ejecutiva_pdf.py` y `tests/test_functional_ficha_ejecutiva_pdf.py` (13/13 aprobadas).
-
-4. **Funcionalidad 4: Timeline / Línea de Tiempo Visual del Proyecto (Visual Roadmap) & Kill-Switch**:
-   - **Estado:** ✅ **IMPLEMENTADA, INTEGRADA Y VALIDADA (100%)**.
-   - Pestaña interactiva `📈 Línea de Tiempo` (`data-tab="timeline"`) con unificación cronológica de 4 subsistemas (SharePoint, Solots SGA, Tickets HPSM, RFCs).
-   - Medición visual de lapsos entre hitos consecutivos (`⏱️ +X d`) y cálculo de Lead Time Total.
-   - Grilla de 4 tarjetas KPI en cabecera (Total Hitos, Lead Time, Último Hito, Próximo Compromiso / Alerta de Atraso con borde pulsante `#B52217`).
-   - Barra de filtros rápidos por categoría tipo píldora (`🌟 Todos`, `📁 SharePoint`, `⚡ SGA Solots`, `🎫 Tickets SD`, `🔄 RFCs`).
-   - Endpoint backend dedicado: `GET /api/proyectos/{id}/timeline` protegido con `Depends(require_lti_or_admin)`.
-   - **Kill-Switch Mandatorio**: Botón `⏱️ Timeline: ON / OFF` en sub-barra, switch global `window.HALO_CONFIG.ENABLE_TIMELINE`, `localStorage` y política estricta de Cero Rastros (auto-conmutación inmediata a `📋 Resumen` si estaba activa al apagar).
-   - **Pruebas Automatizadas:** 18/18 pruebas aprobadas (10 unitarias en `tests/test_timeline_visual.py` y 8 funcionales/E2E en `tests/test_functional_timeline_visual.py`). Total suite de regresión: 37/37 aprobadas.
+### 1. Item 2.4: Integración en Health-Check & Auto-Restart en Producción (`iacdi`)
+- **Estado:** ✅ **100% COMPLETADO Y CERTIFICADO**.
+- **Instalación:** Se ejecutó con `sudo` el script de despliegue `/home/iacdi/portal-acceso/deploy/install-health-check.sh`, actualizando la copia que corre periódicamente en `/usr/local/sbin/portal-acceso-healthcheck.sh`.
+- **Verificación de Health-Check:** Muestra las 6 líneas "OK" operativas (incluyendo `app-lti.service`).
+- **Verificaciones de Seguridad y Resiliencia:**
+  1. **Firewall / UFW:** Se ejecutó `sudo ufw status`. El puerto `8000` **no** está expuesto al exterior. El servicio `uvicorn` escucha exclusivamente en `127.0.0.1:8000` (acceso únicamente vía proxy reverso Nginx con TLS y rate-limiting).
+  2. **Playwright bajo usuario `iacdi`:** Se validó la ejecución desatendida del motor Chromium v151 con el venv de producción bajo la configuración de hardening systemd (`PrivateTmp=true`, sin `MemoryDenyWriteExecute`).
+  3. **Prueba de Recuperación (Auto-Restart):** Se detuvo intencionalmente `app-lti.service` y se ejecutó el health-check. El sistema detectó la caída y reinició el servicio automáticamente en 2 segundos, dejándolo nuevamente en `active (running)`.
 
 ---
 
-5. **Funcionalidad 5: Centro de Alertas Tempranas y Escalamiento Rápido (SLA Warnings) & Kill-Switch**:
-   - **Estado:** ✅ **IMPLEMENTADA, INTEGRADA Y VALIDADA (100%)**.
-   - Documento técnico maestro: [`SPECS_ALERTAS_TEMPRANAS_SLA.md`](file:///home/bobbasystem/Desarrollos/app-lti/SPECS_ALERTAS_TEMPRANAS_SLA.md).
-   - Acceso desde la cabecera institucional Claro HALO (`#alerts-bell-btn`) con badge reactivo numérico (`#alerts-badge-count`) y animación suave pulsante roja (`#B52217`) ante incidentes críticos.
-   - Panel flotante / dropdown (`#alerts-dropdown`) con categorización tripartita (🔴 Críticas, 🟡 Advertencias, 🌟 Todas), botón de acción rápida `Ver Proyecto` hacia el Drill Down y motor de Escalamiento Rápido (copia de minuta y correo prellenado Office 365).
-   - Endpoint backend dedicado: `GET /api/alertas/sla` con agregación multivariable en motor MSSQL (`dbo.registrosRF_SD_SM`, `dbo.CT_BACKLOG_OPERACIONES2`, `dbo.Proyectos`) protegido con `Depends(require_lti_or_admin)`.
-   - **Kill-Switch Mandatorio**: Botón `🔔 Alertas: ON / OFF` (`#alerts-toggle-btn`), variable global `window.HALO_CONFIG.ENABLE_ALERTS`, `localStorage` y política estricta de Cero Rastros (`display: none !important;` y auto-cierre del panel).
-   - **Pruebas Automatizadas:** 20/20 pruebas aprobadas (10 unitarias en `tests/test_alertas_sla.py` y 10 funcionales/E2E en `tests/test_functional_alertas_sla.py`). 100% de éxito.
+### 2. Blindaje RBAC para Rol PM en Endpoints de Tickets
+- **Estado:** ✅ **100% COMPLETADO Y VALIDADO**.
+- **Requerimiento:** Asegurar que los usuarios con rol `PM` únicamente puedan interactuar con el formulario de Solicitud Líder TI.
+- **Implementación en Backend (`backend/main.py`):**
+  - Se actualizaron los decoradores de `/api/automation/create-ticket` y `/api/automation/send-ticket-email` de `get_current_user` a `require_lti_or_admin`.
+  - Ahora cualquier intento de un usuario con rol `PM` de interactuar con la generación de tickets o envío de correos vía API directa es rechazado con `403 Forbidden` (`detail: "Permiso denegado. Los usuarios con rol PM solo tienen acceso al módulo de Solicitud LTI."`).
+- **Pruebas Automatizadas:** Se añadió el caso `test_pm_forbidden_from_ticket_automation` en `tests/test_sso_portal_auth.py` (13/13 pruebas aprobadas).
 
 ---
 
-## 🚀 PASO SIGUIENTE INMEDIATO: REVISIÓN DE CÓDIGO Y AUDITORÍA QA
+### 3. Homologación de Tipografía Institucional con el Resto del Portal
+- **Estado:** ✅ **100% COMPLETADO Y HOMOLOGADO**.
+- **Auditoría:** Se analizaron las demás apps del portal (`asignacion-ingenieros-app`, `cv-certificaciones`, `mapa-proyecto`, `provision-plataformas`, `ausencias`, `portal-acceso`).
+- **Implementación (`frontend/index.html` y `frontend/css/styles.css`):**
+  - Se eliminó la dependencia externa a Google Fonts *Roboto* en `frontend/index.html`.
+  - Se estandarizó la variable global `--font-sans` a la pila tipográfica nativa del sistema:
+    `-apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;`
+  - Se estandarizó `--font-mono` a `ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;`.
+  - La apariencia visual ahora es 100% homogénea con las demás aplicaciones del Portal HALO.
 
-1. **Subagente Responsable:** `code_reviewer` (Revisor de Código & QA Auditor).
-2. **Tareas a Ejecutar**:
-   - Auditoría estricta de lineamientos Claro HALO (#B52217, #0097A9, Dark Mode).
-   - Verificación de Cero Rastros y resiliencia en Kill-Switch de Alertas.
-   - Verificación de suite completa de pruebas unitarias y E2E.
-   - Sincronización y despliegue a servidor de producción (`iacdi`).
+---
+
+### 4. Rediseño UI: Barra Lateral Expandible (Sidebar) & Agrupador "Configuraciones"
+- **Estado:** ✅ **100% IMPLEMENTADO, TESTEADO Y DESPLEGADO**.
+- **Diseño General:**
+  - Se eliminó la acumulación horizontal de botones superiores.
+  - Se implementó una barra lateral sticky fija a la izquierda (`.nav-subbar` / `.app-sidebar`) con el área de trabajo ocupando el 100% restante con layout fluido flexbox.
+  - **Botón de Toggle Expandir / Contraer:**
+    * Botón hamburguesa `#sidebar-toggle-btn` en la cabecera superior junto a la marca HALO.
+    * Botón chevron `#sidebar-inner-toggle-btn` en el encabezado interno del sidebar.
+  - **Modo Expandido (~250px):** Muestra iconos y nombres completos de secciones y switches.
+  - **Modo Colapsado (~68px):** Modo compacto con tooltips nativos en cada icono al pasar el mouse.
+  - **Persistencia:** Guarda el estado en `localStorage` (`halo_sidebar_collapsed`).
+- **Secciones del Sidebar:**
+  1. **📌 MÓDULOS DE NAVEGACIÓN:**
+     - 📊 `Seguimiento Proyectos` (`#nav-btn-projects`)
+     - 🔎 `Búsqueda Directa en Tablas` (`#nav-btn-direct-search`)
+     - 🤖 `Generador de Tickets` (`#nav-btn-tickets`)
+     - 📝 `Solicitud LTI` (`#nav-btn-solicitud-lti`)
+     - 👥 `Usuarios` (`#nav-btn-usuarios`, protegido por RBAC, sólo ADMIN).
+  2. **⚙️ CONFIGURACIONES (Switches ON/OFF):**
+     - 🚦 `Salud: ON / OFF` (`#health-score-toggle-btn`)
+     - ⚡ `Diagnóstico: ON / OFF` (`#diag-toggle-btn`)
+     - 📄 `Ficha PDF: ON / OFF` (`#pdf-export-toggle-btn`)
+     - ⏱️ `Timeline: ON / OFF` (`#timeline-toggle-btn`)
+     - 🔔 `Alertas: ON / OFF` (`#alerts-toggle-btn`)
+     - *Regla RBAC para PM:* Para rol PM, la sección completa de configuraciones se oculta automáticamente (`display: none;`).
+  3. **👤 PIE DEL SIDEBAR:**
+     - Badge de Rol (`#user-role-badge`)
+     - Conmutador de Tema Claro / Oscuro (`#theme-toggle-btn`)
+- **Versionado de Assets:** Cache busters actualizados a `css/styles.css?v=9.0` y `js/app.js?v=9.0`.
+
+---
+
+## 🧪 RESULTADOS DE PRUEBAS AUTOMATIZADAS
+- `tests/test_sso_portal_auth.py`: **13/13 pasadas (100%)**
+- `tests/test_functional_mantenedor_usuarios.py`: **18/18 pasadas (100%)**
+- `tests/test_functional_solicitud_lti.py`: **20/20 pasadas (100%)**
+- `tests/test_timeline_visual.py` & `tests/test_alertas_sla.py` & `tests/test_ficha_ejecutiva_pdf.py`: **34/34 pasadas (100%)**
+- Total suites ejecutadas: **0 fallos, 100% aprobadas**.
+
+---
+
+## 🚀 ESTADO DE PRODUCCIÓN EN SERVIDOR `iacdi`
+- Código fuente sincronizado vía `rsync` con `deploy_to_iacdi.sh`.
+- Servicio `app-lti.service` reiniciado y respondiendo `200 OK` en `/api/health`.
+- Todo limpio y listo para el cierre de sesión.

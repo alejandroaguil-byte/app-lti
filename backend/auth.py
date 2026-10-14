@@ -85,7 +85,13 @@ def get_current_user(request: Request) -> dict:
     # Aprovisionamiento Just-In-Time (JIT)
     full_name = payload.get("name") or payload.get("nombre") or username.replace(".", " ").title()
     default_rol = "ADMIN" if is_super_admin else "PM"
-    user = get_or_create_jit_user(username, nombre_completo=full_name, default_rol=default_rol)
+    user_email = payload.get("email") or payload.get("mail") or payload.get("correo")
+    user = get_or_create_jit_user(
+        username,
+        nombre_completo=full_name,
+        default_rol=default_rol,
+        email=user_email
+    )
     if not user:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -115,6 +121,7 @@ def get_current_user(request: Request) -> dict:
         "id": user["id"],
         "username": user["username"],
         "nombre_completo": user.get("nombre_completo") or username,
+        "email": user.get("email") or user_email,
         "rol": effective_role,
         "raw_rol": user.get("rol"),
         "lt_asignado": user.get("lt_asignado"),

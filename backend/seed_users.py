@@ -15,14 +15,15 @@ CANONICAL_LIDERES = {
     "Solange Ortiz": "Solange Ortiz"
 }
 
-# Usuarios iniciales canónicos con formato oficial del Portal de Acceso (nombre.apellido)
+# Usuarios iniciales canónicos con formato oficial del Portal de Acceso (nombre.apellido) e email corporativo
 USERS_CANONICAL_SEED = [
-    ("Alejandro Aguilar", "ADMIN", "alejandro.aguilar", "Alejandro Aguilar"),
-    ("Pablo Castillo", "ADMIN", "pablo.castillo", None),
-    ("Erwin Sandoval", "LTI", "erwin.sandoval", "Erwin Sandoval"),
-    ("Juan Barrera", "LTI", "juan.barrera", "Juan Barrera"),
-    ("Samuel Paredes", "LTI", "samuel.paredes", "Samuel Paredes"),
-    ("Solange Ortiz", "LTI", "solange.ortiz", "Solange Ortiz"),
+    # (Nombre Completo, Rol, Username, LT_Asignado_Canonical, Email)
+    ("Alejandro Aguilar", "ADMIN", "alejandro.aguilar", "Alejandro Aguilar", "alejandro.aguilarm@clarovtr.cl"),
+    ("Pablo Castillo", "ADMIN", "pablo.castillo", None, "pablo.castillo@clarovtr.cl"),
+    ("Erwin Sandoval", "LTI", "erwin.sandoval", "Erwin Sandoval", "erwin.sandoval@clarovtr.cl"),
+    ("Juan Barrera", "LTI", "juan.barrera", "Juan Barrera", "juan.barrera@clarovtr.cl"),
+    ("Samuel Paredes", "LTI", "samuel.paredes", "Samuel Paredes", "samuel.paredes@clarovtr.cl"),
+    ("Solange Ortiz", "LTI", "solange.ortiz", "Solange Ortiz", "solange.ortiz@clarovtr.cl"),
 ]
 
 def normalize_ascii(text: str) -> str:
@@ -77,16 +78,22 @@ def seed_default_users():
             inserted_count = 0
             updated_count = 0
 
-            for nombre, rol, username, lt_asignado in USERS_CANONICAL_SEED:
+            for item in USERS_CANONICAL_SEED:
+                if len(item) == 5:
+                    nombre, rol, username, lt_asignado, email = item
+                else:
+                    nombre, rol, username, lt_asignado = item[:4]
+                    email = None
+
                 uname = username.strip().lower()
-                cursor.execute("SELECT id, username, rol, lt_asignado FROM dbo.App_Usuarios WHERE LOWER(username) = %s", (uname,))
+                cursor.execute("SELECT id, username, rol, lt_asignado, email FROM dbo.App_Usuarios WHERE LOWER(username) = %s", (uname,))
                 existing = cursor.fetchone()
 
                 if not existing:
                     cursor.execute("""
-                        INSERT INTO dbo.App_Usuarios (username, nombre_completo, lt_asignado, rol, activo, created_at, updated_at)
-                        VALUES (%s, %s, %s, %s, 1, GETDATE(), GETDATE())
-                    """, (uname, nombre, lt_asignado, rol))
+                        INSERT INTO dbo.App_Usuarios (username, nombre_completo, lt_asignado, rol, email, activo, created_at, updated_at)
+                        VALUES (%s, %s, %s, %s, %s, 1, GETDATE(), GETDATE())
+                    """, (uname, nombre, lt_asignado, rol, email))
                     inserted_count += 1
                 else:
                     cursor.execute("""
@@ -94,10 +101,11 @@ def seed_default_users():
                         SET nombre_completo = %s,
                             rol = %s,
                             lt_asignado = %s,
+                            email = COALESCE(%s, email),
                             activo = 1,
                             updated_at = GETDATE()
                         WHERE LOWER(username) = %s
-                    """, (nombre, rol, lt_asignado, uname))
+                    """, (nombre, rol, lt_asignado, email, uname))
                     updated_count += 1
 
             # NOTA: Se eliminó definitivamente la sentencia destructiva DELETE FROM dbo.App_Usuarios
