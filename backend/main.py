@@ -49,10 +49,10 @@ from .db import (
     generar_ficha_ejecutiva_html,
     get_timeline_proyecto,
     get_alertas_tempranas_sla,
-    get_alertas_sla,
     get_proyectos_pendientes_recordatorio,
     registrar_recordatorio_enviado,
-    resolve_user_email
+    resolve_user_email,
+    is_valid_project_number
 )
 from .seed_users import seed_default_users
 from .ticket_automation import stream_ticket_creation
@@ -80,10 +80,19 @@ async def reminder_scheduler_loop():
             await asyncio.sleep(REMINDER_CHECK_SECONDS)
             logger.debug("[SCHEDULER] Evaluando solicitudes LTI sin asignar pendientes de recordatorio...")
             pendientes = get_proyectos_pendientes_recordatorio(intervalo_minutos=REMINDER_INTERVAL_MINUTES)
-            if pendientes:
-                logger.info(f"[SCHEDULER] Se encontraron {len(pendientes)} solicitudes pendientes para recordatorio.")
-                send_solicitud_recordatorio_email(pendientes, horas_transcurridas=REMINDER_INTERVAL_HOURS)
-                for p in pendientes:
+            validos = [
+                p for p in pendientes 
+                if is_valid_project_number(
+                    p.get("Numero_Proyecto"), 
+                    p.get("Cliente"), 
+                    p.get("Tipo_Servicio"),
+                    p.get("Solicitante")
+                )
+            ]
+            if validos:
+                logger.info(f"[SCHEDULER] Se encontraron {len(validos)} solicitudes válidas pendientes para recordatorio.")
+                send_solicitud_recordatorio_email(validos, horas_transcurridas=REMINDER_INTERVAL_HOURS)
+                for p in validos:
                     registrar_recordatorio_enviado(p["ID"])
                     logger.info(f"[SCHEDULER] Recordatorio marcado en BD para proyecto ID {p['ID']} (N° {p.get('Numero_Proyecto')}).")
             else:

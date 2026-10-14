@@ -546,3 +546,84 @@ class TestResilienciaSmtpCompleta:
         assert data["success"] is True
         assert data["email_delivery"] is False
 
+
+# =============================================================================
+# PRUEBAS DE EXCLUSIÓN DE PROYECTOS DUMMY / INVÁLIDOS (0001111111, REUNIONES)
+# =============================================================================
+class TestValidacionProyectosDummy:
+
+    def test_is_valid_project_number_rejects_dummy_patterns(self):
+        """is_valid_project_number rechaza patrones repetidos y proyectos no válidos."""
+        from backend.db import is_valid_project_number
+        # Casos dummy que deben ser rechazados
+        assert is_valid_project_number("0001111111") is False
+        assert is_valid_project_number("1111111") is False
+        assert is_valid_project_number("111111") is False
+        assert is_valid_project_number("999999") is False
+        assert is_valid_project_number("000000") is False
+        assert is_valid_project_number("") is False
+        assert is_valid_project_number(None) is False
+        assert is_valid_project_number("12") is False
+
+        # Rechazo por Tipo_Servicio Reunión
+        assert is_valid_project_number("1607916", tipo_servicio="Reunión") is False
+        assert is_valid_project_number("1607916", tipo_servicio="reunion") is False
+
+        # Rechazo por Cliente o Solicitante con PROYECTO DEMO / NO IDENTIFICADO
+        assert is_valid_project_number("1607916", cliente="NO IDENTIFICADO. PROYECTO DEMO") is False
+        assert is_valid_project_number("1607916", solicitante="NO IDENTIFICADO. PROYECTO DEMO") is False
+
+        # Casos válidos
+        assert is_valid_project_number("1607916") is True
+        assert is_valid_project_number("0001607916") is True
+        assert is_valid_project_number("17636212") is True
+        assert is_valid_project_number("123456", cliente="BANCO ESTADO", tipo_servicio="Otros") is True
+
+    @patch("backend.db.get_db_connection")
+    def test_get_proyectos_pendientes_recordatorio_filters_out_dummy_rows(self, mock_get_conn):
+        """get_proyectos_pendientes_recordatorio filtra proyectos dummy de la base de datos."""
+        from backend.db import get_proyectos_pendientes_recordatorio
+
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_get_conn.return_value = mock_conn
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+
+        # Simular filas devueltas por BD con proyectos dummy y reales
+        mock_cursor.fetchall.return_value = [
+            {
+                "ID": 2491,
+                "Numero_Proyecto": "1111111",
+                "Cliente": "Habilitar salida a celulares REGISTRO CIVIL",
+                "Tipo_Servicio": "Reunión",
+                "Solicitante": "NO IDENTIFICADO. PROYECTO DEMO",
+                "LT_Asignado": None,
+                "Estado": "Generado",
+                "Creado": "2026-07-14 15:57",
+                "Ultimo_Recordatorio": None,
+                "Contador_Recordatorios": 0,
+                "Minutos_Desde_Creacion": 2000,
+                "Minutos_Desde_Ultimo_Hito": 2000
+            },
+            {
+                "ID": 2568,
+                "Numero_Proyecto": "1607916",
+                "Cliente": "METLIFE CHILE SEGUROS DE VIDA S.A.",
+                "Tipo_Servicio": "Otros",
+                "Solicitante": "pm.valido",
+                "LT_Asignado": None,
+                "Estado": "Generado",
+                "Creado": "2026-10-14 10:00",
+                "Ultimo_Recordatorio": None,
+                "Contador_Recordatorios": 0,
+                "Minutos_Desde_Creacion": 400,
+                "Minutos_Desde_Ultimo_Hito": 400
+            }
+        ]
+
+        result = get_proyectos_pendientes_recordatorio(intervalo_minutos=360, conn=mock_conn)
+        # Solo debe retornar el proyecto real 2568, descartando el 2491
+        assert len(result) == 1
+        assert result[0]["ID"] == 2568
+        assert result[0]["Numero_Proyecto"] == "0001607916"
+

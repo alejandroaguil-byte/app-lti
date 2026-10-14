@@ -1761,11 +1761,58 @@ def resolve_user_email(user_identifier: Optional[str], conn=None) -> Optional[st
 
     return None
 
+def is_valid_project_number(
+    numero_proyecto: Optional[Union[str, int]], 
+    cliente: Optional[str] = None, 
+    tipo_servicio: Optional[str] = None,
+    solicitante: Optional[str] = None
+) -> bool:
+    """
+    Valida si un proyecto es legítimo para asignación técnica de LTI y notificaciones/recordatorios.
+    Descarta:
+    - Proyectos con Tipo_Servicio = 'Reunión' o 'reunion' (reuniones históricas de SharePoint, no proyectos técnicos).
+    - Números de proyecto nulos, vacíos o con longitud significativa inválida.
+    - Números de prueba o dummy repetidos (ej: '0001111111', '1111111', '111111', '999999', '000000').
+    - Registros donde Cliente o Solicitante contenga 'PROYECTO DEMO' o 'NO IDENTIFICADO'.
+    """
+    if tipo_servicio and str(tipo_servicio).strip().lower() in ('reunión', 'reunion'):
+        return False
+
+    if cliente:
+        cli_upper = str(cliente).strip().upper()
+        if 'PROYECTO DEMO' in cli_upper or 'NO IDENTIFICADO' in cli_upper:
+            return False
+
+    if solicitante:
+        sol_upper = str(solicitante).strip().upper()
+        if 'PROYECTO DEMO' in sol_upper or 'NO IDENTIFICADO' in sol_upper:
+            return False
+
+    if not numero_proyecto:
+        return False
+
+    raw = str(numero_proyecto).strip()
+    clean = raw.lstrip('0')
+    if not clean or len(clean) < 3:
+        return False
+
+    # Descartar si todos los dígitos son idénticos (ej: 111111, 1111111, 999999, 222222)
+    if len(set(clean)) == 1:
+        return False
+
+    # Descartar secuencias dummy repetidas evidentes
+    if '11111' in clean or '99999' in clean or '00000' in clean:
+        return False
+
+    return True
+
 def get_proyectos_pendientes_recordatorio(intervalo_minutos: int = 360, conn=None) -> List[dict]:
     """
-    Obtiene los proyectos sin Líder Técnico asignado que requieren recordatorio:
+    Obtiene los proyectos válidos sin Líder Técnico asignado que requieren recordatorio:
     - Estado <> 'Atendido'
+    - Tipo_Servicio <> 'Reunión'
     - LT_Asignado IS NULL o vacío o 'sin asignar'
+    - Proyecto válido (no dummy tipo 0001111111 ni demo)
     - Creado >= intervalo_minutos (si Ultimo_Recordatorio es NULL)
       O Ultimo_Recordatorio >= intervalo_minutos
     """
@@ -1798,6 +1845,14 @@ def get_proyectos_pendientes_recordatorio(intervalo_minutos: int = 360, conn=Non
                 FROM dbo.Proyectos p WITH (NOLOCK)
                 WHERE (p.LT_Asignado IS NULL OR LTRIM(RTRIM(p.LT_Asignado)) = '' OR LOWER(LTRIM(RTRIM(p.LT_Asignado))) = 'sin asignar')
                   AND ISNULL(p.Estado, '') <> 'Atendido'
+                  AND (p.Tipo_Servicio IS NULL OR LOWER(LTRIM(RTRIM(p.Tipo_Servicio))) NOT IN ('reunión', 'reunion'))
+                  AND p.Numero_Proyecto NOT LIKE '%111111%'
+                  AND p.Numero_Proyecto NOT LIKE '%999999%'
+                  AND p.Numero_Proyecto NOT LIKE '%000000%'
+                  AND ISNULL(p.Cliente, '') NOT LIKE '%NO IDENTIFICADO%'
+                  AND ISNULL(p.Cliente, '') NOT LIKE '%PROYECTO DEMO%'
+                  AND ISNULL(p.Solicitante, '') NOT LIKE '%NO IDENTIFICADO%'
+                  AND ISNULL(p.Solicitante, '') NOT LIKE '%PROYECTO DEMO%'
                   AND (
                       (p.Ultimo_Recordatorio IS NULL AND DATEDIFF(MINUTE, p.Creado, GETDATE()) >= %s)
                       OR
@@ -1807,7 +1862,16 @@ def get_proyectos_pendientes_recordatorio(intervalo_minutos: int = 360, conn=Non
             """
             cursor.execute(sql, (intervalo_minutos, intervalo_minutos))
             rows = cursor.fetchall()
-            return serialize_rows(rows)
+            valid_rows = [
+                r for r in rows 
+                if is_valid_project_number(
+                    r.get('Numero_Proyecto'), 
+                    r.get('Cliente'), 
+                    r.get('Tipo_Servicio'),
+                    r.get('Solicitante')
+                )
+            ]
+            return serialize_rows(valid_rows)
     finally:
         if should_close:
             active_conn.close()
