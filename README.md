@@ -144,8 +144,11 @@ Diseñada con la identidad visual corporativa de Claro Chile (cabecera instituci
 12. **Notificaciones y Recordatorios Automáticos por Correo para Solicitud LTI (v1.8.0)**:
     - **Notificación Instantánea de Ingreso**: Despacho automático y asíncrono vía `BackgroundTasks` de FastAPI a los coordinadores de líderes TI (`alejandro.aguilarm@clarovtr.cl` y `pablo.castillo@clarovtr.cl`) inmediatamente tras la creación de una solicitud LTI por un PM, con la ficha completa del requerimiento (N° Proyecto, Cliente, PM Solicitante, Estado 'Generado' y Detalle con Solots Liray).
     - **Worker Asíncrono de Recordatorio Periódico (Cada 6 Horas)**: Tarea programada en segundo plano integrada en el ciclo de vida de FastAPI (`lifespan`) que audita continuamente las solicitudes sin líder asignado (`LT_Asignado IS NULL` o sin asignar), despachando recordatorios a los coordinadores cada 6 horas con control de idempotencia y persistencia en MSSQL (`Ultimo_Recordatorio` y `Contador_Recordatorios` en `dbo.Proyectos`) para evitar duplicaciones ante reinicios del backend.
+    - **Filtro Anti-Spam de Proyectos Dummy e Históricos**: Algoritmo `is_valid_project_number()` que omite automáticamente proyectos de prueba/demo o reuniones (ej. `0001111111`, `1111111`, tipo `Reunión`), asegurando que solo se notifiquen requerimientos operacionales legítimos.
     - **Notificación de Asignación de Líder Técnico**: Al asignar un líder técnico a una solicitud en `PUT /api/proyectos/{id}`, el sistema notifica de inmediato al PM solicitante con copia (**CC**) al Líder Técnico asignado, garantizando trazabilidad y cierre formal de la etapa de asignación.
     - **Resolución Inteligente de Correos (PM y LTI)**: Estrategia multicapa que sincroniza la identidad corporativa de Portal Halo con `dbo.App_Usuarios` vía JIT, catálogo canónico y fallback heurístico empresarial `@clarovtr.cl`.
+    - **Herramienta de Difusión y Comunicados Masivos a PMs**: Script automatizado (`scripts/enviar_comunicado_pms.py`) para emisiones institucionales con soporte de destinatarios en `To` y copia oculta `BCC` respetando RFC SMTP, con URL corporativa oficial `https://200.14.222.162/login.html`.
+    - **Estandarización de Identidad Institucional PCDI**: Firma, membretes y plantillas homologadas bajo la denominación oficial **PCDI • Claro Chile / VTR** (sustituyendo "Dirección de Operaciones TI").
     - **Plantillas HTML Corporativas HALO**: Diseño institucional con estilos CSS inline compatibles con Outlook desktop y web, header Rojo Claro `#B52217`, acentos Teal `#0097A9`, cajas de alerta `#FDEDEA` / `#DA291C` y enlaces directos de gestión en el portal.
 
 ---
@@ -164,11 +167,11 @@ Diseñada con la identidad visual corporativa de Claro Chile (cabecera instituci
 ```text
 app-lti/
 ├── backend/
-│   ├── main.py              # API FastAPI, rutas REST, streaming y servidor de estáticos
-│   ├── db.py                # Conexión MSSQL, serialización, consultas y aprovisionamiento JIT
+│   ├── main.py              # API FastAPI, rutas REST, worker de recordatorios y servidor estático
+│   ├── db.py                # Conexión MSSQL, serialización, filtros anti-dummy y aprovisionamiento JIT
 │   ├── auth.py              # Verificación de JWT SSO del Portal, cookies HttpOnly y cálculo de roles
 │   ├── config.py            # Carga de variables (.env) y configuración global
-│   ├── email_service.py     # Servicio de envío de correos vía Office 365 SMTP + STARTTLS
+│   ├── email_service.py     # Servicio SMTP Office 365, soporte To/CC/BCC y plantillas HTML HALO
 │   ├── seed_users.py        # Poblador idempotente de roles para líderes y administradores
 │   └── ticket_automation.py # Automatización Playwright Async + SSE para Service Manager
 ├── frontend/
@@ -178,10 +181,17 @@ app-lti/
 │   └── js/
 │       ├── app.js           # Lógica de renderizado, streaming SSE, modales, clipboard y email
 │       └── auth.js          # Manejo de sesión SSO por cookies con auto-refresh (/api/auth/refresh)
+├── scripts/
+│   ├── enviar_comunicado_pms.py # Script de difusión masiva con soporte To y BCC (PCDI)
+│   └── deploy_to_iacdi.sh       # Script de sincronización rsync a producción iacdi
+├── tests/
+│   ├── test_notificaciones_solicitud_lti.py # Pruebas unitarias de eventos de correo y filtros
+│   ├── test_email_service.py                # Pruebas de cliente SMTP, sanitización y adjuntos
+│   └── ...                                  # Batería completa de pruebas de regresión y E2E
 ├── .env.example             # Plantilla de variables de entorno (SMTP, BD, PORTAL_JWT_SECRET)
 ├── requirements.txt         # Dependencias Python
 ├── run.sh                   # Script de inicio rápido del servidor
-└── README.md                # Documentación
+└── README.md                # Documentación oficial
 ```
 
 ---
