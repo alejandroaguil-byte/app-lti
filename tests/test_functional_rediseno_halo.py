@@ -33,7 +33,14 @@ INDEX_PATH = os.path.join(BASE_DIR, "frontend", "index.html")
 STYLES_PATH = os.path.join(BASE_DIR, "frontend", "css", "styles.css")
 
 LOCAL_URL = "http://127.0.0.1:8000"
-IACDI_URL = "http://100.82.24.75:8000"
+# Verificaciones de producción: solo corren si se pide explícitamente con IACDI_URL.
+# Producción escucha en 127.0.0.1:8000 detrás del portal, por lo que la IP Tailscale
+# directa (100.82.24.75:8000) no responde desde fuera del servidor.
+IACDI_URL = os.getenv("IACDI_URL", "").rstrip("/")
+requires_iacdi = pytest.mark.skipif(
+    not IACDI_URL,
+    reason="Verificación de producción: definir IACDI_URL para ejecutarla",
+)
 
 
 # ==============================================================================
@@ -377,6 +384,7 @@ def test_cp_halo_08_local_auth_and_business_api():
 # SUITE 5: SERVICIOS Y ENDPOINTS EN VIVO - SERVIDOR DE PRODUCCIÓN (IACDI)
 # ==============================================================================
 
+@requires_iacdi
 def test_cp_halo_09_iacdi_static_and_health_endpoints():
     """
     CP-HALO-09: Verificación de entrega HTTP en Producción IACDI (100.82.24.75:8000)
@@ -414,6 +422,7 @@ def test_cp_halo_09_iacdi_static_and_health_endpoints():
     assert "HALO" in data_health.get("app", ""), "Campo app no menciona HALO en /api/health en IACDI"
 
 
+@requires_iacdi
 def test_cp_halo_10_iacdi_auth_and_business_api():
     """
     CP-HALO-10: Verificación de autenticación y endpoints operativos en Servidor de Producción IACDI
