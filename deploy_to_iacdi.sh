@@ -26,6 +26,8 @@ rsync -rtvz --no-o --no-g --omit-dir-times --progress \
     --exclude '.pytest_cache/' \
     --exclude '.env' \
     --exclude '.DS_Store' \
+    --exclude '.engram/' \
+    --exclude 'odd/' \
     "$LOCAL_DIR/" "$REMOTE_HOST:$REMOTE_DIR/"
 
 echo ""
