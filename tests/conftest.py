@@ -59,27 +59,60 @@ def auth_token():
     """Generates an authentication token for test user alejandro.aguilar."""
     return create_portal_jwt(username="alejandro.aguilar", admin_level=2, name="Alejandro Aguilar")
 
+# Todo N° de proyecto creado por las pruebas empieza con 'QA-' (el backend lo guarda como '000QA-'),
+# lo que además evita que dispare correos (ver is_test_project_number en backend/email_service.py).
+# La base de pruebas es la de producción: la limpieza nunca usa patrones sobre Cliente/Detalle.
+TEST_PROJECT_PREFIXES = ("000QA-",)
+
+
+def delete_test_projects(cursor, session_start_id) -> int:
+    """Borra solo filas de prueba creadas en esta sesión (ID > inicio y prefijo de prueba).
+
+    Sin ID de inicio de sesión no borra nada. Retorna la cantidad de filas borradas.
+    """
+    if session_start_id is None:
+        return 0
+    prefix_clause = " OR ".join(["Numero_Proyecto LIKE %s"] * len(TEST_PROJECT_PREFIXES))
+    cursor.execute(
+        f"DELETE FROM dbo.Proyectos WHERE ID > %s AND ({prefix_clause})",
+        (session_start_id, *[f"{prefix}%" for prefix in TEST_PROJECT_PREFIXES]),
+    )
+    return cursor.rowcount
+
+
+@pytest.fixture(scope="session")
+def test_session_start_project_id():
+    """MAX(ID) de dbo.Proyectos al iniciar la sesión; None si no se puede leer."""
+    try:
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT ISNULL(MAX(ID), 0) AS max_id FROM dbo.Proyectos")
+                return int(cursor.fetchone()["max_id"])
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"[CLEANUP WARNING] No se pudo leer el ID inicial; la limpieza de proyectos queda desactivada: {e}")
+        return None
+
+
 @pytest.fixture(autouse=True)
-def clean_test_data():
-    """Cleanup any test records created during test runs."""
+def isolate_email_redirect(monkeypatch):
+    """Las pruebas en proceso validan el comportamiento productivo salvo que definan EMAIL_REDIRECT_TO.
+
+    El .env de desarrollo define EMAIL_REDIRECT_TO; se quita del proceso de pytest (no del servidor).
+    """
+    monkeypatch.delenv("EMAIL_REDIRECT_TO", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def clean_test_data(test_session_start_project_id):
+    """Cleanup test records created during this test session only."""
     def _cleanup():
         conn = get_db_connection()
         try:
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    DELETE FROM dbo.Proyectos 
-                    WHERE Numero_Proyecto LIKE '%QA%' 
-                       OR Numero_Proyecto LIKE '%TEST%'
-                       OR Numero_Proyecto LIKE '%DUP%'
-                       OR Cliente LIKE '%PRUEBA QA%' 
-                       OR Cliente LIKE '%INMUTABILIDAD%'
-                       OR Cliente LIKE '%MODIFICADO%' 
-                       OR Cliente LIKE '%DRILLDOWN%' 
-                       OR Detalle LIKE '%Prueba E2E Automatizada%'
-                       OR Detalle LIKE '%QA%'
-                       OR Detalle LIKE '%inmutabilidad%'
-                       OR Detalle LIKE '%anti-duplicado%'
-                """)
+                delete_test_projects(cursor, test_session_start_project_id)
                 cursor.execute("""
                     DELETE FROM dbo.App_Usuarios 
                     WHERE username LIKE 'e2euser%' 

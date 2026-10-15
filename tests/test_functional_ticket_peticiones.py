@@ -552,7 +552,7 @@ async def test_stream_ticket_creation_cleanup_on_cancellation():
 # ==============================================================================
 from playwright.sync_api import Page, expect
 
-BASE_URL = os.getenv("BASE_URL", "http://100.82.24.75:8000")
+BASE_URL = os.getenv("BASE_URL", "http://127.0.0.1:8000")
 
 
 def helper_login(page: Page, username: str = "alejandro.aguilar", password: str = None):

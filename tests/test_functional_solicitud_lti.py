@@ -214,7 +214,7 @@ def test_05_anti_duplicate_control(page: Page):
     """
     import uuid
     unique_ts = f"{int(time.time() * 1000) % 10000000}-{uuid.uuid4().hex[:6]}"
-    existing_proj = f"000DUP{unique_ts}"
+    existing_proj = f"000QA-DUP{unique_ts}"
     res_init = create_solicitud_lti(
         cliente="ILUSTRE MUNICIPALIDAD DE QUINTA NORMAL",
         numero_proyecto=existing_proj,

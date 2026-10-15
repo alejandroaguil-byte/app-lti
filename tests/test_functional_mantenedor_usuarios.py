@@ -12,16 +12,12 @@ import requests
 from playwright.sync_api import Page, expect
 
 from backend.db import get_db_connection, create_solicitud_lti, delete_proyecto, get_or_create_jit_user
-from backend.seed_users import seed_default_users
 from tests.conftest import create_portal_jwt, create_access_token
 
-BASE_URL = os.getenv("BASE_URL", "http://100.82.24.75:8000")
+BASE_URL = os.getenv("BASE_URL", "http://127.0.0.1:8000")
 
-
-@pytest.fixture(scope="module", autouse=True)
-def ensure_seed():
-    """Asegura que los usuarios iniciales canónicos estén sincronizados."""
-    seed_default_users()
+# Sin seed de usuarios canónicos: la base es la de producción y las pruebas no deben
+# reescribir rol ni LT de cuentas reales. Las cuentas canónicas ya existen.
 
 
 def get_token_for(username: str, rol: str = "LTI") -> str:
@@ -102,7 +98,7 @@ def test_tc_rbac_03_pm_allowed_solicitudes():
     ts = int(time.time() * 1000) % 10000000
     payload = {
         "cliente": f"CLIENTE PM QA {ts}",
-        "numero_proyecto": f"PM-REQ-{ts}",
+        "numero_proyecto": f"QA-PM-REQ-{ts}",
         "fecha_solicitud": datetime.date.today().isoformat(),
         "detalle": "Solicitud ingresada por rol PM para prueba RBAC",
         "tipo_servicio": "Otros",
@@ -138,7 +134,7 @@ def test_tc_rbac_05_lti_forbidden_delete_project():
     ts = int(time.time() * 1000) % 10000000
     p = create_solicitud_lti(
         cliente=f"CLIENTE TEST DEL {ts}",
-        numero_proyecto=f"DEL-{ts}",
+        numero_proyecto=f"QA-DEL-{ts}",
         detalle="Proyecto para test delete por LTI",
         tipo_servicio="Otros",
         lt_asignado="Erwin Sandoval",
@@ -161,7 +157,7 @@ def test_tc_rbac_06_lti_allowed_edit_project():
     ts = int(time.time() * 1000) % 10000000
     p = create_solicitud_lti(
         cliente=f"CLIENTE EDIT LTI {ts}",
-        numero_proyecto=f"ED-LTI-{ts}",
+        numero_proyecto=f"QA-ED-LTI-{ts}",
         detalle="Proyecto previo a edición",
         tipo_servicio="Otros",
         lt_asignado="Juan Barrera",
@@ -193,7 +189,7 @@ def test_tc_rbac_07_admin_allowed_delete_project():
     ts = int(time.time() * 1000) % 10000000
     p = create_solicitud_lti(
         cliente=f"CLIENTE ADMIN DEL {ts}",
-        numero_proyecto=f"ADM-DEL-{ts}",
+        numero_proyecto=f"QA-ADM-DEL-{ts}",
         detalle="Proyecto para eliminación por Admin",
         tipo_servicio="Otros",
         lt_asignado="Alejandro Aguilar",
