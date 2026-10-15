@@ -710,7 +710,7 @@ def test_e2e_03_modal_dual_id_display_and_clipboard_actions(page: Page):
     expect(page.locator("#modal-summary-titulo")).to_have_text("Automatización de Solicitud Técnica")
     expect(page.locator("#modal-summary-grupo")).to_have_text("Lideres Tecnicos")
     expect(page.locator("#modal-summary-usuario-peticion")).to_have_text("Alejandro.Aguilar")
-    expect(page.locator("#modal-summary-logout-status")).to_contain_text("Sesión Finalizada Limpiamente")
+    expect(page.locator("#modal-summary-logout-status")).to_contain_text("Sesión cerrada correctamente")
 
     # Probar copiado de Ticket SD
     page.click("#btn-copy-ticket-id")

@@ -33,7 +33,7 @@
   --accent-teal: #0097A9;
 
   --accent-cyan: #0097A9;
-  --accent-indigo: #6366f1;
+  --accent-indigo: #0097A9;
 
   --status-success-bg: #ecfdf5;
   --status-success-text: #059669;
@@ -47,9 +47,9 @@
   --status-danger-text: #dc2626;
   --status-danger-border: #fecaca;
 
-  --status-info-bg: #eff6ff;
-  --status-info-text: #2563eb;
-  --status-info-border: #bfdbfe;
+  --status-info-bg: #E6F6F8;
+  --status-info-text: #007A8A;
+  --status-info-border: #A9DDE4;
 
   --status-neutral-bg: #f8fafc;
   --status-neutral-text: #64748b;
@@ -94,7 +94,7 @@
   --accent-teal: #0097A9;
 
   --accent-cyan: #22d3ee;
-  --accent-indigo: #818cf8;
+  --accent-indigo: #4FC3D1;
 
   --status-success-bg: rgba(16, 185, 129, 0.15);
   --status-success-text: #34d399;
@@ -108,9 +108,9 @@
   --status-danger-text: #f87171;
   --status-danger-border: rgba(239, 68, 68, 0.3);
 
-  --status-info-bg: rgba(59, 130, 246, 0.15);
-  --status-info-text: #60a5fa;
-  --status-info-border: rgba(59, 130, 246, 0.3);
+  --status-info-bg: rgba(0, 151, 169, 0.16);
+  --status-info-text: #4FC3D1;
+  --status-info-border: rgba(0, 151, 169, 0.35);
 
   --status-neutral-bg: rgba(100, 116, 139, 0.15);
   --status-neutral-text: #94a3b8;
@@ -752,24 +752,6 @@ button, input, select, textarea, optgroup {
   background-color: var(--bg-surface-tertiary);
 }
 
-.btn-accent {
-  background-color: #8b5cf6;
-  color: #ffffff;
-}
-
-.btn-accent:hover {
-  background-color: #7c3aed;
-}
-
-[data-theme="dark"] .btn-accent {
-  background-color: #7c3aed;
-  color: #ffffff;
-}
-
-[data-theme="dark"] .btn-accent:hover {
-  background-color: #6d28d9;
-}
-
 .btn-success {
   background-color: #10b981;
   color: #ffffff;
@@ -863,21 +845,7 @@ button, input, select, textarea, optgroup {
   flex-shrink: 0;
 }
 
-.kpi-proyectos .kpi-icon { background: rgba(2, 132, 199, 0.12); color: #0284c7; }
-.kpi-en-curso .kpi-icon { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
-.kpi-pendientes .kpi-icon { background: rgba(245, 158, 11, 0.12); color: #f59e0b; }
-.kpi-efectividad .kpi-icon { background: rgba(16, 185, 129, 0.12); color: #10b981; }
-.kpi-solots .kpi-icon { background: rgba(16, 185, 129, 0.12); color: #10b981; }
-.kpi-tickets .kpi-icon { background: rgba(245, 158, 11, 0.12); color: #f59e0b; }
-.kpi-rfcs .kpi-icon { background: rgba(139, 92, 246, 0.12); color: #8b5cf6; }
 
-[data-theme="dark"] .kpi-proyectos .kpi-icon { background: rgba(56, 189, 248, 0.18); color: #38bdf8; }
-[data-theme="dark"] .kpi-en-curso .kpi-icon { background: rgba(96, 165, 240, 0.18); color: #60a5fa; }
-[data-theme="dark"] .kpi-pendientes .kpi-icon { background: rgba(251, 191, 36, 0.18); color: #fbbf24; }
-[data-theme="dark"] .kpi-efectividad .kpi-icon { background: rgba(52, 211, 153, 0.18); color: #34d399; }
-[data-theme="dark"] .kpi-solots .kpi-icon { background: rgba(52, 211, 153, 0.18); color: #34d399; }
-[data-theme="dark"] .kpi-tickets .kpi-icon { background: rgba(251, 191, 36, 0.18); color: #fbbf24; }
-[data-theme="dark"] .kpi-rfcs .kpi-icon { background: rgba(167, 139, 250, 0.18); color: #a78bfa; }
 
 /* Tarjeta KPI Clicable / Interactiva */
 .kpi-card-clickable {
@@ -927,25 +895,18 @@ button, input, select, textarea, optgroup {
   font-weight: 700;
   padding: 0.15rem 0.45rem;
   border-radius: var(--radius-full);
-  background-color: rgba(245, 158, 11, 0.15);
-  color: #d97706;
-  border: 1px solid rgba(245, 158, 11, 0.3);
+  background-color: var(--bg-surface-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
   opacity: 0.85;
   transition: all var(--transition-fast);
 }
 
 .kpi-card-clickable:hover .kpi-clickable-badge {
   opacity: 1;
-  background-color: #f59e0b;
-  color: #ffffff;
-  border-color: #d97706;
+  color: var(--text-primary);
 }
 
-[data-theme="dark"] .kpi-clickable-badge {
-  background-color: rgba(245, 158, 11, 0.25);
-  color: #fbbf24;
-  border-color: rgba(245, 158, 11, 0.5);
-}
 
 /* Count Circle Badge */
 .count-circle-badge {
@@ -955,12 +916,12 @@ button, input, select, textarea, optgroup {
   min-width: 28px;
   height: 28px;
   padding: 0 0.5rem;
-  background: linear-gradient(135deg, #0284c7 0%, #06b6d4 100%);
+  background: linear-gradient(135deg, #0097A9 0%, #06b6d4 100%);
   color: #ffffff;
   border-radius: var(--radius-full);
   font-size: 0.8rem;
   font-weight: 800;
-  box-shadow: 0 2px 6px rgba(2, 132, 199, 0.3);
+  box-shadow: 0 2px 6px rgba(0, 151, 169, 0.3);
 }
 
 /* Timeline Component */
@@ -1054,9 +1015,9 @@ button, input, select, textarea, optgroup {
   display: inline-block;
   font-family: var(--font-mono);
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: 600;
   background: var(--bg-surface-secondary);
-  color: var(--primary);
+  color: var(--text-primary);
   padding: 0.15rem 0.5rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-color);
@@ -1275,7 +1236,7 @@ button, input, select, textarea, optgroup {
 .col-project-client {
   min-width: 180px;
   max-width: 260px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.35;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -1441,7 +1402,7 @@ button, input, select, textarea, optgroup {
 }
 
 .breadcrumb-link {
-  color: var(--primary);
+  color: var(--accent-teal);
   text-decoration: none;
   cursor: pointer;
   font-weight: 600;
@@ -1765,16 +1726,16 @@ button, input, select, textarea, optgroup {
   font-size: 0.95rem;
   font-weight: 700;
   gap: 0.5rem;
-  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
-  box-shadow: 0 3px 10px rgba(2, 132, 199, 0.28);
+  background: linear-gradient(135deg, #0097A9 0%, #006B79 100%);
+  box-shadow: 0 3px 10px rgba(0, 151, 169, 0.28);
   border: none;
   color: #ffffff;
 }
 
 .btn-execute:hover {
-  background: linear-gradient(135deg, #0369a1 0%, #075985 100%);
+  background: linear-gradient(135deg, #006B79 0%, #075985 100%);
   transform: translateY(-1px);
-  box-shadow: 0 5px 14px rgba(2, 132, 199, 0.38);
+  box-shadow: 0 5px 14px rgba(0, 151, 169, 0.38);
 }
 
 .btn-execute:active {
@@ -1848,7 +1809,7 @@ button, input, select, textarea, optgroup {
 
 .terminal-progress-bar {
   height: 100%;
-  background: linear-gradient(90deg, #0284c7 0%, #06b6d4 50%, #10b981 100%);
+  background: linear-gradient(90deg, #0097A9 0%, #06b6d4 50%, #10b981 100%);
   width: 0%;
   transition: width 0.4s ease;
 }
@@ -1907,7 +1868,7 @@ button, input, select, textarea, optgroup {
 }
 
 .terminal-prompt {
-  color: #38bdf8;
+  color: #4FC3D1;
   font-weight: 700;
   font-size: 0.88rem;
 }
@@ -1969,15 +1930,15 @@ button, input, select, textarea, optgroup {
 }
 
 .log-tag-info {
-  background: rgba(56, 189, 248, 0.18);
-  color: #38bdf8;
-  border: 1px solid rgba(56, 189, 248, 0.35);
+  background: rgba(0, 151, 169, 0.18);
+  color: #4FC3D1;
+  border: 1px solid rgba(0, 151, 169, 0.35);
 }
 
 .log-tag-step {
-  background: rgba(168, 85, 247, 0.18);
-  color: #c084fc;
-  border: 1px solid rgba(168, 85, 247, 0.35);
+  background: rgba(0, 151, 169, 0.18);
+  color: #4FC3D1;
+  border: 1px solid rgba(0, 151, 169, 0.35);
 }
 
 .log-tag-success {
@@ -2020,7 +1981,7 @@ button, input, select, textarea, optgroup {
 }
 
 .log-highlight {
-  color: #38bdf8;
+  color: #4FC3D1;
   font-weight: 700;
 }
 
@@ -2069,8 +2030,8 @@ button, input, select, textarea, optgroup {
 }
 
 .status-indicator-dot.running {
-  background-color: #0284c7;
-  box-shadow: 0 0 8px rgba(2, 132, 199, 0.7);
+  background-color: #0097A9;
+  box-shadow: 0 0 8px rgba(0, 151, 169, 0.7);
   animation: pulseDot 1.2s infinite;
 }
 
@@ -2228,24 +2189,24 @@ button, input, select, textarea, optgroup {
   padding: 1.15rem;
   text-align: center;
   margin-bottom: 0;
-  box-shadow: 0 4px 14px rgba(2, 132, 199, 0.14);
+  box-shadow: 0 4px 14px rgba(0, 151, 169, 0.14);
   position: relative;
 }
 
 [data-theme="dark"] .ticket-id-display-box {
   background: linear-gradient(135deg, #131b2e 0%, #1e293b 100%);
-  border-color: #38bdf8;
-  box-shadow: 0 4px 18px rgba(56, 189, 248, 0.18);
+  border-color: #4FC3D1;
+  box-shadow: 0 4px 18px rgba(0, 151, 169, 0.18);
 }
 
 .ticket-id-box-peticion {
-  border-color: #8b5cf6;
-  box-shadow: 0 4px 14px rgba(139, 92, 246, 0.14);
+  border-color: #0097A9;
+  box-shadow: 0 4px 14px rgba(0, 151, 169, 0.14);
 }
 
 [data-theme="dark"] .ticket-id-box-peticion {
-  border-color: #a78bfa;
-  box-shadow: 0 4px 18px rgba(167, 139, 250, 0.2);
+  border-color: #4FC3D1;
+  box-shadow: 0 4px 18px rgba(79, 195, 209, 0.2);
 }
 
 .ticket-id-label {
@@ -2272,22 +2233,22 @@ button, input, select, textarea, optgroup {
   font-weight: 900;
   color: var(--primary);
   letter-spacing: 1.2px;
-  text-shadow: 0 1px 8px rgba(2, 132, 199, 0.25);
+  text-shadow: 0 1px 8px rgba(0, 151, 169, 0.25);
 }
 
 [data-theme="dark"] .ticket-id-value {
-  color: #38bdf8;
-  text-shadow: 0 0 14px rgba(56, 189, 248, 0.4);
+  color: #4FC3D1;
+  text-shadow: 0 0 14px rgba(0, 151, 169, 0.4);
 }
 
 .ticket-id-value.peticion-value {
-  color: #7c3aed;
-  text-shadow: 0 1px 8px rgba(124, 58, 237, 0.25);
+  color: #007A8A;
+  text-shadow: 0 1px 8px rgba(0, 151, 169, 0.25);
 }
 
 [data-theme="dark"] .ticket-id-value.peticion-value {
-  color: #a78bfa;
-  text-shadow: 0 0 14px rgba(167, 139, 250, 0.4);
+  color: #4FC3D1;
+  text-shadow: 0 0 14px rgba(79, 195, 209, 0.4);
 }
 
 .copy-feedback-msg {
@@ -2669,9 +2630,9 @@ button, input, select, textarea, optgroup {
 }
 
 [data-theme="dark"] .badge-solots {
-  background-color: rgba(56, 189, 248, 0.15);
-  color: #7dd3fc;
-  border-color: rgba(56, 189, 248, 0.3);
+  background-color: rgba(0, 151, 169, 0.15);
+  color: #8ED3DC;
+  border-color: rgba(0, 151, 169, 0.3);
 }
 
 /* Texto de ayuda para inputs */
@@ -2826,15 +2787,15 @@ button, input, select, textarea, optgroup {
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-md);
-  background-color: rgba(2, 132, 199, 0.12);
+  background-color: rgba(0, 151, 169, 0.12);
   color: var(--primary);
-  border: 1px solid rgba(2, 132, 199, 0.25);
+  border: 1px solid rgba(0, 151, 169, 0.25);
 }
 
 [data-theme="dark"] .usuarios-header-icon {
-  background-color: rgba(56, 189, 248, 0.2);
-  color: #38bdf8;
-  border-color: rgba(56, 189, 248, 0.35);
+  background-color: rgba(0, 151, 169, 0.2);
+  color: #4FC3D1;
+  border-color: rgba(0, 151, 169, 0.35);
 }
 
 .usuarios-title {
@@ -2904,18 +2865,13 @@ button, input, select, textarea, optgroup {
   font-size: 0.75rem;
   font-weight: 700;
   border-radius: var(--radius-full);
-  background-color: rgba(139, 92, 246, 0.12);
-  color: #7c3aed;
-  border: 1px solid #c4b5fd;
+  background-color: var(--bg-surface-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
-[data-theme="dark"] .badge-role-admin {
-  background-color: rgba(139, 92, 246, 0.22);
-  color: #c4b5fd;
-  border-color: rgba(167, 139, 250, 0.4);
-}
 
 .badge-role-lti {
   display: inline-flex;
@@ -2925,18 +2881,13 @@ button, input, select, textarea, optgroup {
   font-size: 0.75rem;
   font-weight: 700;
   border-radius: var(--radius-full);
-  background-color: rgba(37, 99, 235, 0.12);
-  color: #2563eb;
-  border: 1px solid #93c5fd;
+  background-color: var(--bg-surface-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
-[data-theme="dark"] .badge-role-lti {
-  background-color: rgba(37, 99, 235, 0.22);
-  color: #93c5fd;
-  border-color: rgba(96, 165, 250, 0.4);
-}
 
 .badge-role-pm {
   display: inline-flex;
@@ -2946,18 +2897,13 @@ button, input, select, textarea, optgroup {
   font-size: 0.75rem;
   font-weight: 700;
   border-radius: var(--radius-full);
-  background-color: rgba(16, 185, 129, 0.12);
-  color: #059669;
-  border: 1px solid #6ee7b7;
+  background-color: var(--bg-surface-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
-[data-theme="dark"] .badge-role-pm {
-  background-color: rgba(16, 185, 129, 0.22);
-  color: #6ee7b7;
-  border-color: rgba(52, 211, 153, 0.4);
-}
 
 /* Badges de Estado */
 .badge-status-active {
@@ -3006,11 +2952,11 @@ button, input, select, textarea, optgroup {
 }
 
 .btn-action-user-edit {
-  color: #2563eb;
+  color: #007A8A;
 }
 .btn-action-user-edit:hover {
-  background-color: rgba(37, 99, 235, 0.12);
-  border-color: #93c5fd;
+  background-color: rgba(0, 151, 169, 0.12);
+  border-color: #8ED3DC;
 }
 
 .btn-action-user-key {
@@ -3038,10 +2984,10 @@ button, input, select, textarea, optgroup {
 }
 
 [data-theme="dark"] .btn-action-user-edit {
-  color: #60a5fa;
+  color: #4FC3D1;
 }
 [data-theme="dark"] .btn-action-user-edit:hover {
-  background-color: rgba(37, 99, 235, 0.25);
+  background-color: rgba(0, 151, 169, 0.25);
   border-color: rgba(96, 165, 250, 0.4);
 }
 
@@ -3148,7 +3094,7 @@ button, input, select, textarea, optgroup {
 .file-attachment-box:focus-visible {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.3);
+  box-shadow: 0 0 0 3px rgba(0, 151, 169, 0.3);
 }
 
 .btn-warning.btn-email-action:focus-visible {
@@ -3158,8 +3104,8 @@ button, input, select, textarea, optgroup {
 
 .file-attachment-box.dragover {
   border-color: var(--primary);
-  background-color: rgba(37, 99, 235, 0.08);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+  background-color: rgba(0, 151, 169, 0.08);
+  box-shadow: 0 0 0 3px rgba(0, 151, 169, 0.15);
 }
 
 .attachment-info {
@@ -3197,17 +3143,17 @@ button, input, select, textarea, optgroup {
 
 [data-theme="dark"] .file-attachment-box:hover {
   background: rgba(30, 41, 59, 0.9);
-  border-color: #60a5fa;
+  border-color: #4FC3D1;
 }
 
 [data-theme="dark"] .file-attachment-box:focus-visible {
-  border-color: #60a5fa;
+  border-color: #4FC3D1;
   box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.35);
 }
 
 [data-theme="dark"] .file-attachment-box.dragover {
-  background-color: rgba(37, 99, 235, 0.18);
-  border-color: #60a5fa;
+  background-color: rgba(0, 151, 169, 0.18);
+  border-color: #4FC3D1;
 }
 
 [data-theme="dark"] .attachment-info {
@@ -3839,7 +3785,7 @@ button, input, select, textarea, optgroup {
 
 [data-theme="dark"] .pill-media {
   background: rgba(0, 151, 169, 0.25);
-  color: #38BDF8;
+  color: #4FC3D1;
 }
 
 .diag-card-desc {
@@ -3976,9 +3922,9 @@ button, input, select, textarea, optgroup {
 
 /* Botón de Acción en Toolbar de Drill Down */
 .btn-pdf-export-action {
-  color: var(--primary);
-  border-color: rgba(181, 34, 23, 0.4);
-  background: transparent;
+  color: var(--text-primary);
+  border-color: var(--border-color);
+  background: var(--bg-surface-secondary);
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -3988,22 +3934,7 @@ button, input, select, textarea, optgroup {
 }
 
 .btn-pdf-export-action:hover {
-  background: var(--primary);
-  color: #ffffff;
-  border-color: var(--primary);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(181, 34, 23, 0.25);
-}
-
-[data-theme="dark"] .btn-pdf-export-action {
-  color: #f87171;
-  border-color: rgba(248, 113, 113, 0.4);
-}
-
-[data-theme="dark"] .btn-pdf-export-action:hover {
-  background: #b91c1c;
-  color: #ffffff;
-  border-color: #b91c1c;
+  background: var(--bg-surface-tertiary);
 }
 
 /* Kill-Switch Estado Inactivo para Botón Sub-Barra PDF */
@@ -4333,10 +4264,10 @@ button, input, select, textarea, optgroup {
   text-transform: uppercase;
 }
 
-.badge-cat-sharepoint { background: rgba(181, 34, 23, 0.1); color: #B52217; }
-.badge-cat-solot { background: rgba(0, 151, 169, 0.1); color: #0097A9; }
-.badge-cat-ticket { background: rgba(59, 130, 246, 0.1); color: #2563EB; }
-.badge-cat-rfc { background: rgba(139, 92, 246, 0.1); color: #7C3AED; }
+.badge-cat-sharepoint,
+.badge-cat-solot,
+.badge-cat-ticket,
+.badge-cat-rfc { background: var(--bg-surface-secondary); color: var(--text-secondary); }
 
 .badge-date {
   font-size: 0.75rem;
@@ -5294,4 +5225,150 @@ button, input, select, textarea, optgroup {
 /* Hitos del proyecto dentro de la pestaña Resumen */
 #tab-pane-summary .timeline-card {
   margin-bottom: 1.25rem;
+}
+
+/* ==========================================================================
+   ÍCONOS DE LÍNEA Y COLOR CON SIGNIFICADO (FASE 2 UX)
+   ========================================================================== */
+.ui-icon {
+  display: inline-block;
+  flex-shrink: 0;
+  vertical-align: -0.2em;
+}
+
+/* Íconos neutros: heredan gris; el módulo activo hereda el rojo HALO */
+.nav-module-btn .ui-icon,
+.user-menu-item-icon .ui-icon {
+  color: inherit;
+}
+
+/* KPI: un solo estilo neutro para todos los íconos */
+.kpi-card .kpi-icon {
+  background: var(--bg-surface-secondary);
+  color: var(--text-secondary);
+}
+
+.timeline-kpi-icon,
+.usuarios-header-icon,
+.empty-icon,
+.attachment-file-icon,
+.alert-card-icon {
+  color: var(--text-muted);
+}
+
+.empty-icon {
+  display: flex;
+  justify-content: center;
+}
+
+/* Punto de estado: el color solo comunica salud o estado */
+.status-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--status-neutral-text);
+}
+.status-dot-healthy { background: var(--status-success-text); }
+.status-dot-warning { background: var(--status-warning-text); }
+.status-dot-critical { background: var(--status-danger-text); }
+.status-dot-neutral { background: var(--status-neutral-text); }
+
+.health-kpi-icon .status-dot {
+  width: 14px;
+  height: 14px;
+}
+
+.summary-crit::before,
+.summary-warn::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  vertical-align: 1px;
+}
+.summary-crit::before { background: var(--status-danger-text); }
+.summary-warn::before { background: var(--status-warning-text); }
+
+/* Campos sin adorno (antes con emoji a la izquierda) */
+.input-plain {
+  position: relative;
+}
+
+/* Nodos del historial: punto neutro, rojo solo si está vencido */
+.roadmap-node-dot .node-icon:empty {
+  display: none;
+}
+
+/* Toasts: ícono de línea con color semántico */
+.toast-icon {
+  display: inline-flex;
+}
+.toast-icon-success { color: var(--status-success-text); }
+.toast-icon-danger { color: var(--status-danger-text); }
+.toast-icon-warning { color: var(--status-warning-text); }
+.toast-icon-info { color: var(--status-info-text); }
+
+/* Solicitante: texto de apoyo, sin negrita */
+.solicitante-name {
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+/* Identificadores (N° de proyecto, tickets, solots): neutros, no rojos */
+.id-mono {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+/* Botones de copiar ID en el modal de ticket: secundarios */
+.btn-accent,
+[data-theme="dark"] .btn-accent {
+  background-color: var(--bg-surface-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+.btn-accent:hover,
+[data-theme="dark"] .btn-accent:hover {
+  background-color: var(--bg-surface-tertiary);
+}
+
+/* Enviar correo (modal de ticket): acción secundaria */
+.btn-warning.btn-email-action,
+[data-theme="dark"] .btn-warning.btn-email-action {
+  background: var(--bg-surface-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  box-shadow: none;
+}
+.btn-warning.btn-email-action:hover,
+[data-theme="dark"] .btn-warning.btn-email-action:hover {
+  background: var(--bg-surface-tertiary);
+  color: var(--text-primary);
+  transform: none;
+  box-shadow: none;
+}
+
+/* Acciones de tabla en gris; solo eliminar conserva el rojo (acción destructiva) */
+.btn-action-user-edit,
+.btn-action-user-toggle,
+[data-theme="dark"] .btn-action-user-edit,
+[data-theme="dark"] .btn-action-user-toggle {
+  color: var(--text-secondary);
+}
+
+/* "Ver proyecto" en alertas es un enlace: teal */
+.btn-alert-drilldown {
+  color: var(--accent-teal);
+  border-color: var(--border-color);
+  background: transparent;
+}
+.btn-alert-drilldown:hover {
+  background: var(--bg-surface-secondary);
+  color: var(--accent-teal);
+  border-color: var(--accent-teal);
 }

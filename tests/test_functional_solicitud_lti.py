@@ -78,10 +78,10 @@ def test_01_login_and_navigation_solicitud_lti(page: Page):
     expect(estado_select).to_have_value("Generado", timeout=5000)
     expect(estado_select).to_be_disabled()
 
-    # Verificar badge indicador '🔒 Fijo' y texto de ayuda descriptivo
+    # Verificar badge indicador "Fijo" y texto de ayuda descriptivo
     badge_locked = page.locator(".badge-locked")
     expect(badge_locked).to_be_visible()
-    expect(badge_locked).to_contain_text("🔒 Fijo")
+    expect(badge_locked).to_contain_text("Fijo")
 
     help_text = page.locator("#module-solicitud-lti-container .form-help-text").filter(has_text="Estado inicial fijo: 'Generado'")
     expect(help_text).to_be_visible()

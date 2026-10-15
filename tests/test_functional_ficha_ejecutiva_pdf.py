@@ -73,7 +73,7 @@ def test_kill_switch_pdf_default_on():
     assert 'Ficha PDF: ON' in html
     assert 'id="btn-drilldown-export-pdf"' in html
     assert 'aria-label="Exportar Ficha Ejecutiva a PDF"' in html
-    assert 'Exportar Ficha (PDF)' in html
+    assert 'Exportar ficha (PDF)' in html
 
 
 # ==============================================================================

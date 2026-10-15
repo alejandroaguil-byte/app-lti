@@ -63,6 +63,7 @@ const App = {
   activeHealthFilter: null, // null | 'HEALTHY' | 'WARNING' | 'CRITICAL' | 'NEUTRAL'
 
   async init() {
+    if (window.Icons) Icons.hydrate();
     this.initSidebar();
     this.initUserMenu();
     this.initRowActionsMenu();
@@ -296,7 +297,7 @@ const App = {
     localStorage.setItem('app_lti_theme', theme);
     const icon = document.getElementById('theme-icon');
     if (icon) {
-      icon.textContent = theme === 'dark' ? '☀️' : '🌙';
+      icon.innerHTML = Icons.svg(theme === 'dark' ? 'sun' : 'moon', { size: 16 });
     }
     const label = document.getElementById('theme-toggle-label');
     if (label) {
@@ -333,7 +334,7 @@ const App = {
       this.activeHealthFilter = null;
     }
     this.applyHealthScoreState(true);
-    const msg = next ? '🚦 Semáforo de salud activado' : 'Semáforo de salud desactivado (Vista estándar)';
+    const msg = next ? 'Semáforo de salud activado' : 'Semáforo de salud desactivado (Vista estándar)';
     this.showToast(msg, 'info');
   },
 
@@ -468,8 +469,8 @@ const App = {
       ? salud.motivos 
       : ['Sin detalles adicionales'];
 
-    const icon = score === 'CRITICAL' ? '🔴' : (score === 'WARNING' ? '🟡' : (score === 'HEALTHY' ? '🟢' : '⚪'));
-    const motivosHtml = motivos.map(m => `<li><span>${icon}</span> <span>${this.escapeHtml(m)}</span></li>`).join('');
+    const dotLevel = score === 'CRITICAL' ? 'critical' : (score === 'WARNING' ? 'warning' : (score === 'HEALTHY' ? 'healthy' : 'neutral'));
+    const motivosHtml = motivos.map(m => `<li><span class="status-dot status-dot-${dotLevel}"></span> <span>${this.escapeHtml(m)}</span></li>`).join('');
 
     return `
       <div class="health-badge-wrapper" tabindex="0" role="status" aria-label="Salud: ${this.escapeHtml(label)}">
@@ -482,7 +483,7 @@ const App = {
           <ul class="health-tooltip-list">
             ${motivosHtml}
           </ul>
-          <div class="health-tooltip-footer">Click en 🔍 para ver Solots y Tickets en detalle</div>
+          <div class="health-tooltip-footer">Abre el proyecto para ver Solots y Tickets en detalle</div>
         </div>
       </div>
     `;
@@ -538,7 +539,7 @@ const App = {
     const next = !current;
     localStorage.setItem('halo_executive_diagnosis_enabled', next ? 'true' : 'false');
     this.applyExecutiveDiagnosisState(true);
-    const msg = next ? '⚡ Diagnóstico Ejecutivo activado' : '⚡ Diagnóstico Ejecutivo desactivado';
+    const msg = next ? 'Diagnóstico ejecutivo activado' : 'Diagnóstico ejecutivo desactivado';
     this.showToast(msg, 'info');
   },
 
@@ -657,7 +658,7 @@ const App = {
       if (cuellosList.length === 0) {
         cuellosContainer.innerHTML = `
           <div class="diag-empty-banner">
-            <span>✅ No se detectaron cuellos de botella ni bloqueos operacionales en este proyecto.</span>
+            ${Icons.svg('check-circle', { size: 18 })}<span>No se detectaron cuellos de botella ni bloqueos operacionales en este proyecto.</span>
           </div>`;
       } else {
         cuellosContainer.innerHTML = cuellosList.map(cb => {
@@ -667,7 +668,7 @@ const App = {
               <div class="diag-card-header">
                 <span class="diag-severity-pill pill-${sev}">${this.escapeHtml(cb.severidad || 'MEDIA')}</span>
                 <strong class="diag-card-id">${this.escapeHtml(cb.identificador || '')}</strong>
-                <span class="diag-card-area">📍 ${this.escapeHtml(cb.responsable_area || 'Operaciones')}</span>
+                <span class="diag-card-area">${this.escapeHtml(cb.responsable_area || 'Operaciones')}</span>
               </div>
               <p class="diag-card-desc">${this.escapeHtml(cb.descripcion || '')}</p>
             </div>
@@ -686,7 +687,7 @@ const App = {
       if (recsList.length === 0) {
         recsContainer.innerHTML = `
           <div class="diag-empty-banner">
-            <span>ℹ️ Sin recomendaciones adicionales de escalamiento.</span>
+            <span>Sin recomendaciones adicionales de escalamiento.</span>
           </div>`;
       } else {
         recsContainer.innerHTML = recsList.map(r => {
@@ -791,7 +792,7 @@ const App = {
     const next = !current;
     localStorage.setItem('halo_export_pdf_enabled', next ? 'true' : 'false');
     this.applyPdfExportState(true);
-    const msg = next ? '📄 Exportación de Ficha PDF activada' : '📄 Exportación de Ficha PDF desactivada';
+    const msg = next ? 'Exportación de ficha PDF activada' : 'Exportación de ficha PDF desactivada';
     this.showToast(msg, 'info');
   },
 
@@ -864,7 +865,7 @@ const App = {
         try {
           printIframe.contentWindow.focus();
           printIframe.contentWindow.print();
-          this.showToast('📄 Ficha ejecutiva enviada al diálogo de impresión/PDF', 'success');
+          this.showToast('Ficha ejecutiva enviada al diálogo de impresión/PDF', 'success');
         } catch (printErr) {
           console.warn('Iframe print bloqueado, recurriendo a ventana emergente:', printErr);
           // Fallback en caso de bloqueo de iframe
@@ -1024,14 +1025,14 @@ const App = {
         if (pc.es_atrasado) {
           cardComp.classList.add('is-critical');
           cardComp.classList.remove('is-future');
-          if (iconComp) iconComp.textContent = '🚨';
+          if (iconComp) iconComp.innerHTML = Icons.svg('alert-triangle', { size: 20 });
           if (titleComp) titleComp.textContent = 'COMPROMISO ATRASADO';
           elComp.textContent = `${pc.titulo} (+${pc.dias_atraso}d de atraso)`;
           elComp.title = `${pc.titulo} vencido el ${pc.fecha_formateada}`;
         } else {
           cardComp.classList.remove('is-critical');
           cardComp.classList.add('is-future');
-          if (iconComp) iconComp.textContent = '📅';
+          if (iconComp) iconComp.innerHTML = Icons.svg('calendar', { size: 20 });
           if (titleComp) titleComp.textContent = 'PRÓXIMO COMPROMISO';
           const labelRest = pc.dias_restantes === 0 ? 'hoy' : (pc.dias_restantes === 1 ? 'en 1 día' : `en ${pc.dias_restantes} días`);
           elComp.textContent = `${pc.titulo} (${pc.fecha_formateada} - ${labelRest})`;
@@ -1039,7 +1040,7 @@ const App = {
         }
       } else {
         cardComp.classList.remove('is-critical', 'is-future');
-        if (iconComp) iconComp.textContent = '✅';
+        if (iconComp) iconComp.innerHTML = Icons.svg('check-circle', { size: 20 });
         if (titleComp) titleComp.textContent = 'COMPROMISOS';
         elComp.textContent = 'Todos al día / Completados';
       }
@@ -1101,7 +1102,7 @@ const App = {
           <div class="roadmap-connector">
             <div class="roadmap-spine-line"></div>
             <div class="roadmap-lapse-badge" title="Tiempo transcurrido desde el hito anterior: ${diffDays} días">
-              ⏱️ ${lapseText}
+              ${lapseText}
             </div>
           </div>
         `;
@@ -1110,15 +1111,15 @@ const App = {
       // Nodo y tarjeta del hito
       html += `
         <div class="roadmap-item ${isOverdue ? 'item-overdue' : ''} ${isFuture ? 'item-future' : ''} cat-${ev.categoria}">
-          <div class="roadmap-node-dot" style="--node-accent: ${ev.color_tipo || '#0097A9'}">
-            <span class="node-icon">${ev.icono || '📍'}</span>
+          <div class="roadmap-node-dot" style="--node-accent: ${isOverdue ? 'var(--status-danger-text)' : 'var(--text-muted)'}">
+            <span class="node-icon"></span>
           </div>
           <div class="roadmap-card">
             <div class="roadmap-card-header">
               <span class="badge-cat badge-cat-${ev.categoria}">${this.escapeHtml(ev.categoria_label)}</span>
-              <span class="badge-date">📅 ${ev.fecha_formateada}</span>
-              ${isOverdue ? `<span class="badge-alert-overdue">⚠️ Vencido (+${ev.dias_atraso}d)</span>` : ''}
-              ${isFuture ? `<span class="badge-future-pending">⏳ Programado</span>` : ''}
+              <span class="badge-date">${ev.fecha_formateada}</span>
+              ${isOverdue ? `<span class="badge-alert-overdue">Vencido (+${ev.dias_atraso}d)</span>` : ''}
+              ${isFuture ? `<span class="badge-future-pending">Programado</span>` : ''}
               <span class="badge-status">${this.escapeHtml(ev.estado)}</span>
             </div>
             <div class="roadmap-card-title">${this.escapeHtml(ev.titulo)}</div>
@@ -1181,7 +1182,7 @@ const App = {
     const next = !current;
     localStorage.setItem('halo_alerts_enabled', next ? 'true' : 'false');
     this.applyAlertsState(true);
-    const msg = next ? '🔔 Centro de Alertas activado' : '🔔 Centro de Alertas desactivado';
+    const msg = next ? 'Centro de alertas activado' : 'Centro de alertas desactivado';
     this.showToast(msg, 'info');
   },
 
@@ -1293,10 +1294,10 @@ const App = {
     }
 
     const critSummary = document.getElementById('alerts-summary-crit-count');
-    if (critSummary) critSummary.textContent = `🔴 ${criticas} Críticas`;
+    if (critSummary) critSummary.textContent = `${criticas} Críticas`;
 
     const warnSummary = document.getElementById('alerts-summary-warn-count');
-    if (warnSummary) warnSummary.textContent = `🟡 ${advertencias} Advertencias`;
+    if (warnSummary) warnSummary.textContent = `${advertencias} Advertencias`;
 
     // 3. Contadores en las píldoras de filtro
     const cntAll = document.getElementById('alerts-filter-count-all');
@@ -1354,8 +1355,8 @@ const App = {
       const isCrit = item.severidad === 'CRITICAL';
       const sevClass = isCrit ? 'critica' : 'advertencia';
       const badgeSevClass = isCrit ? 'badge-sla-critical' : 'badge-sla-warning';
-      const badgeSevLabel = isCrit ? '🔴 Crítica' : '🟡 Advertencia';
-      const icono = item.icono || (item.tipo === 'ticket' ? '🎫' : '⚡');
+      const badgeSevLabel = isCrit ? 'Crítica' : 'Advertencia';
+      const icono = Icons.svg(item.tipo === 'ticket' ? 'ticket' : 'zap', { size: 16 });
 
       return `
         <div class="alert-card-item ${sevClass}" data-id="${this.escapeHtml(item.id)}" data-project-id="${item.proyecto_id || ''}">
@@ -1375,7 +1376,7 @@ const App = {
             </div>
             ${item.proyecto_id ? `
               <button type="button" class="btn-alert-drilldown" onclick="App.openProjectFromAlert(${item.proyecto_id})" title="Ver proyecto en Drill Down">
-                🔍 Ver Proyecto
+                Ver proyecto
               </button>
             ` : ''}
           </div>
@@ -1446,7 +1447,7 @@ const App = {
     const texto = this.alertsData.minuta_escalamiento.texto_plano;
     const ok = await this.copyTextToClipboard(texto);
     if (ok) {
-      this.showToast('📋 Minuta ejecutiva copiada al portapapeles.', 'success');
+      this.showToast('Minuta ejecutiva copiada al portapapeles.', 'success');
     } else {
       this.showToast('No se pudo copiar la minuta al portapapeles.', 'danger');
     }
@@ -2717,7 +2718,7 @@ const App = {
         <tr>
           <td colspan="${cols}">
             <div class="empty-state">
-              <div class="empty-icon">📁</div>
+              <div class="empty-icon">${Icons.svg('inbox', { size: 32 })}</div>
               <h3>No se encontraron proyectos</h3>
               <p>Intenta ajustar los filtros de búsqueda o seleccionar otro Líder TI / Estado.</p>
             </div>
@@ -2740,12 +2741,12 @@ const App = {
               ${this.escapeHtml(p.Cliente || 'Sin título')}
             </div>
           </td>
-          <td><span style="font-family: var(--font-mono); font-weight: 700; color: var(--primary); white-space: nowrap;">${this.escapeHtml(this.formatNumeroProyecto(p.Numero_Proyecto))}</span></td>
+          <td><span class="id-mono">${this.escapeHtml(this.formatNumeroProyecto(p.Numero_Proyecto))}</span></td>
           <td style="white-space: nowrap;">${this.escapeHtml(p.LT_Asignado || 'No asignado')}</td>
           <td class="col-solicitante" title="${this.escapeHtml(solicitanteFormatted)}">
             ${isUnmatched 
               ? `<span class="unmatched-solicitante">${this.escapeHtml(solicitanteFormatted)}</span>` 
-              : `<strong>${this.escapeHtml(solicitanteFormatted)}</strong>`
+              : `<span class="solicitante-name">${this.escapeHtml(solicitanteFormatted)}</span>`
             }
           </td>
           <td style="white-space: nowrap;">${this.renderStatusBadge(p.Estado)}</td>
@@ -2880,7 +2881,7 @@ const App = {
           timelineHtml += `
             <div class="timeline-connector completed">
               <div class="timeline-connector-line"></div>
-              <div class="timeline-duration-badge" title="Diferencia de tiempo entre hitos">⏱️ ${daysLabel}</div>
+              <div class="timeline-duration-badge" title="Diferencia de tiempo entre hitos">${daysLabel}</div>
             </div>
           `;
         } else {
@@ -2911,7 +2912,7 @@ const App = {
           </div>
           <div class="detail-row">
             <span class="detail-label">N° Proyecto:</span>
-            <span class="detail-val" style="font-family: var(--font-mono); color: var(--primary);">${this.escapeHtml(this.formatNumeroProyecto(p.Numero_Proyecto))}</span>
+            <span class="detail-val id-mono">${this.escapeHtml(this.formatNumeroProyecto(p.Numero_Proyecto))}</span>
           </div>
           <div class="detail-row">
             <span class="detail-label">LT Asignado:</span>
@@ -2939,15 +2940,15 @@ const App = {
           </div>
           <div class="detail-row">
             <span class="detail-label">Total Solots Backlog:</span>
-            <span class="detail-val"><span class="badge badge-success">${p.total_solots || 0}</span></span>
+            <span class="detail-val"><span class="badge badge-neutral">${p.total_solots || 0}</span></span>
           </div>
           <div class="detail-row">
             <span class="detail-label">Total Tickets SD:</span>
-            <span class="detail-val"><span class="badge badge-warning">${p.total_tickets || 0}</span></span>
+            <span class="detail-val"><span class="badge badge-neutral">${p.total_tickets || 0}</span></span>
           </div>
           <div class="detail-row">
             <span class="detail-label">Total RFCs:</span>
-            <span class="detail-val"><span class="badge badge-info">${p.total_rfcs || 0}</span></span>
+            <span class="detail-val"><span class="badge badge-neutral">${p.total_rfcs || 0}</span></span>
           </div>
           <div style="margin-top: 1rem;">
             <span class="detail-label" style="display: block; margin-bottom: 0.3rem;">Detalle del Proyecto:</span>
@@ -2996,7 +2997,7 @@ const App = {
       tbody.innerHTML = solots.map(s => `
         <tr>
           <td>${this.escapeHtml(s.ID_CLI || 'N/A')}</td>
-          <td><strong style="color: var(--primary);">${this.escapeHtml(s.NRO_PROYECTO || 'N/A')}</strong></td>
+          <td><strong class="id-mono">${this.escapeHtml(s.NRO_PROYECTO || 'N/A')}</strong></td>
           <td><span style="font-family: var(--font-mono); font-weight: 700;">${this.escapeHtml(s.ID_OTP || 'N/A')}</span></td>
           <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${this.escapeHtml(s.DESCR_OTP || '')}">
             ${this.escapeHtml(s.DESCR_OTP || '-')}
@@ -3032,7 +3033,7 @@ const App = {
 
       tbody.innerHTML = tickets.map(t => `
         <tr>
-          <td><strong style="color: var(--primary); font-family: var(--font-mono);">${this.escapeHtml(t.CC_INCIDENT_ID || 'N/A')}</strong></td>
+          <td><strong class="id-mono">${this.escapeHtml(t.CC_INCIDENT_ID || 'N/A')}</strong></td>
           <td>${this.escapeHtml(t.REQUESTOR_NAME || '-')}</td>
           <td>${this.renderStatusBadge(t.STATUS)}</td>
           <td><small>${this.formatDateDMY(t.SUBMIT_DATE)}</small></td>
@@ -3069,7 +3070,7 @@ const App = {
 
       tbody.innerHTML = rfcs.map(r => `
         <tr>
-          <td><strong style="color: var(--primary); font-family: var(--font-mono);">${this.escapeHtml(r.NUMBER || 'N/A')}</strong></td>
+          <td><strong class="id-mono">${this.escapeHtml(r.NUMBER || 'N/A')}</strong></td>
           <td style="max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${this.escapeHtml(r.BRIEF_DESCRIPTION || '')}">
             ${this.escapeHtml(r.BRIEF_DESCRIPTION || '-')}
           </td>
@@ -3224,7 +3225,7 @@ const App = {
       <tr>
         <td><span style="font-family: var(--font-mono); font-weight: 700;">${p.ID}</span></td>
         <td><strong>${this.escapeHtml(p.Cliente || '-')}</strong></td>
-        <td><span style="font-family: var(--font-mono); color: var(--primary);">${this.escapeHtml(p.Numero_Proyecto || '-')}</span></td>
+        <td><span class="id-mono">${this.escapeHtml(p.Numero_Proyecto || '-')}</span></td>
         <td>${this.escapeHtml(p.LT_Asignado || '-')}</td>
         <td>${this.renderStatusBadge(p.Estado)}</td>
         <td><small style="color: var(--text-secondary); font-weight: 600;">${this.formatDateDMY(p.Creado)}</small></td>
@@ -3244,7 +3245,7 @@ const App = {
     }
     tbody.innerHTML = list.map(s => `
       <tr>
-        <td><strong style="color: var(--primary); font-family: var(--font-mono);">${this.escapeHtml(s.ID_OTP || '-')}</strong></td>
+        <td><strong class="id-mono">${this.escapeHtml(s.ID_OTP || '-')}</strong></td>
         <td><span style="font-family: var(--font-mono);">${this.escapeHtml(s.NRO_PROYECTO || '-')}</span></td>
         <td>${this.escapeHtml(s.CLI_CLIENTE || '-')}</td>
         <td>${this.escapeHtml(s.ID_CLI || '-')}</td>
@@ -3270,7 +3271,7 @@ const App = {
     }
     tbody.innerHTML = list.map(t => `
       <tr>
-        <td><strong style="color: var(--primary); font-family: var(--font-mono);">${this.escapeHtml(t.CC_INCIDENT_ID || '-')}</strong></td>
+        <td><strong class="id-mono">${this.escapeHtml(t.CC_INCIDENT_ID || '-')}</strong></td>
         <td><span style="font-family: var(--font-mono);">${this.escapeHtml(t.RF_ID || '-')}</span></td>
         <td>${this.escapeHtml(t.REQUESTOR_NAME || '-')}</td>
         <td>${this.renderStatusBadge(t.STATUS)}</td>
@@ -3295,7 +3296,7 @@ const App = {
     }
     tbody.innerHTML = list.map(r => `
       <tr>
-        <td><strong style="color: var(--primary); font-family: var(--font-mono);">${this.escapeHtml(r.NUMBER || '-')}</strong></td>
+        <td><strong class="id-mono">${this.escapeHtml(r.NUMBER || '-')}</strong></td>
         <td><span style="font-family: var(--font-mono);">${this.escapeHtml(r.CC_PROYECT_NUMBER || '-')}</span></td>
         <td style="max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${this.escapeHtml(r.BRIEF_DESCRIPTION || '')}">
           ${this.escapeHtml(r.BRIEF_DESCRIPTION || '-')}
@@ -3646,7 +3647,7 @@ const App = {
     const secs = String(totalSeconds % 60).padStart(2, '0');
     const timerEl = document.getElementById('ticket-elapsed-time');
     if (timerEl) {
-      timerEl.textContent = `⏱️ ${mins}:${secs}`;
+      timerEl.textContent = `${mins}:${secs}`;
     }
   },
 
@@ -3659,7 +3660,7 @@ const App = {
       consoleEl.innerHTML = `
         <div class="terminal-welcome-msg">
           <div class="terminal-line terminal-prompt">$ service-manager-bot --ready</div>
-          <div class="terminal-line terminal-hint">Presiona <strong>"🚀 Ejecutar"</strong> para iniciar el flujo automatizado de creación de interacción en Service Manager.</div>
+          <div class="terminal-line terminal-hint">Presiona <strong>Ejecutar</strong> para crear la interacción en Service Manager.</div>
           <div class="terminal-line terminal-hint-sub">Los eventos, diagnósticos y capturas de ID se mostrarán aquí en tiempo real vía Server-Sent Events (SSE).</div>
         </div>
       `;
@@ -3669,7 +3670,7 @@ const App = {
     if (counterEl) counterEl.textContent = '0 eventos';
 
     const timerEl = document.getElementById('ticket-elapsed-time');
-    if (timerEl) timerEl.textContent = '⏱️ 00:00';
+    if (timerEl) timerEl.textContent = '00:00';
 
     this.updateTicketProgress(0);
     this.updateTicketStatus('neutral', 'Inactivo', 'Listo para iniciar');
@@ -3680,7 +3681,7 @@ const App = {
     const btn = document.getElementById('btn-toggle-autoscroll');
     if (btn) {
       btn.classList.toggle('active', this.ticketAutoScroll);
-      btn.textContent = this.ticketAutoScroll ? '📜 Auto-scroll: ON' : '📜 Auto-scroll: OFF';
+      btn.textContent = this.ticketAutoScroll ? 'Auto-scroll: ON' : 'Auto-scroll: OFF';
     }
   },
 
@@ -3751,10 +3752,10 @@ const App = {
     if (feedbackPetEl) feedbackPetEl.style.display = 'none';
 
     const copyTicketBtnText = document.getElementById('copy-ticket-btn-text');
-    if (copyTicketBtnText) copyTicketBtnText.textContent = '📋 Copiar SD';
+    if (copyTicketBtnText) copyTicketBtnText.textContent = 'Copiar SD';
 
     const copyPeticionBtnText = document.getElementById('copy-peticion-btn-text');
-    if (copyPeticionBtnText) copyPeticionBtnText.textContent = '📋 Copiar Petición';
+    if (copyPeticionBtnText) copyPeticionBtnText.textContent = 'Copiar Petición';
 
     modal.style.display = 'flex';
 
@@ -3793,7 +3794,7 @@ const App = {
 
       setTimeout(() => {
         if (feedbackEl) feedbackEl.style.display = 'none';
-        if (btnTextEl) btnTextEl.textContent = '📋 Copiar SD';
+        if (btnTextEl) btnTextEl.textContent = 'Copiar SD';
         if (btn) btn.classList.remove('btn-success');
       }, 2500);
     }
@@ -3816,7 +3817,7 @@ const App = {
 
       setTimeout(() => {
         if (feedbackEl) feedbackEl.style.display = 'none';
-        if (btnTextEl) btnTextEl.textContent = '📋 Copiar Petición';
+        if (btnTextEl) btnTextEl.textContent = 'Copiar Petición';
         if (btn) btn.classList.remove('btn-success');
       }, 2500);
     }
@@ -4016,7 +4017,7 @@ const App = {
     alertEl.className = isSuccess ? 'solicitud-alert-banner alert-success' : 'solicitud-alert-banner alert-danger';
 
     const iconEl = document.getElementById('email-status-alert-icon') || alertEl.querySelector('.alert-icon');
-    if (iconEl) iconEl.textContent = isSuccess ? '✓' : '❌';
+    if (iconEl) iconEl.innerHTML = Icons.svg(isSuccess ? 'check-circle' : 'x-circle', { size: 20 });
 
     const titleEl = document.getElementById('email-error-title');
     if (titleEl) titleEl.textContent = title;
@@ -4453,7 +4454,7 @@ const App = {
           const titleEl = document.getElementById('duplicate-alert-title');
           const descEl = document.getElementById('duplicate-alert-desc');
           if (titleEl) {
-            titleEl.textContent = `⚠️ El N° de proyecto ${numero_proyecto} ya existe en el sistema`;
+            titleEl.textContent = `El N° de proyecto ${numero_proyecto} ya existe en el sistema`;
           }
           if (descEl) {
             const safeId = this.escapeHtml(existing.ID || '-');
@@ -4582,56 +4583,48 @@ const App = {
   // --------------------------------------------------------------------------
   solicitudTourSteps: [
     {
-      icon: '👋',
       title: '¡Bienvenido a Solicitud LTI!',
       text: 'Desde aquí solicitas la asignación de un Líder Técnico (LTI) para tu proyecto. En pocos pasos te mostramos cómo completar el formulario.'
     },
     {
       target: '#solicitud-nro-proyecto',
       highlight: '.form-group',
-      icon: '🔎',
       title: 'N° de Proyecto',
       text: 'Escribe al menos 2 caracteres del número de proyecto y elige una opción de la lista del Backlog SGA. Al seleccionarlo, el Cliente y el Detalle se completan solos.'
     },
     {
       target: '#solicitud-cliente',
       highlight: '.form-group',
-      icon: '🏢',
       title: 'Cliente',
       text: 'Se completa automáticamente desde el Backlog SGA. Si tu proyecto no aparece en la búsqueda, puedes ingresar el N° de proyecto y el cliente de forma manual.'
     },
     {
       target: '#solicitud-fecha',
       highlight: '.form-group',
-      icon: '📅',
       title: 'Fecha de Solicitud',
       text: 'Viene con la fecha de hoy. Cámbiala solo si la solicitud se recibió en otra fecha.'
     },
     {
       target: '#solicitud-estado',
       highlight: '.form-group',
-      icon: '🔒',
       title: 'Estado fijo: Generado',
       text: 'Toda solicitud nueva queda en estado Generado. Este campo no se puede modificar.'
     },
     {
       target: '#solicitud-detalle',
       highlight: '.form-group',
-      icon: '📋',
       title: 'Detalle del Requerimiento',
       text: 'Si el proyecto tiene Solots Liray, se precargan aquí con su producto, servicio y descripción. Puedes editar el texto y agregar todo el contexto técnico que el LTI necesite.'
     },
     {
       target: '#btn-submit-solicitud',
       highlight: '.solicitud-form-actions',
-      icon: '🚀',
       title: 'Envía tu solicitud',
       text: 'Presiona Solicitar para registrarla. Si el proyecto ya existe, verás un aviso para complementar su detalle en lugar de duplicarlo. Con Limpiar Formulario empiezas de cero.'
     },
     {
-      icon: '✅',
       title: '¿Qué pasa después?',
-      text: 'Tu solicitud queda pendiente de asignación y el equipo coordinador PCDI recibe un aviso. Cuando se asigne un LTI, te llegará un correo con copia al líder asignado. Puedes repetir este recorrido cuando quieras con el botón 🧭 Ver tour.'
+      text: 'Tu solicitud queda pendiente de asignación y el equipo coordinador PCDI recibe un aviso. Cuando se asigne un LTI, te llegará un correo con copia al líder asignado. Puedes repetir este recorrido cuando quieras con el botón Ver tour.'
     }
   ],
   solicitudTour: null,
@@ -4688,7 +4681,6 @@ const App = {
       <div id="solicitud-tour-card" class="tour-card">
         <div class="tour-card-header">
           <div class="tour-card-brand">
-            <div id="solicitud-tour-icon" class="tour-icon" aria-hidden="true"></div>
             <div>
               <span id="solicitud-tour-progress" class="tour-progress"></span>
               <h3 id="solicitud-tour-title" class="tour-title"></h3>
@@ -4807,7 +4799,6 @@ const App = {
     tour.index = index;
 
     const root = tour.root;
-    root.querySelector('#solicitud-tour-icon').textContent = step.icon;
     root.querySelector('#solicitud-tour-progress').textContent = `Paso ${index + 1} de ${total}`;
     root.querySelector('#solicitud-tour-title').textContent = step.title;
     root.querySelector('#solicitud-tour-text').textContent = step.text;
@@ -4948,13 +4939,13 @@ const App = {
     const s = raw.toLowerCase();
     
     if (s.includes('atendido') || s.includes('cerrado') || s.includes('completado') || s.includes('ejecutada') || s.includes('closed')) {
-      return `<span class="badge badge-success">✓ ${this.escapeHtml(raw)}</span>`;
+      return `<span class="badge badge-success">${this.escapeHtml(raw)}</span>`;
     } else if (s.includes('generado') || s.includes('en ejecucion') || s.includes('en curso') || s.includes('en revision') || s.includes('en revisión')) {
-      return `<span class="badge badge-info">🚀 ${this.escapeHtml(raw)}</span>`;
+      return `<span class="badge badge-info">${this.escapeHtml(raw)}</span>`;
     } else if (s.includes('pendiente') || s.includes('asignad') || s.includes('progreso') || s.includes('open') || s.includes('in progress')) {
-      return `<span class="badge badge-warning">⏳ ${this.escapeHtml(raw)}</span>`;
+      return `<span class="badge badge-warning">${this.escapeHtml(raw)}</span>`;
     } else if (s.includes('cancelad') || s.includes('rechazad') || s.includes('abortad') || s.includes('eliminad')) {
-      return `<span class="badge badge-danger">✕ ${this.escapeHtml(raw)}</span>`;
+      return `<span class="badge badge-danger">${this.escapeHtml(raw)}</span>`;
     }
     return `<span class="badge badge-info">${this.escapeHtml(raw)}</span>`;
   },
@@ -5268,7 +5259,7 @@ const App = {
         <tr>
           <td colspan="8">
             <div class="empty-state">
-              <div class="empty-icon">👥</div>
+              <div class="empty-icon">${Icons.svg('users', { size: 32 })}</div>
               <h3>No se encontraron usuarios</h3>
               <p>Intenta ajustar los filtros de búsqueda o seleccionar otro Rol / Estado.</p>
             </div>
@@ -5284,18 +5275,18 @@ const App = {
       let roleBadge = '';
       const r = (u.rol || 'PM').toUpperCase();
       if (r === 'ADMIN') {
-        roleBadge = '<span class="badge-role-admin">🛡️ ADMIN</span>';
+        roleBadge = '<span class="badge-role-admin">ADMIN</span>';
       } else if (r === 'LTI') {
-        roleBadge = '<span class="badge-role-lti">👔 LTI</span>';
+        roleBadge = '<span class="badge-role-lti">LTI</span>';
       } else {
-        roleBadge = '<span class="badge-role-pm">📋 PM</span>';
+        roleBadge = '<span class="badge-role-pm">PM</span>';
       }
 
       const statusBadge = u.activo
-        ? '<span class="badge-status-active">✓ Activo</span>'
-        : '<span class="badge-status-blocked">✕ Bloqueado</span>';
+        ? '<span class="badge-status-active">Activo</span>'
+        : '<span class="badge-status-blocked">Bloqueado</span>';
 
-      const toggleIcon = u.activo ? '🔒' : '🔓';
+      const toggleIcon = Icons.svg(u.activo ? 'lock' : 'unlock', { size: 16 });
       const toggleTitle = u.activo ? 'Bloquear usuario' : 'Desbloquear usuario';
 
       const isSelf = currentUser && String(currentUser.id) === String(u.id);
@@ -5304,7 +5295,7 @@ const App = {
       return `
         <tr>
           <td><span style="font-family: var(--font-mono); font-weight: 700; color: var(--text-secondary);">${u.id}</span></td>
-          <td><strong style="font-family: var(--font-mono); color: var(--primary);">${this.escapeHtml(u.username)}</strong></td>
+          <td><span class="id-mono">${this.escapeHtml(u.username)}</span></td>
           <td><strong>${this.escapeHtml(u.nombre_completo)}</strong></td>
           <td>${roleBadge}</td>
           <td>${this.escapeHtml(u.lt_asignado || '—')}</td>
@@ -5313,13 +5304,13 @@ const App = {
           <td class="col-action-cell">
             <div class="action-buttons-group">
               <button type="button" class="btn-action-user-edit" onclick="App.openEditUserModal(${u.id})" title="Editar usuario" aria-label="Editar Usuario">
-                ✏️
+                ${Icons.svg('edit', { size: 16 })}
               </button>
               <button type="button" class="btn-action-user-toggle" onclick="App.toggleUserStatus(${u.id})" title="${toggleTitle}" aria-label="${toggleTitle}" ${(isSelf || isRootAdmin) ? 'disabled style="opacity: 0.4; cursor: not-allowed;"' : ''}>
                 ${toggleIcon}
               </button>
               <button type="button" class="btn-action-user-delete" onclick="App.openDeleteUserModal(${u.id})" title="Eliminar de App LTI" aria-label="Eliminar de App LTI" ${(isSelf || isRootAdmin) ? 'disabled style="opacity: 0.4; cursor: not-allowed;"' : ''}>
-                🗑️
+                ${Icons.svg('trash', { size: 16 })}
               </button>
             </div>
           </td>
@@ -5546,9 +5537,10 @@ const App = {
 
     const toast = document.createElement('div');
     toast.className = 'alert-toast';
-    const icon = type === 'success' ? '✅' : (type === 'danger' || type === 'error' ? '❌' : (type === 'warning' ? '⚠️' : 'ℹ️'));
+    const level = type === 'success' ? 'success' : (type === 'danger' || type === 'error' ? 'danger' : (type === 'warning' ? 'warning' : 'info'));
+    const iconName = { success: 'check-circle', danger: 'x-circle', warning: 'alert-triangle', info: 'info' }[level];
     toast.innerHTML = `
-      <span style="font-size: 1.2rem;">${icon}</span>
+      <span class="toast-icon toast-icon-${level}">${Icons.svg(iconName, { size: 18 })}</span>
       <span style="font-weight: 500; font-size: 0.9rem;">${this.escapeHtml(message)}</span>
     `;
     const container = document.getElementById('toast-container');
