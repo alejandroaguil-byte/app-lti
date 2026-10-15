@@ -26,7 +26,7 @@ def test_health_score_ui_toggle_and_clean_fallback(halo_page: Page, base_url: st
     CP-SALUD-E2E:
     1. Carga la app autenticada.
     2. Valida que el botón de toggle exista (#health-score-toggle-btn).
-    3. Valida que #health-kpi-grid sea visible y contenga las 4 tarjetas de salud.
+    3. Valida que #health-kpi-grid (filtro segmentado) sea visible y contenga los 4 segmentos de salud.
     4. Valida que la cabecera de la tabla contenga la columna Salud (#th-col-salud).
     5. Valida que las filas tengan la celda .col-health-cell con badge de salud.
     6. Hace clic en la tarjeta #health-card-critical y valida el filtrado.

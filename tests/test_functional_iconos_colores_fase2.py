@@ -205,6 +205,17 @@ def test_jar_01_no_technical_jargon_in_ui(page: Page):
     assert found == [], f"La interfaz muestra jerga técnica: {found}"
 
 
+SOURCE_JARGON = [r"service-manager-bot", r"\bdbo\.[A-Za-z_]+", r"Server-Sent Events", r"\(SSE\)"]
+
+
+@pytest.mark.parametrize("relpath", ["index.html", "js/app.js"])
+def test_jar_02_no_technical_jargon_in_source_copy(relpath):
+    # Textos que no aparecen en la vista inicial: consola reiniciada, tablas vacías, modales
+    text = (FRONTEND / relpath).read_text(encoding="utf-8")
+    found = sorted({m.group(0) for pat in SOURCE_JARGON for m in re.finditer(pat, text)})
+    assert found == [], f"{relpath} contiene jerga técnica: {found}"
+
+
 # ---------------------------------------------------------------------------
 # S9 / S10 / S12 - Colores y pesos
 # ---------------------------------------------------------------------------

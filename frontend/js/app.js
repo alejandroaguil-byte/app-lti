@@ -377,10 +377,8 @@ const App = {
 
     if (!active) {
       this.activeHealthFilter = null;
-      this.updateHealthKpiActiveState();
-    } else {
-      this.updateHealthKpiActiveState();
     }
+    this.updateHealthKpiActiveState();
 
     if (triggerRender && this.projectsData) {
       this.renderProjectsTable(this.getFilteredProjects());
@@ -3224,7 +3222,7 @@ const App = {
   renderDirectSolots(list) {
     const tbody = document.getElementById('direct-solots-table-body');
     if (!list || list.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="12" class="empty-state"><p>No se encontraron registros coincidentes en dbo.CT_BACKLOG_OPERACIONES2.</p></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="12" class="empty-state"><p>No se encontraron Solots coincidentes.</p></td></tr>`;
       return;
     }
     tbody.innerHTML = list.map(s => `
@@ -3250,7 +3248,7 @@ const App = {
   renderDirectTickets(list) {
     const tbody = document.getElementById('direct-tickets-table-body');
     if (!list || list.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="11" class="empty-state"><p>No se encontraron registros coincidentes en dbo.registrosRF_SD_SM.</p></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="11" class="empty-state"><p>No se encontraron tickets SD coincidentes.</p></td></tr>`;
       return;
     }
     tbody.innerHTML = list.map(t => `
@@ -3275,7 +3273,7 @@ const App = {
   renderDirectRFCs(list) {
     const tbody = document.getElementById('direct-rfcs-table-body');
     if (!list || list.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="10" class="empty-state"><p>No se encontraron registros coincidentes en dbo.registrosSM_RFC.</p></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="10" class="empty-state"><p>No se encontraron RFCs coincidentes.</p></td></tr>`;
       return;
     }
     tbody.innerHTML = list.map(r => `
@@ -3643,9 +3641,8 @@ const App = {
     if (consoleEl) {
       consoleEl.innerHTML = `
         <div class="terminal-welcome-msg">
-          <div class="terminal-line terminal-prompt">$ service-manager-bot --ready</div>
           <div class="terminal-line terminal-hint">Presiona <strong>Ejecutar</strong> para crear la interacción en Service Manager.</div>
-          <div class="terminal-line terminal-hint-sub">Los eventos, diagnósticos y capturas de ID se mostrarán aquí en tiempo real vía Server-Sent Events (SSE).</div>
+          <div class="terminal-line terminal-hint-sub">Aquí verás el avance y los números de ticket a medida que se generan.</div>
         </div>
       `;
     }
