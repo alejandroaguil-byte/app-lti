@@ -70,7 +70,11 @@ def read_users_from_excel(filepath: str) -> List[Dict[str, str]]:
         return []
 
 def seed_default_users():
-    """Inicializa y sincroniza idempotentemente los usuarios canónicos en dbo.App_Usuarios."""
+    """Crea los usuarios canónicos que falten en dbo.App_Usuarios y completa su email si está vacío.
+
+    Corre en cada arranque de la app: nunca sobrescribe rol, LT, nombre ni estado activo de una
+    cuenta existente, para respetar los cambios hechos desde el mantenedor de usuarios.
+    """
     init_auth_tables()
     conn = get_db_connection()
     try:
@@ -95,24 +99,18 @@ def seed_default_users():
                         VALUES (%s, %s, %s, %s, %s, 1, GETDATE(), GETDATE())
                     """, (uname, nombre, lt_asignado, rol, email))
                     inserted_count += 1
-                else:
+                elif email and not existing.get("email"):
                     cursor.execute("""
-                        UPDATE dbo.App_Usuarios
-                        SET nombre_completo = %s,
-                            rol = %s,
-                            lt_asignado = %s,
-                            email = COALESCE(%s, email),
-                            activo = 1,
-                            updated_at = GETDATE()
-                        WHERE LOWER(username) = %s
-                    """, (nombre, rol, lt_asignado, email, uname))
+                        UPDATE dbo.App_Usuarios SET email = %s, updated_at = GETDATE()
+                        WHERE LOWER(username) = %s AND email IS NULL
+                    """, (email, uname))
                     updated_count += 1
 
             # NOTA: Se eliminó definitivamente la sentencia destructiva DELETE FROM dbo.App_Usuarios
             # para no alterar cuentas provistas vía JIT ni otros usuarios existentes.
 
             conn.commit()
-            print(f"[SEED] Sincronización de usuarios completada: {inserted_count} insertados, {updated_count} actualizados.")
+            print(f"[SEED] Sincronización de usuarios completada: {inserted_count} insertados, {updated_count} con email completado.")
     finally:
         conn.close()
 

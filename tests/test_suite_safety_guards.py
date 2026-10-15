@@ -45,8 +45,9 @@ def test_guard_02_created_project_numbers_carry_qa():
 
 
 def test_guard_03_tests_do_not_seed_users():
+    # test_seed_users_safety.py ejecuta el seed contra una conexión simulada (sin BD)
     for f in TESTS.glob("test_*.py"):
-        if f.name == THIS_FILE:
+        if f.name in (THIS_FILE, "test_seed_users_safety.py"):
             continue
         source = f.read_text(encoding="utf-8")
         assert not re.search(r"seed_default_users\(|from\s+backend\.seed_users\s+import\s+seed_default_users", source), f.name
