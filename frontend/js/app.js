@@ -1767,6 +1767,11 @@ const App = {
       resetSolBtn.addEventListener('click', () => this.resetSolicitudForm());
     }
 
+    const tourSolBtn = document.getElementById('btn-solicitud-tour');
+    if (tourSolBtn) {
+      tourSolBtn.addEventListener('click', () => this.startSolicitudTour());
+    }
+
     // Solicitud LTI: Duplicate view button
     const viewDupBtn = document.getElementById('btn-view-duplicate-project');
     if (viewDupBtn) {
@@ -2123,6 +2128,7 @@ const App = {
         const day = String(today.getDate()).padStart(2, '0');
         fechaInput.value = `${year}-${month}-${day}`;
       }
+      this.maybeAutoStartSolicitudTour();
     } else if (moduleName === 'usuarios') {
       this.loadUsuarios();
     }
@@ -4394,6 +4400,328 @@ const App = {
     if (errAlert) errAlert.style.display = 'none';
     this.duplicateProjectId = null;
     this.hideAutocompleteDropdown();
+  },
+
+  // --------------------------------------------------------------------------
+  // SOLICITUD LTI: TOUR GUIADO (autoarranque en el primer ingreso de un PM)
+  // --------------------------------------------------------------------------
+  solicitudTourSteps: [
+    {
+      icon: '👋',
+      title: '¡Bienvenido a Solicitud LTI!',
+      text: 'Desde aquí solicitas la asignación de un Líder Técnico (LTI) para tu proyecto. En pocos pasos te mostramos cómo completar el formulario.'
+    },
+    {
+      target: '#solicitud-nro-proyecto',
+      highlight: '.form-group',
+      icon: '🔎',
+      title: 'N° de Proyecto',
+      text: 'Escribe al menos 2 caracteres del número de proyecto y elige una opción de la lista del Backlog SGA. Al seleccionarlo, el Cliente y el Detalle se completan solos.'
+    },
+    {
+      target: '#solicitud-cliente',
+      highlight: '.form-group',
+      icon: '🏢',
+      title: 'Cliente',
+      text: 'Se completa automáticamente desde el Backlog SGA. Si tu proyecto no aparece en la búsqueda, puedes ingresar el N° de proyecto y el cliente de forma manual.'
+    },
+    {
+      target: '#solicitud-fecha',
+      highlight: '.form-group',
+      icon: '📅',
+      title: 'Fecha de Solicitud',
+      text: 'Viene con la fecha de hoy. Cámbiala solo si la solicitud se recibió en otra fecha.'
+    },
+    {
+      target: '#solicitud-estado',
+      highlight: '.form-group',
+      icon: '🔒',
+      title: 'Estado fijo: Generado',
+      text: 'Toda solicitud nueva queda en estado Generado. Este campo no se puede modificar.'
+    },
+    {
+      target: '#solicitud-detalle',
+      highlight: '.form-group',
+      icon: '📋',
+      title: 'Detalle del Requerimiento',
+      text: 'Si el proyecto tiene Solots Liray, se precargan aquí con su producto, servicio y descripción. Puedes editar el texto y agregar todo el contexto técnico que el LTI necesite.'
+    },
+    {
+      target: '#btn-submit-solicitud',
+      highlight: '.solicitud-form-actions',
+      icon: '🚀',
+      title: 'Envía tu solicitud',
+      text: 'Presiona Solicitar para registrarla. Si el proyecto ya existe, verás un aviso para complementar su detalle en lugar de duplicarlo. Con Limpiar Formulario empiezas de cero.'
+    },
+    {
+      icon: '✅',
+      title: '¿Qué pasa después?',
+      text: 'Tu solicitud queda pendiente de asignación y el equipo coordinador PCDI recibe un aviso. Cuando se asigne un LTI, te llegará un correo con copia al líder asignado. Puedes repetir este recorrido cuando quieras con el botón 🧭 Ver tour.'
+    }
+  ],
+  solicitudTour: null,
+
+  getSolicitudTourStorageKey() {
+    const user = Auth.getUser();
+    const username = String(user?.username || '').toLowerCase();
+    return `halo_tour_solicitud_lti_seen:${username}`;
+  },
+
+  hasSeenSolicitudTour() {
+    try {
+      return localStorage.getItem(this.getSolicitudTourStorageKey()) === 'true';
+    } catch (e) {
+      return false;
+    }
+  },
+
+  markSolicitudTourSeen() {
+    try {
+      localStorage.setItem(this.getSolicitudTourStorageKey(), 'true');
+    } catch (e) {
+      // Sin localStorage disponible el tour simplemente podrá volver a mostrarse
+    }
+  },
+
+  maybeAutoStartSolicitudTour() {
+    const user = Auth.getUser();
+    const rol = (user && user.rol) ? user.rol.toUpperCase() : ((user?.adminLevel >= 2 || user?.is_super_admin) ? 'ADMIN' : 'PM');
+    if (rol !== 'PM' || this.solicitudTour || this.hasSeenSolicitudTour()) return;
+
+    // Espera breve para que el formulario termine de renderizarse antes de medirlo
+    setTimeout(() => {
+      if (this.currentModule === 'solicitud-lti' && !this.solicitudTour && !this.hasSeenSolicitudTour()) {
+        this.startSolicitudTour();
+      }
+    }, 450);
+  },
+
+  startSolicitudTour() {
+    if (this.solicitudTour) this.endSolicitudTour();
+    this.hideAutocompleteDropdown();
+
+    const root = document.createElement('div');
+    root.id = 'solicitud-tour';
+    root.className = 'tour-root';
+    root.setAttribute('role', 'dialog');
+    root.setAttribute('aria-modal', 'true');
+    root.setAttribute('aria-labelledby', 'solicitud-tour-title');
+    root.setAttribute('aria-describedby', 'solicitud-tour-text');
+    root.innerHTML = `
+      <div class="tour-blocker"></div>
+      <div id="solicitud-tour-spotlight" class="tour-spotlight" hidden></div>
+      <div id="solicitud-tour-card" class="tour-card">
+        <div class="tour-card-header">
+          <div class="tour-card-brand">
+            <div id="solicitud-tour-icon" class="tour-icon" aria-hidden="true"></div>
+            <div>
+              <span id="solicitud-tour-progress" class="tour-progress"></span>
+              <h3 id="solicitud-tour-title" class="tour-title"></h3>
+            </div>
+          </div>
+          <button type="button" id="solicitud-tour-close" class="modal-close-btn" aria-label="Cerrar tour">&times;</button>
+        </div>
+        <p id="solicitud-tour-text" class="tour-text"></p>
+        <div id="solicitud-tour-dots" class="tour-dots" aria-hidden="true"></div>
+        <div class="tour-footer">
+          <button type="button" id="solicitud-tour-skip" class="tour-skip-btn">Omitir tour</button>
+          <div class="tour-nav">
+            <button type="button" id="solicitud-tour-prev" class="btn btn-secondary btn-sm">Anterior</button>
+            <button type="button" id="solicitud-tour-next" class="btn btn-primary btn-sm">Siguiente</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(root);
+
+    const dots = root.querySelector('#solicitud-tour-dots');
+    this.solicitudTourSteps.forEach(() => {
+      const dot = document.createElement('span');
+      dot.className = 'tour-dot';
+      dots.appendChild(dot);
+    });
+
+    let frame = null;
+    const onReposition = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        this.positionSolicitudTour();
+      });
+    };
+
+    const onKeydown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        this.endSolicitudTour();
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        this.nextSolicitudTourStep();
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        this.prevSolicitudTourStep();
+      } else if (e.key === 'Tab') {
+        // Mantener el foco dentro de la tarjeta del tour
+        const focusables = Array.from(root.querySelectorAll('#solicitud-tour-card button:not(:disabled)'));
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        } else if (!root.contains(document.activeElement)) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+
+    root.querySelector('#solicitud-tour-next').addEventListener('click', () => this.nextSolicitudTourStep());
+    root.querySelector('#solicitud-tour-prev').addEventListener('click', () => this.prevSolicitudTourStep());
+    root.querySelector('#solicitud-tour-skip').addEventListener('click', () => this.endSolicitudTour());
+    root.querySelector('#solicitud-tour-close').addEventListener('click', () => this.endSolicitudTour());
+    document.addEventListener('keydown', onKeydown, true);
+    window.addEventListener('resize', onReposition);
+    window.addEventListener('scroll', onReposition, true);
+
+    this.solicitudTour = {
+      root,
+      index: 0,
+      previousFocus: document.activeElement,
+      cleanup: () => {
+        if (frame) cancelAnimationFrame(frame);
+        document.removeEventListener('keydown', onKeydown, true);
+        window.removeEventListener('resize', onReposition);
+        window.removeEventListener('scroll', onReposition, true);
+      }
+    };
+    this.renderSolicitudTourStep(0);
+  },
+
+  nextSolicitudTourStep() {
+    if (!this.solicitudTour) return;
+    const nextIndex = this.solicitudTour.index + 1;
+    if (nextIndex >= this.solicitudTourSteps.length) {
+      this.endSolicitudTour();
+    } else {
+      this.renderSolicitudTourStep(nextIndex);
+    }
+  },
+
+  prevSolicitudTourStep() {
+    if (!this.solicitudTour || this.solicitudTour.index === 0) return;
+    this.renderSolicitudTourStep(this.solicitudTour.index - 1);
+  },
+
+  getSolicitudTourHighlight(step) {
+    if (!step || !step.target) return null;
+    const target = document.querySelector(step.target);
+    if (!target || target.getClientRects().length === 0) return null;
+    return (step.highlight && target.closest(step.highlight)) || target;
+  },
+
+  renderSolicitudTourStep(index) {
+    const tour = this.solicitudTour;
+    if (!tour) return;
+    const step = this.solicitudTourSteps[index];
+    const total = this.solicitudTourSteps.length;
+    const isLast = index === total - 1;
+    tour.index = index;
+
+    const root = tour.root;
+    root.querySelector('#solicitud-tour-icon').textContent = step.icon;
+    root.querySelector('#solicitud-tour-progress').textContent = `Paso ${index + 1} de ${total}`;
+    root.querySelector('#solicitud-tour-title').textContent = step.title;
+    root.querySelector('#solicitud-tour-text').textContent = step.text;
+    root.querySelectorAll('.tour-dot').forEach((dot, i) => {
+      dot.classList.toggle('active', i === index);
+      dot.classList.toggle('done', i < index);
+    });
+
+    const prevBtn = root.querySelector('#solicitud-tour-prev');
+    const nextBtn = root.querySelector('#solicitud-tour-next');
+    prevBtn.disabled = index === 0;
+    nextBtn.textContent = isLast ? 'Finalizar' : 'Siguiente';
+
+    const highlight = this.getSolicitudTourHighlight(step);
+    root.classList.toggle('tour-centered', !highlight);
+    if (highlight) {
+      highlight.scrollIntoView({ block: 'center', inline: 'nearest' });
+    }
+    this.positionSolicitudTour();
+    nextBtn.focus({ preventScroll: true });
+  },
+
+  positionSolicitudTour() {
+    const tour = this.solicitudTour;
+    if (!tour) return;
+    const root = tour.root;
+    const card = root.querySelector('#solicitud-tour-card');
+    const spotlight = root.querySelector('#solicitud-tour-spotlight');
+    const highlight = this.getSolicitudTourHighlight(this.solicitudTourSteps[tour.index]);
+
+    const margin = 16;
+    const pad = 8;
+    const gap = 14;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const cw = card.offsetWidth;
+    const ch = card.offsetHeight;
+    const clamp = (value, min, max) => Math.max(min, Math.min(value, max));
+
+    if (!highlight) {
+      spotlight.hidden = true;
+      card.dataset.placement = 'center';
+      card.style.left = `${Math.max(margin, (vw - cw) / 2)}px`;
+      card.style.top = `${Math.max(margin, (vh - ch) / 2)}px`;
+      return;
+    }
+
+    const r = highlight.getBoundingClientRect();
+    spotlight.hidden = false;
+    spotlight.style.top = `${r.top - pad}px`;
+    spotlight.style.left = `${r.left - pad}px`;
+    spotlight.style.width = `${r.width + pad * 2}px`;
+    spotlight.style.height = `${r.height + pad * 2}px`;
+
+    // En pantallas pequeñas la tarjeta se ancla en la parte inferior
+    if (vw <= 640) {
+      card.dataset.placement = 'docked';
+      card.style.left = `${margin}px`;
+      card.style.top = `${Math.max(margin, vh - ch - margin)}px`;
+      return;
+    }
+
+    const spaceBelow = vh - (r.bottom + pad);
+    const spaceAbove = r.top - pad;
+    const placement = (spaceBelow >= ch + gap || spaceBelow >= spaceAbove) ? 'bottom' : 'top';
+    const top = placement === 'bottom' ? r.bottom + pad + gap : r.top - pad - gap - ch;
+    const left = clamp(r.left, margin, Math.max(margin, vw - cw - margin));
+    const arrowX = clamp(r.left + Math.min(r.width / 2, 48) - left, 20, cw - 20);
+
+    card.dataset.placement = placement;
+    card.style.top = `${clamp(top, margin, Math.max(margin, vh - ch - margin))}px`;
+    card.style.left = `${left}px`;
+    card.style.setProperty('--tour-arrow-x', `${arrowX}px`);
+  },
+
+  endSolicitudTour() {
+    const tour = this.solicitudTour;
+    if (!tour) return;
+    this.solicitudTour = null;
+    tour.cleanup();
+    tour.root.remove();
+    this.markSolicitudTourSeen();
+
+    const fallback = document.getElementById('btn-solicitud-tour');
+    const previous = tour.previousFocus;
+    const focusTarget = (previous && previous !== document.body && document.contains(previous)) ? previous : fallback;
+    if (focusTarget && typeof focusTarget.focus === 'function') {
+      focusTarget.focus({ preventScroll: true });
+    }
   },
 
   // --------------------------------------------------------------------------
