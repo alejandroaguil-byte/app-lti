@@ -359,7 +359,7 @@ const App = {
     }
 
     if (kpiGrid) {
-      kpiGrid.style.display = active ? 'grid' : 'none';
+      kpiGrid.style.display = active ? 'flex' : 'none';
     }
 
     if (thColSalud) {
@@ -377,10 +377,7 @@ const App = {
 
     if (!active) {
       this.activeHealthFilter = null;
-      document.querySelectorAll('.health-kpi-card').forEach(c => {
-        c.classList.remove('active-health-filter');
-        c.setAttribute('aria-pressed', 'false');
-      });
+      this.updateHealthKpiActiveState();
     } else {
       this.updateHealthKpiActiveState();
     }
@@ -400,19 +397,8 @@ const App = {
   filterByHealthScore(score) {
     if (!this.isHealthScoreActive()) return;
 
-    if (this.activeHealthFilter === score) {
-      this.activeHealthFilter = null;
-      this.showToast('Filtro de salud removido: mostrando todos los proyectos', 'info');
-    } else {
-      this.activeHealthFilter = score;
-      const labelMap = {
-        HEALTHY: 'Saludables',
-        WARNING: 'En Riesgo',
-        CRITICAL: 'Críticos / Vencidos',
-        NEUTRAL: 'Sin Datos Operacionales'
-      };
-      this.showToast(`Filtrando proyectos: ${labelMap[score] || score}`, 'info');
-    }
+    // Segmentos: elegir el activo otra vez vuelve a "Todos"
+    this.activeHealthFilter = (score && this.activeHealthFilter !== score) ? score : null;
 
     this.updateHealthKpiActiveState();
     const filtered = this.getFilteredProjects();
@@ -425,6 +411,7 @@ const App = {
 
   updateHealthKpiActiveState() {
     const cards = [
+      { id: 'health-card-all', score: null },
       { id: 'health-card-healthy', score: 'HEALTHY' },
       { id: 'health-card-warning', score: 'WARNING' },
       { id: 'health-card-critical', score: 'CRITICAL' },
@@ -1259,9 +1246,10 @@ const App = {
   updateAlertsUI() {
     if (!this.alertsData) return;
     const { resumen } = this.alertsData;
-    const total = resumen?.total_alertas || 0;
-    const criticas = resumen?.criticas || 0;
-    const advertencias = resumen?.advertencias || 0;
+    // La campana cuenta proyectos con atrasos (no ítems sueltos); las alertas sin proyecto quedan fuera
+    const total = resumen?.proyectos_con_alertas || 0;
+    const criticos = resumen?.proyectos_alerta_criticos || 0;
+    const advertencia = resumen?.proyectos_alerta_advertencia || 0;
 
     // 1. Badge en la campanita
     const badgeCount = document.getElementById('alerts-badge-count');
@@ -1269,45 +1257,36 @@ const App = {
       if (total > 0) {
         badgeCount.style.display = 'inline-flex';
         badgeCount.textContent = total > 99 ? '99+' : String(total);
-        if (criticas > 0) {
-          badgeCount.classList.add('pulse-red');
-          badgeCount.classList.remove('badge-amber');
-        } else if (advertencias > 0) {
-          badgeCount.classList.add('badge-amber');
-          badgeCount.classList.remove('pulse-red');
-        } else {
-          badgeCount.classList.remove('pulse-red');
-          badgeCount.classList.remove('badge-amber');
-        }
+        badgeCount.classList.toggle('pulse-red', criticos > 0);
+        badgeCount.classList.toggle('badge-amber', criticos === 0 && advertencia > 0);
       } else {
         badgeCount.style.display = 'none';
-        badgeCount.classList.remove('pulse-red');
-        badgeCount.classList.remove('badge-amber');
+        badgeCount.classList.remove('pulse-red', 'badge-amber');
       }
     }
 
     // 2. Cabecera del Dropdown
     const totalPill = document.getElementById('alerts-dropdown-total-badge');
     if (totalPill) {
-      totalPill.textContent = `${total} Alertas`;
-      totalPill.className = criticas > 0 ? 'badge badge-danger alerts-total-pill' : (advertencias > 0 ? 'badge badge-warning alerts-total-pill' : 'badge badge-info alerts-total-pill');
+      totalPill.textContent = `${total} ${total === 1 ? 'proyecto' : 'proyectos'}`;
+      totalPill.className = criticos > 0 ? 'badge badge-danger alerts-total-pill' : (advertencia > 0 ? 'badge badge-warning alerts-total-pill' : 'badge badge-info alerts-total-pill');
     }
 
     const critSummary = document.getElementById('alerts-summary-crit-count');
-    if (critSummary) critSummary.textContent = `${criticas} Críticas`;
+    if (critSummary) critSummary.textContent = `${criticos} críticos`;
 
     const warnSummary = document.getElementById('alerts-summary-warn-count');
-    if (warnSummary) warnSummary.textContent = `${advertencias} Advertencias`;
+    if (warnSummary) warnSummary.textContent = `${advertencia} en advertencia`;
 
     // 3. Contadores en las píldoras de filtro
     const cntAll = document.getElementById('alerts-filter-count-all');
     if (cntAll) cntAll.textContent = String(total);
     const cntCrit = document.getElementById('alerts-filter-count-crit');
-    if (cntCrit) cntCrit.textContent = String(criticas);
+    if (cntCrit) cntCrit.textContent = String(criticos);
     const cntWarn = document.getElementById('alerts-filter-count-warn');
-    if (cntWarn) cntWarn.textContent = String(advertencias);
+    if (cntWarn) cntWarn.textContent = String(advertencia);
 
-    // 4. Renderizar tarjetas en la lista
+    // 4. Renderizar tarjetas por proyecto
     this.renderAlerts();
   },
 
@@ -1319,28 +1298,28 @@ const App = {
 
     if (loading) loading.style.display = 'none';
 
-    if (!this.alertsData || !Array.isArray(this.alertsData.alertas)) {
+    if (!this.alertsData || !Array.isArray(this.alertsData.proyectos)) {
       if (emptyState) emptyState.style.display = 'flex';
       itemsList.style.display = 'none';
       return;
     }
 
-    let items = this.alertsData.alertas;
+    let projects = this.alertsData.proyectos;
     const filter = this.currentAlertsFilter || 'todas';
 
     if (filter === 'critica') {
-      items = items.filter(a => a.severidad === 'CRITICAL');
+      projects = projects.filter(g => g.severidad === 'CRITICAL');
     } else if (filter === 'advertencia') {
-      items = items.filter(a => a.severidad === 'WARNING');
+      projects = projects.filter(g => g.severidad === 'WARNING');
     }
 
-    if (items.length === 0) {
+    if (projects.length === 0) {
       if (emptyState) {
         emptyState.style.display = 'flex';
         const emptyTitle = emptyState.querySelector('.empty-title');
-        if (emptyTitle) emptyTitle.textContent = filter === 'todas' ? '¡Excelente! Operación en Norma' : `No hay alertas de tipo ${filter}`;
+        if (emptyTitle) emptyTitle.textContent = filter === 'todas' ? 'Sin proyectos con atrasos' : 'Sin proyectos en esta categoría';
         const emptyDesc = emptyState.querySelector('.empty-desc');
-        if (emptyDesc) emptyDesc.textContent = filter === 'todas' ? 'No existen tickets ni solots fuera de los límites de SLA en este momento.' : 'Sin desviaciones en esta categoría.';
+        if (emptyDesc) emptyDesc.textContent = filter === 'todas' ? 'Ningún proyecto tiene Solots ni tickets fuera de SLA en este momento.' : 'Prueba con otro filtro.';
       }
       itemsList.style.display = 'none';
       return;
@@ -1351,34 +1330,43 @@ const App = {
     itemsList.style.flexDirection = 'column';
     itemsList.style.gap = '8px';
 
-    itemsList.innerHTML = items.map(item => {
-      const isCrit = item.severidad === 'CRITICAL';
+    itemsList.innerHTML = projects.map(g => {
+      const isCrit = g.severidad === 'CRITICAL';
       const sevClass = isCrit ? 'critica' : 'advertencia';
       const badgeSevClass = isCrit ? 'badge-sla-critical' : 'badge-sla-warning';
-      const badgeSevLabel = isCrit ? 'Crítica' : 'Advertencia';
-      const icono = Icons.svg(item.tipo === 'ticket' ? 'ticket' : 'zap', { size: 16 });
+      const badgeSevLabel = isCrit ? 'Crítico' : 'Advertencia';
+      const counts = [
+        g.solots ? `${g.solots} ${g.solots === 1 ? 'Solot' : 'Solots'}` : '',
+        g.tickets ? `${g.tickets} ${g.tickets === 1 ? 'ticket' : 'tickets'}` : '',
+        g.max_dias_fuera_sla ? `atraso máx. ${g.max_dias_fuera_sla} días` : '',
+      ].filter(Boolean).join(' · ');
+      const shown = (g.alertas || []).slice(0, 3);
+      const remaining = (g.total_alertas || 0) - shown.length;
+      const itemsHtml = shown.map(a => `
+        <li>
+          <span class="alert-project-item-title">${this.escapeHtml(a.titulo || '')}</span>
+          <span class="alert-project-item-detail">${this.escapeHtml(a.detalle_sla || '')}</span>
+        </li>`).join('');
 
       return `
-        <div class="alert-card-item ${sevClass}" data-id="${this.escapeHtml(item.id)}" data-project-id="${item.proyecto_id || ''}">
+        <div class="alert-card-item alert-project-card ${sevClass}" data-project-id="${g.proyecto_id}" data-severity="${g.severidad}">
           <div class="alert-card-header">
             <div class="alert-card-type-row">
-              <span class="alert-card-icon">${icono}</span>
-              <span class="alert-card-title">${this.escapeHtml(item.titulo || '')}</span>
+              <span class="alert-card-title alert-project-client">${this.escapeHtml(g.cliente || 'Sin cliente')}</span>
             </div>
             <span class="alert-card-sla-badge ${badgeSevClass}">${badgeSevLabel}</span>
           </div>
-          <div class="alert-card-subtitulo">${this.escapeHtml(item.subtitulo || '')}</div>
+          <div class="alert-card-subtitulo alert-project-meta">
+            <span class="id-mono">${this.escapeHtml(this.formatNumeroProyecto(g.numero_proyecto || ''))}</span>
+            · ${this.escapeHtml(g.lt_asignado || 'Sin asignar')}
+          </div>
+          <div class="alert-project-counts">${this.escapeHtml(counts)}</div>
+          <ul class="alert-project-items">${itemsHtml}</ul>
           <div class="alert-card-meta-row">
-            <div class="alert-card-meta-info">
-              <span><strong>Cliente:</strong> ${this.escapeHtml(item.cliente || 'S/C')}</span>
-              <span><strong>Líder:</strong> ${this.escapeHtml(item.lt_asignado || 'S/A')}</span>
-              <span><strong>Resp:</strong> ${this.escapeHtml(item.responsable || '')}</span>
-            </div>
-            ${item.proyecto_id ? `
-              <button type="button" class="btn-alert-drilldown" onclick="App.openProjectFromAlert(${item.proyecto_id})" title="Ver proyecto en Drill Down">
-                Ver proyecto
-              </button>
-            ` : ''}
+            <span class="alert-project-more">${remaining > 0 ? `y ${remaining} más` : ''}</span>
+            <button type="button" class="btn-alert-drilldown" onclick="App.openProjectFromAlert(${g.proyecto_id})" title="Abrir el detalle del proyecto">
+              Ver proyecto
+            </button>
           </div>
         </div>
       `;
@@ -1670,7 +1658,9 @@ const App = {
     });
 
     // Health Score KPI Cards Interactive Filtering
+    // Filtro segmentado de salud (botones nativos: Enter y Espacio ya disparan click)
     const healthCards = [
+      { id: 'health-card-all', score: null },
       { id: 'health-card-healthy', score: 'HEALTHY' },
       { id: 'health-card-warning', score: 'WARNING' },
       { id: 'health-card-critical', score: 'CRITICAL' },
@@ -1681,12 +1671,6 @@ const App = {
       const card = document.getElementById(id);
       if (card) {
         card.addEventListener('click', () => this.filterByHealthScore(score));
-        card.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter' || e.key === ' ' || e.code === 'Space') {
-            e.preventDefault();
-            this.filterByHealthScore(score);
-          }
-        });
       }
     });
 
@@ -2603,15 +2587,11 @@ const App = {
       const valEnCurso = document.getElementById('kpi-val-en-curso');
       const valPendientes = document.getElementById('kpi-val-pendientes-asignar');
       const valEfectividad = document.getElementById('kpi-val-efectividad');
-      const valTickets = document.getElementById('kpi-val-tickets');
-      const valRfcs = document.getElementById('kpi-val-rfcs');
 
       if (valProyectos) valProyectos.textContent = kpis.total_proyectos || 0;
       if (valEnCurso) valEnCurso.textContent = kpis.proyectos_en_curso || 0;
       if (valPendientes) valPendientes.textContent = kpis.pendientes_asignar || 0;
       if (valEfectividad) valEfectividad.textContent = `${kpis.efectividad !== undefined ? kpis.efectividad : 0}%`;
-      if (valTickets) valTickets.textContent = kpis.total_tickets || 0;
-      if (valRfcs) valRfcs.textContent = kpis.total_rfcs || 0;
 
       // Health Score KPIs
       const valHealthHealthy = document.getElementById('health-kpi-val-healthy');
@@ -2624,6 +2604,10 @@ const App = {
       if (valHealthWarning) valHealthWarning.textContent = saludKpis.en_riesgo || 0;
       if (valHealthCritical) valHealthCritical.textContent = saludKpis.criticos || 0;
       if (valHealthNeutral) valHealthNeutral.textContent = saludKpis.sin_datos || 0;
+      const valHealthAll = document.getElementById('health-kpi-val-all');
+      if (valHealthAll) {
+        valHealthAll.textContent = (saludKpis.saludables || 0) + (saludKpis.en_riesgo || 0) + (saludKpis.criticos || 0) + (saludKpis.sin_datos || 0);
+      }
 
       this.updateKPIActiveState();
       this.updateHealthKpiActiveState();

@@ -237,7 +237,7 @@ def test_col_01_no_violet_or_indigo_visible(page: Page):
 def test_col_02_kpi_icons_are_neutral(page: Page):
     login_admin(page)
     icons = page.locator("#module-projects-container .kpi-card .kpi-icon")
-    assert icons.count() >= 6
+    assert icons.count() == 4  # S14: el tablero deja solo 4 KPI
     styles = icons.evaluate_all(
         "els => els.map(e => [getComputedStyle(e).color, getComputedStyle(e).backgroundColor])"
     )

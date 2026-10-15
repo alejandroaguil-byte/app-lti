@@ -8,7 +8,7 @@
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   
   <!-- Pila Tipográfica Nativa del Portal HALO (sin dependencias externas) -->
-  <link rel="stylesheet" href="css/styles.css?v=9.3">
+  <link rel="stylesheet" href="css/styles.css?v=9.4">
 </head>
 <body>
 
@@ -92,24 +92,24 @@
             <div class="alerts-dropdown-header">
               <div class="alerts-dropdown-title-row">
                 <div class="alerts-header-brand">
-                                    <span class="alerts-header-title">Alertas Tempranas SLA</span>
+                                    <span class="alerts-header-title">Proyectos con atrasos SLA</span>
                 </div>
-                <span class="badge badge-danger alerts-total-pill" id="alerts-dropdown-total-badge">0 Alertas</span>
+                <span class="badge badge-danger alerts-total-pill" id="alerts-dropdown-total-badge">0 proyectos</span>
                 <button class="alerts-close-btn" id="alerts-dropdown-close-btn" aria-label="Cerrar panel de alertas">&times;</button>
               </div>
               
               <!-- Sub-resumen de salud rápida -->
               <div class="alerts-status-summary-bar" id="alerts-status-summary-bar">
-                <span id="alerts-summary-crit-count" class="summary-crit">0 Críticas</span>
-                <span id="alerts-summary-warn-count" class="summary-warn">0 Advertencias</span>
+                <span id="alerts-summary-crit-count" class="summary-crit">0 críticos</span>
+                <span id="alerts-summary-warn-count" class="summary-warn">0 en advertencia</span>
               </div>
             </div>
 
             <!-- Barra de Píldoras de Filtro Rápido en Dropdown -->
             <div class="alerts-filter-bar">
-              <button class="alerts-filter-pill active" data-filter="todas" id="alerts-filter-all">Todas (<span id="alerts-filter-count-all">0</span>)</button>
-              <button class="alerts-filter-pill" data-filter="critica" id="alerts-filter-crit">Críticas (<span id="alerts-filter-count-crit">0</span>)</button>
-              <button class="alerts-filter-pill" data-filter="advertencia" id="alerts-filter-warn">Advertencias (<span id="alerts-filter-count-warn">0</span>)</button>
+              <button class="alerts-filter-pill active" data-filter="todas" id="alerts-filter-all">Todos (<span id="alerts-filter-count-all">0</span>)</button>
+              <button class="alerts-filter-pill" data-filter="critica" id="alerts-filter-crit">Críticos (<span id="alerts-filter-count-crit">0</span>)</button>
+              <button class="alerts-filter-pill" data-filter="advertencia" id="alerts-filter-warn">En advertencia (<span id="alerts-filter-count-warn">0</span>)</button>
             </div>
 
             <!-- Barra de Acciones Ejecutivas de Escalamiento -->
@@ -136,8 +136,8 @@
               <!-- Empty State -->
               <div class="alerts-empty-state" id="alerts-empty-state" style="display: none;">
                 <span class="empty-icon"><i class="ui-icon-slot" data-icon="check-circle" data-icon-size="32"></i></span>
-                <p class="empty-title">¡Excelente! Operación en Norma</p>
-                <p class="empty-desc">No existen tickets ni solots fuera de los límites de SLA en este momento.</p>
+                <p class="empty-title">Sin proyectos con atrasos</p>
+                <p class="empty-desc">Ningún proyecto tiene Solots ni tickets fuera de SLA en este momento.</p>
               </div>
             </div>
 
@@ -293,61 +293,6 @@
                 <div class="kpi-title">EFECTIVIDAD</div>
               </div>
             </div>
-
-            <div class="kpi-card kpi-tickets">
-              <div class="kpi-icon"><i class="ui-icon-slot" data-icon="ticket" data-icon-size="22"></i></div>
-              <div>
-                <div class="kpi-value" id="kpi-val-tickets">0</div>
-                <div class="kpi-title">Tickets SD (HPSM)</div>
-              </div>
-            </div>
-
-            <div class="kpi-card kpi-rfcs">
-              <div class="kpi-icon"><i class="ui-icon-slot" data-icon="git-branch" data-icon-size="22"></i></div>
-              <div>
-                <div class="kpi-value" id="kpi-val-rfcs">0</div>
-                <div class="kpi-title">RFCs Asociadas</div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Grid Complementaria de Salud Operacional (Controlada por el Kill-Switch) -->
-          <div class="health-kpi-grid" id="health-kpi-grid" style="display: none;">
-            <div class="health-kpi-card health-kpi-green" id="health-card-healthy" role="button" tabindex="0" title="Filtrar proyectos saludables (al día)" aria-label="Filtrar proyectos saludables" aria-pressed="false">
-              <div class="health-kpi-icon"><span class="status-dot status-dot-healthy"></span></div>
-              <div class="health-kpi-info">
-                <div class="health-kpi-val" id="health-kpi-val-healthy">0</div>
-                <div class="health-kpi-title">PROYECTOS SALUDABLES</div>
-              </div>
-              <span class="health-kpi-badge">Filtrar</span>
-            </div>
-
-            <div class="health-kpi-card health-kpi-yellow" id="health-card-warning" role="button" tabindex="0" title="Filtrar proyectos en riesgo o con atención pendiente" aria-label="Filtrar proyectos en riesgo" aria-pressed="false">
-              <div class="health-kpi-icon"><span class="status-dot status-dot-warning"></span></div>
-              <div class="health-kpi-info">
-                <div class="health-kpi-val" id="health-kpi-val-warning">0</div>
-                <div class="health-kpi-title">EN RIESGO / ATENCIÓN</div>
-              </div>
-              <span class="health-kpi-badge">Filtrar</span>
-            </div>
-
-            <div class="health-kpi-card health-kpi-red" id="health-card-critical" role="button" tabindex="0" title="Filtrar proyectos con atrasos críticos o solots vencidas" aria-label="Filtrar proyectos críticos" aria-pressed="false">
-              <div class="health-kpi-icon"><span class="status-dot status-dot-critical"></span></div>
-              <div class="health-kpi-info">
-                <div class="health-kpi-val" id="health-kpi-val-critical">0</div>
-                <div class="health-kpi-title">CRÍTICOS / VENCIDOS</div>
-              </div>
-              <span class="health-kpi-badge">Filtrar</span>
-            </div>
-
-            <div class="health-kpi-card health-kpi-gray" id="health-card-neutral" role="button" tabindex="0" title="Filtrar proyectos sin Solots ni tickets aún" aria-label="Filtrar proyectos sin datos" aria-pressed="false">
-              <div class="health-kpi-icon"><span class="status-dot status-dot-neutral"></span></div>
-              <div class="health-kpi-info">
-                <div class="health-kpi-val" id="health-kpi-val-neutral">0</div>
-                <div class="health-kpi-title">SIN DATOS OPERACIONALES</div>
-              </div>
-              <span class="health-kpi-badge">Filtrar</span>
-            </div>
           </div>
 
           <!-- Filter and Search Bar -->
@@ -360,7 +305,7 @@
 
               <!-- Filtro Estado Sharepoint -->
               <div style="min-width: 200px;">
-                <select id="filter-estado-sp" class="form-select" title="Estado en Sharepoint (dbo.Proyectos)">
+                <select id="filter-estado-sp" class="form-select" title="Estado en SharePoint">
                   <option value="">— Estado Sharepoint (Todos) —</option>
                   <option value="Generado">Generado</option>
                   <option value="En revision">En revision</option>
@@ -382,6 +327,34 @@
               </button>
               <span id="projects-count-badge" class="count-circle-badge" title="Cantidad de proyectos filtrados">0</span>
             </div>
+          </div>
+
+          <!-- Filtro segmentado de salud (controlado por la preferencia Salud) -->
+          <div class="health-segmented" id="health-kpi-grid" role="group" aria-label="Filtrar proyectos por salud" style="display: none;">
+            <button type="button" class="health-segment" id="health-card-all" aria-pressed="true" title="Mostrar todos los proyectos">
+              <span class="health-segment-label">Todos</span>
+              <span class="health-kpi-val" id="health-kpi-val-all">0</span>
+            </button>
+            <button type="button" class="health-segment" id="health-card-healthy" aria-pressed="false" title="Proyectos saludables (al día)">
+              <span class="status-dot status-dot-healthy"></span>
+              <span class="health-segment-label">Saludables</span>
+              <span class="health-kpi-val" id="health-kpi-val-healthy">0</span>
+            </button>
+            <button type="button" class="health-segment" id="health-card-warning" aria-pressed="false" title="Proyectos en riesgo o con atención pendiente">
+              <span class="status-dot status-dot-warning"></span>
+              <span class="health-segment-label">En riesgo</span>
+              <span class="health-kpi-val" id="health-kpi-val-warning">0</span>
+            </button>
+            <button type="button" class="health-segment" id="health-card-critical" aria-pressed="false" title="Proyectos con atrasos críticos o solots vencidas">
+              <span class="status-dot status-dot-critical"></span>
+              <span class="health-segment-label">Críticos</span>
+              <span class="health-kpi-val" id="health-kpi-val-critical">0</span>
+            </button>
+            <button type="button" class="health-segment" id="health-card-neutral" aria-pressed="false" title="Proyectos sin Solots ni tickets aún">
+              <span class="status-dot status-dot-neutral"></span>
+              <span class="health-segment-label">Sin datos</span>
+              <span class="health-kpi-val" id="health-kpi-val-neutral">0</span>
+            </button>
           </div>
 
           <!-- Projects Table -->
@@ -2094,7 +2067,7 @@
 
   <!-- Scripts -->
   <script src="js/auth.js?v=6.0"></script>
-  <script src="js/icons.js?v=9.3"></script>
-  <script src="js/app.js?v=9.3"></script>
+  <script src="js/icons.js?v=9.4"></script>
+  <script src="js/app.js?v=9.4"></script>
 </body>
 </html>

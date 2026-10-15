@@ -208,7 +208,7 @@ def test_ft_alt_e2e_001_despliegue_dropdown(halo_page: Page, base_url: str):
     expect(bell_btn).to_have_attribute("aria-expanded", "true")
 
     # Cabecera del dropdown debe tener título
-    expect(halo_page.locator(".alerts-header-title")).to_have_text("Alertas Tempranas SLA")
+    expect(halo_page.locator(".alerts-header-title")).to_have_text("Proyectos con atrasos SLA")
 
 
 # ==============================================================================
