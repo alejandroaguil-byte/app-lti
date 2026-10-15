@@ -380,15 +380,16 @@ def test_tc_rbac_19_e2e_lti_ui_isolation(page: Page):
     expect(page.locator("#nav-btn-solicitud-lti")).to_be_visible()
     expect(page.locator("#nav-btn-usuarios")).to_be_hidden()
 
-    # 3. En la tabla de proyectos, verificar que aparezcan botones de Ver (🔍) y Editar (✏️) pero NUNCA Eliminar (🗑️)
-    page.wait_for_selector("#projects-table-body tr", timeout=25000)
-    first_row = page.locator("#projects-table-body tr").first
-    expect(first_row.locator(".btn-action-view")).to_be_visible()
-    expect(first_row.locator(".btn-action-edit")).to_be_visible()
-    expect(first_row.locator(".btn-action-delete")).to_be_hidden()
+    # 3. En la tabla de proyectos, el menú "⋯" de la fila ofrece Editar y NUNCA Eliminar
+    page.wait_for_selector("#projects-table-body tr.project-row", timeout=25000)
+    first_row = page.locator("#projects-table-body tr.project-row").first
+    first_row.locator(".btn-row-menu").click()
+    expect(page.locator("#row-actions-menu .btn-action-edit")).to_be_visible()
+    assert page.locator("#projects-table-body .btn-action-delete, #row-actions-menu .btn-action-delete").count() == 0
+    page.keyboard.press("Escape")
 
-    # 4. En la vista Drill Down, verificar que el botón de eliminar esté oculto
-    first_row.locator(".btn-action-view").click()
+    # 4. En la vista Drill Down (clic en la fila), verificar que el botón de eliminar esté oculto
+    first_row.locator("td").first.click()
     expect(page.locator("#project-drilldown-section")).to_be_visible()
     expect(page.locator("#btn-dd-edit-project")).to_be_visible()
     expect(page.locator("#btn-dd-delete-project")).to_be_hidden()

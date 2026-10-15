@@ -25,7 +25,7 @@ import datetime
 import requests
 from playwright.sync_api import Page, expect
 from backend.db import get_db_connection, create_solicitud_lti
-from tests.conftest import create_access_token
+from tests.conftest import create_access_token, open_user_menu, click_user_menu_control
 
 BASE_URL = os.getenv("BASE_URL", "http://127.0.0.1:8000")
 
@@ -227,20 +227,19 @@ def test_api_delete_proyecto_sin_token():
 
 def test_e2e_01_render_action_buttons(page: Page):
     """
-    E2E-01: Renderizado de Botones de Acción en la tabla.
-    Verificar que cada fila de proyectos contenga los 3 botones: 🔍 Ver, ✏️ Editar, 🗑️ Eliminar.
+    E2E-01: Renderizado de Acciones en la tabla.
+    Cada fila se abre con un clic y ofrece un menú "⋯" con Editar; Ver y Eliminar no están en la fila.
     """
     proj = create_test_project_in_db("QA-TEST-E2E-01")
     helper_login(page)
     target_row = helper_filter_project(page, proj["Numero_Proyecto"])
 
-    view_btn = target_row.locator(".btn-action-view")
-    edit_btn = target_row.locator(".btn-action-edit")
-    delete_btn = target_row.locator(".btn-action-delete")
-
-    expect(view_btn).to_be_visible()
-    expect(edit_btn).to_be_visible()
-    expect(delete_btn).to_be_visible()
+    assert target_row.locator(".btn-action-view").count() == 0
+    assert target_row.locator(".btn-action-delete").count() == 0
+    menu_btn = target_row.locator(".btn-row-menu")
+    expect(menu_btn).to_be_visible()
+    menu_btn.click()
+    expect(page.locator("#row-actions-menu .btn-action-edit")).to_be_visible()
 
 
 def test_e2e_02_open_and_populate_edit_modal(page: Page):
@@ -252,9 +251,9 @@ def test_e2e_02_open_and_populate_edit_modal(page: Page):
     proj_id = proj["ID"]
     helper_login(page)
     target_row = helper_filter_project(page, proj["Numero_Proyecto"])
-    edit_btn = target_row.locator(".btn-action-edit")
+    target_row.locator(".btn-row-menu").click()
+    edit_btn = page.locator("#row-actions-menu .btn-action-edit")
     expect(edit_btn).to_be_visible()
-    edit_btn.scroll_into_view_if_needed()
     with page.expect_response(lambda r: f"/api/proyectos/{proj_id}" in r.url and r.status == 200, timeout=10000):
         edit_btn.click()
 
@@ -291,9 +290,9 @@ def test_e2e_03_full_edit_flow_from_table(page: Page):
     proj_id = proj["ID"]
     helper_login(page)
     target_row = helper_filter_project(page, proj["Numero_Proyecto"])
-    edit_btn = target_row.locator(".btn-action-edit")
+    target_row.locator(".btn-row-menu").click()
+    edit_btn = page.locator("#row-actions-menu .btn-action-edit")
     expect(edit_btn).to_be_visible()
-    edit_btn.scroll_into_view_if_needed()
 
     # Abrir modal de edición y esperar carga
     edit_btn.click()
@@ -350,7 +349,7 @@ def test_e2e_04_edit_from_drilldown_view(page: Page):
     helper_login(page)
 
     target_row = helper_filter_project(page, proj["Numero_Proyecto"])
-    view_btn = target_row.locator(".btn-action-view")
+    view_btn = target_row.locator("td").first
     view_btn.scroll_into_view_if_needed()
     with page.expect_response(lambda r: f"/api/proyectos/{proj_id}" in r.url and r.status == 200, timeout=10000):
         view_btn.click()
@@ -397,10 +396,11 @@ def test_e2e_05_open_and_cancel_delete_modal(page: Page):
 
     target_row = helper_filter_project(page, proj["Numero_Proyecto"])
 
-    # Clic en botón eliminar de la tabla
-    del_btn = target_row.locator(".btn-action-delete")
+    # Eliminar vive solo en el detalle del proyecto
+    target_row.locator("td").first.click()
+    expect(page.locator("#project-drilldown-section")).to_be_visible(timeout=10000)
+    del_btn = page.locator("#btn-dd-delete-project")
     expect(del_btn).to_be_visible(timeout=10000)
-    del_btn.scroll_into_view_if_needed()
     try:
         with page.expect_response(lambda r: f"/api/proyectos/{proj_id}" in r.url and r.status == 200, timeout=5000):
             del_btn.click(force=True)
@@ -439,9 +439,10 @@ def test_e2e_06_confirm_delete_from_table(page: Page):
 
     target_row = helper_filter_project(page, proj["Numero_Proyecto"])
 
-    # Clic en botón eliminar de la fila
-    del_btn = target_row.locator(".btn-action-delete")
-    del_btn.scroll_into_view_if_needed()
+    # Eliminar vive solo en el detalle del proyecto
+    target_row.locator("td").first.click()
+    expect(page.locator("#project-drilldown-section")).to_be_visible(timeout=10000)
+    del_btn = page.locator("#btn-dd-delete-project")
     try:
         with page.expect_response(lambda r: f"/api/proyectos/{proj_id}" in r.url and r.status == 200, timeout=5000):
             del_btn.click(force=True)
@@ -483,7 +484,7 @@ def test_e2e_07_delete_from_drilldown_view(page: Page):
     helper_login(page)
 
     target_row = helper_filter_project(page, proj["Numero_Proyecto"])
-    view_btn = target_row.locator(".btn-action-view")
+    view_btn = target_row.locator("td").first
     view_btn.scroll_into_view_if_needed()
     with page.expect_response(lambda r: f"/api/proyectos/{proj_id}" in r.url and r.status == 200, timeout=10000):
         view_btn.click()
@@ -525,7 +526,9 @@ def test_e2e_08_light_and_dark_theme_modals(page: Page):
     helper_login(page)
 
     theme_btn = page.locator("#theme-toggle-btn")
+    open_user_menu(page)
     expect(theme_btn).to_be_visible()
+    page.keyboard.press("Escape")
 
     # 1. Modo Claro
     page.evaluate("App.setTheme('light')")
@@ -534,9 +537,7 @@ def test_e2e_08_light_and_dark_theme_modals(page: Page):
     target_row = helper_filter_project(page, proj["Numero_Proyecto"])
 
     # Abrir modal de edición en modo claro
-    edit_btn_light = target_row.locator(".btn-action-edit")
-    expect(edit_btn_light).to_be_visible()
-    edit_btn_light.scroll_into_view_if_needed()
+    expect(target_row.locator(".btn-row-menu")).to_be_visible()
     page.evaluate(f"App.openEditProjectModal({proj_id})")
     edit_modal = page.locator("#edit-project-modal")
     expect(edit_modal).to_be_visible(timeout=10000)
@@ -547,15 +548,13 @@ def test_e2e_08_light_and_dark_theme_modals(page: Page):
     page.click("#btn-cancel-edit-modal")
     expect(edit_modal).to_be_hidden(timeout=10000)
 
-    # 2. Cambiar a Modo Oscuro vía botón de tema en header
-    theme_btn.click()
+    # 2. Cambiar a Modo Oscuro vía botón de tema del menú de usuario
+    click_user_menu_control(page, "#theme-toggle-btn")
     expect(page.locator("html")).to_have_attribute("data-theme", "dark", timeout=5000)
 
     # Abrir modal de edición en modo oscuro
     target_row = page.locator(f"#projects-table-body tr:has-text('{proj['Numero_Proyecto']}')").first
-    edit_btn_dark = target_row.locator(".btn-action-edit")
-    expect(edit_btn_dark).to_be_visible()
-    edit_btn_dark.scroll_into_view_if_needed()
+    expect(target_row.locator(".btn-row-menu")).to_be_visible()
     page.evaluate(f"App.openEditProjectModal({proj_id})")
     expect(edit_modal).to_be_visible(timeout=10000)
     expect(page.locator("#edit-project-id")).to_have_value(str(proj_id), timeout=10000)
@@ -565,9 +564,6 @@ def test_e2e_08_light_and_dark_theme_modals(page: Page):
     expect(edit_modal).to_be_hidden(timeout=10000)
 
     # Abrir modal de eliminación en modo oscuro
-    del_btn_dark = target_row.locator(".btn-action-delete")
-    expect(del_btn_dark).to_be_visible()
-    del_btn_dark.scroll_into_view_if_needed()
     page.evaluate(f"App.openDeleteProjectModal({proj_id})")
     delete_modal = page.locator("#delete-project-modal")
     expect(delete_modal).to_be_visible(timeout=10000)
@@ -578,5 +574,5 @@ def test_e2e_08_light_and_dark_theme_modals(page: Page):
     expect(delete_modal).to_be_hidden(timeout=10000)
 
     # 3. Regresar a modo claro
-    theme_btn.click()
+    click_user_menu_control(page, "#theme-toggle-btn")
     expect(page.locator("html")).to_have_attribute("data-theme", "light", timeout=5000)

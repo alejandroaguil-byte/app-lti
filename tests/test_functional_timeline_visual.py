@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from playwright.sync_api import Page, expect
 
 from backend.main import app
-from tests.conftest import create_access_token, create_portal_jwt
+from tests.conftest import create_access_token, create_portal_jwt, open_user_menu, close_user_menu
 
 client = TestClient(app)
 
@@ -52,7 +52,7 @@ def _setup_app_session(halo_page: Page, base_url: str):
 # ==============================================================================
 def test_kill_switch_timeline_default_on():
     """
-    Verifica que en el HTML base el botón toggle de Timeline esté presente con label 'Timeline: ON'
+    Verifica que en el HTML base el botón toggle de Timeline esté presente con label 'Historial: ON'
     y aria-pressed='true'.
     """
     res = client.get("/")
@@ -62,7 +62,7 @@ def test_kill_switch_timeline_default_on():
     assert 'id="timeline-toggle-btn"' in html
     assert 'aria-pressed="true"' in html
     assert 'id="timeline-toggle-label"' in html
-    assert 'Timeline: ON' in html
+    assert 'Historial: ON' in html
     assert 'id="tab-btn-timeline"' in html
     assert 'data-tab="timeline"' in html
     assert 'id="tab-count-timeline"' in html
@@ -206,12 +206,14 @@ def test_e2e_timeline_toggle_ui_and_killswitch(halo_page: Page, base_url: str):
 
     # 1. Validar presencia del botón toggle y estado inicial ON
     toggle_btn = halo_page.locator("#timeline-toggle-btn")
+    open_user_menu(halo_page)
     expect(toggle_btn).to_be_visible()
+    close_user_menu(halo_page)
     expect(toggle_btn).to_have_attribute("aria-pressed", "true")
-    expect(halo_page.locator("#timeline-toggle-label")).to_have_text("Timeline: ON")
+    expect(halo_page.locator("#timeline-toggle-label")).to_have_text("Historial: ON")
 
     # 2. Abrir Drill Down del primer proyecto
-    halo_page.locator("#projects-table-body tr .btn-action-view").first.click()
+    halo_page.locator("#projects-table-body tr.project-row").first.locator("td").first.click()
     expect(halo_page.locator("#project-drilldown-section")).to_be_visible(timeout=10000)
 
     # 3. La pestaña Timeline debe ser visible
@@ -219,16 +221,20 @@ def test_e2e_timeline_toggle_ui_and_killswitch(halo_page: Page, base_url: str):
     expect(tab_timeline).to_be_visible()
 
     # 4. Apagar Kill-Switch desde la sub-barra
+    open_user_menu(halo_page)
     toggle_btn.click()
+    close_user_menu(halo_page)
     halo_page.wait_for_timeout(300)
     expect(toggle_btn).to_have_attribute("aria-pressed", "false")
-    expect(halo_page.locator("#timeline-toggle-label")).to_have_text("Timeline: OFF")
+    expect(halo_page.locator("#timeline-toggle-label")).to_have_text("Historial: OFF")
 
     # 5. La pestaña Timeline debe desaparecer (Cero Rastros)
     expect(tab_timeline).to_be_hidden()
 
     # 6. Reactivar el Kill-Switch
+    open_user_menu(halo_page)
     toggle_btn.click()
+    close_user_menu(halo_page)
     halo_page.wait_for_timeout(300)
     expect(toggle_btn).to_have_attribute("aria-pressed", "true")
     expect(tab_timeline).to_be_visible()
@@ -244,7 +250,7 @@ def test_e2e_timeline_filter_pills_and_roadmap(halo_page: Page, base_url: str):
     _setup_app_session(halo_page, base_url)
 
     # 1. Abrir Drill Down
-    halo_page.locator("#projects-table-body tr .btn-action-view").first.click()
+    halo_page.locator("#projects-table-body tr.project-row").first.locator("td").first.click()
     expect(halo_page.locator("#project-drilldown-section")).to_be_visible(timeout=10000)
 
     # 2. Clic en pestaña Timeline
@@ -307,7 +313,7 @@ def test_e2e_timeline_autoswitch_to_summary_on_killswitch(halo_page: Page, base_
     _setup_app_session(halo_page, base_url)
 
     # 1. Abrir Drill Down
-    halo_page.locator("#projects-table-body tr .btn-action-view").first.click()
+    halo_page.locator("#projects-table-body tr.project-row").first.locator("td").first.click()
     expect(halo_page.locator("#project-drilldown-section")).to_be_visible(timeout=10000)
 
     # 2. Navegar a la pestaña Línea de Tiempo
@@ -318,7 +324,9 @@ def test_e2e_timeline_autoswitch_to_summary_on_killswitch(halo_page: Page, base_
 
     # 3. Desactivar el Kill-Switch mientras se está en la pestaña Timeline
     toggle_btn = halo_page.locator("#timeline-toggle-btn")
+    open_user_menu(halo_page)
     toggle_btn.click()
+    close_user_menu(halo_page)
     halo_page.wait_for_timeout(300)
 
     # 4. Validar política Cero Rastros: pestaña Timeline oculta
@@ -330,7 +338,9 @@ def test_e2e_timeline_autoswitch_to_summary_on_killswitch(halo_page: Page, base_
     expect(halo_page.locator("#tab-pane-summary")).to_be_visible()
 
     # 6. Reactivar Kill-Switch: la pestaña Timeline reaparece pero NO interrumpe la navegación actual
+    open_user_menu(halo_page)
     toggle_btn.click()
+    close_user_menu(halo_page)
     halo_page.wait_for_timeout(300)
     expect(tab_timeline).to_be_visible()
     expect(tab_summary).to_have_class("tab-btn active")

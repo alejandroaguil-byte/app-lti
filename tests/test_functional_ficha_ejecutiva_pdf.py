@@ -11,7 +11,7 @@ from playwright.sync_api import Page, expect
 
 from backend.main import app
 from backend.db import generar_ficha_ejecutiva_html
-from tests.conftest import create_access_token, create_portal_jwt
+from tests.conftest import create_access_token, create_portal_jwt, open_user_menu, close_user_menu
 
 client = TestClient(app)
 
@@ -247,20 +247,24 @@ def test_e2e_pdf_export_toggle_ui_and_killswitch(halo_page: Page, base_url: str)
 
     # 1. Validar presencia del botón toggle y estado inicial ON
     toggle_btn = halo_page.locator("#pdf-export-toggle-btn")
+    open_user_menu(halo_page)
     expect(toggle_btn).to_be_visible()
+    close_user_menu(halo_page)
     expect(halo_page.locator("#pdf-toggle-label")).to_have_text("Ficha PDF: ON")
     assert "is-off" not in (toggle_btn.get_attribute("class") or "")
     assert toggle_btn.get_attribute("aria-pressed") == "true"
 
     # 2. Apagar Kill-Switch (Toggle OFF)
+    open_user_menu(halo_page)
     toggle_btn.click()
+    close_user_menu(halo_page)
     halo_page.wait_for_timeout(300)
     expect(halo_page.locator("#pdf-toggle-label")).to_have_text("Ficha PDF: OFF")
     assert "is-off" in (toggle_btn.get_attribute("class") or "")
     assert toggle_btn.get_attribute("aria-pressed") == "false"
 
     # 3. Entrar a Drill Down de primer proyecto y validar CERO RASTROS
-    halo_page.locator("#projects-table-body tr .btn-action-view").first.click()
+    halo_page.locator("#projects-table-body tr.project-row").first.locator("td").first.click()
     expect(halo_page.locator("#project-drilldown-section")).to_be_visible(timeout=10000)
 
     btn_dd_pdf = halo_page.locator("#btn-drilldown-export-pdf")
@@ -274,14 +278,16 @@ def test_e2e_pdf_export_toggle_ui_and_killswitch(halo_page: Page, base_url: str)
     expect(halo_page.locator("#project-drilldown-section")).not_to_be_visible()
     expect(halo_page.locator("#projects-table-body")).to_be_visible()
 
+    open_user_menu(halo_page)
     toggle_btn.click()
+    close_user_menu(halo_page)
     halo_page.wait_for_timeout(300)
     expect(halo_page.locator("#pdf-toggle-label")).to_have_text("Ficha PDF: ON")
     assert "is-off" not in (toggle_btn.get_attribute("class") or "")
     assert toggle_btn.get_attribute("aria-pressed") == "true"
 
     # 5. Volver a Drill Down y comprobar que el botón reaparece de forma reactiva
-    halo_page.locator("#projects-table-body tr .btn-action-view").first.click()
+    halo_page.locator("#projects-table-body tr.project-row").first.locator("td").first.click()
     expect(halo_page.locator("#project-drilldown-section")).to_be_visible(timeout=10000)
     expect(btn_dd_pdf).to_be_visible()
 
@@ -296,7 +302,7 @@ def test_e2e_pdf_export_drilldown_click_and_iframe_generation(halo_page: Page, b
     _setup_app_session(halo_page, base_url)
 
     # Entrar a drilldown
-    halo_page.locator("#projects-table-body tr .btn-action-view").first.click()
+    halo_page.locator("#projects-table-body tr.project-row").first.locator("td").first.click()
     expect(halo_page.locator("#project-drilldown-section")).to_be_visible(timeout=10000)
 
     btn_dd_pdf = halo_page.locator("#btn-drilldown-export-pdf")
@@ -339,11 +345,14 @@ def test_e2e_pdf_export_aria_and_keyboard_accessibility(halo_page: Page, base_ur
     _setup_app_session(halo_page, base_url)
 
     toggle_btn = halo_page.locator("#pdf-export-toggle-btn")
+    open_user_menu(halo_page)
     expect(toggle_btn).to_be_visible()
+    close_user_menu(halo_page)
     assert toggle_btn.get_attribute("aria-pressed") == "true"
     assert toggle_btn.get_attribute("aria-label") == "Toggle Exportación PDF"
 
     # Foco y pulsación con Space
+    open_user_menu(halo_page)
     toggle_btn.focus()
     halo_page.keyboard.press("Space")
     halo_page.wait_for_timeout(300)
@@ -351,6 +360,7 @@ def test_e2e_pdf_export_aria_and_keyboard_accessibility(halo_page: Page, base_ur
     assert toggle_btn.get_attribute("aria-pressed") == "false"
 
     # Pulsación con Enter para reactivar
+    open_user_menu(halo_page)
     toggle_btn.focus()
     halo_page.keyboard.press("Enter")
     halo_page.wait_for_timeout(300)
@@ -358,7 +368,7 @@ def test_e2e_pdf_export_aria_and_keyboard_accessibility(halo_page: Page, base_ur
     assert toggle_btn.get_attribute("aria-pressed") == "true"
 
     # Verificar accesibilidad en drilldown
-    halo_page.locator("#projects-table-body tr .btn-action-view").first.click()
+    halo_page.locator("#projects-table-body tr.project-row").first.locator("td").first.click()
     expect(halo_page.locator("#project-drilldown-section")).to_be_visible(timeout=10000)
     btn_dd_pdf = halo_page.locator("#btn-drilldown-export-pdf")
     expect(btn_dd_pdf).to_be_visible()
@@ -376,7 +386,9 @@ def test_e2e_pdf_export_persistence_and_cero_rastros_on_reload(halo_page: Page, 
 
     # 1. Desactivar Kill-Switch
     toggle_btn = halo_page.locator("#pdf-export-toggle-btn")
+    open_user_menu(halo_page)
     toggle_btn.click()
+    close_user_menu(halo_page)
     halo_page.wait_for_timeout(300)
     expect(halo_page.locator("#pdf-toggle-label")).to_have_text("Ficha PDF: OFF")
 
@@ -391,7 +403,7 @@ def test_e2e_pdf_export_persistence_and_cero_rastros_on_reload(halo_page: Page, 
     assert "is-off" in (halo_page.locator("#pdf-export-toggle-btn").get_attribute("class") or "")
 
     # 4. Ir a Drill Down y comprobar Cero Rastros
-    halo_page.locator("#projects-table-body tr .btn-action-view").first.click()
+    halo_page.locator("#projects-table-body tr.project-row").first.locator("td").first.click()
     expect(halo_page.locator("#project-drilldown-section")).to_be_visible(timeout=10000)
     expect(halo_page.locator("#btn-drilldown-export-pdf")).not_to_be_visible()
 

@@ -25,7 +25,7 @@ import datetime
 import requests
 from playwright.sync_api import Page, expect
 from backend.db import get_db_connection, create_solicitud_lti
-from tests.conftest import create_access_token
+from tests.conftest import create_access_token, open_user_menu, click_user_menu_control
 
 BASE_URL = os.getenv("BASE_URL", "http://127.0.0.1:8000")
 
@@ -387,7 +387,9 @@ def test_08_light_and_dark_mode_visual_and_functional(page: Page):
     page.click("#nav-btn-solicitud-lti")
 
     theme_btn = page.locator("#theme-toggle-btn")
+    open_user_menu(page)
     expect(theme_btn).to_be_visible()
+    page.keyboard.press("Escape")
 
     # Forzar tema claro
     page.evaluate("App.setTheme('light')")
@@ -402,7 +404,7 @@ def test_08_light_and_dark_mode_visual_and_functional(page: Page):
     expect(page.locator("#btn-submit-solicitud")).to_be_visible()
 
     # Cambiar a modo oscuro
-    theme_btn.click()
+    click_user_menu_control(page, "#theme-toggle-btn")
     theme_attr_dark = page.locator("html").get_attribute("data-theme")
     assert theme_attr_dark == "dark"
 
@@ -418,7 +420,7 @@ def test_08_light_and_dark_mode_visual_and_functional(page: Page):
     expect(dropdown.locator(".autocomplete-item").first).to_be_visible(timeout=10000)
 
     # Regresar a modo claro
-    theme_btn.click()
+    click_user_menu_control(page, "#theme-toggle-btn")
     theme_attr_light = page.locator("html").get_attribute("data-theme")
     assert theme_attr_light == "light"
 

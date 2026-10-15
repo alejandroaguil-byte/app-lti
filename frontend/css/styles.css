@@ -222,29 +222,6 @@ button, input, select, textarea, optgroup {
   color: #FDEDEA;
 }
 
-.app-header .btn-logout {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  color: rgba(253, 237, 234, 0.86);
-  padding: 6px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.app-header .btn-logout svg {
-  width: 18px;
-  height: 18px;
-}
-
-.app-header .btn-logout:hover {
-  color: #FFFFFF;
-  background: rgba(0, 0, 0, 0.2);
-}
-
 /* Backward compatibility brand styles */
 .brand-section {
   display: flex;
@@ -343,42 +320,6 @@ button, input, select, textarea, optgroup {
   overflow-x: hidden;
 }
 
-/* Encabezado interno del Sidebar */
-.sidebar-header-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 0.35rem 0.35rem;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.sidebar-main-heading {
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
-  text-transform: uppercase;
-}
-
-.sidebar-inner-toggle {
-  background: var(--bg-surface-secondary);
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
-  width: 24px;
-  height: 24px;
-  border-radius: var(--radius-sm);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.sidebar-inner-toggle:hover {
-  background: var(--bg-surface-tertiary);
-  color: var(--text-primary);
-}
-
 /* Secciones del Sidebar */
 .sidebar-section {
   display: flex;
@@ -457,18 +398,7 @@ button, input, select, textarea, optgroup {
   border-left: 3px solid var(--primary);
 }
 
-/* Sección de Configuraciones (Switches ON/OFF) */
-.sidebar-config-section {
-  padding-top: 0.35rem;
-  border-top: 1px solid var(--border-color);
-}
-
-.sidebar-config-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
+/* Interruptores de funciones (Preferencias del menú de usuario) */
 .sidebar-toggle-item {
   width: 100%;
   display: flex;
@@ -509,42 +439,6 @@ button, input, select, textarea, optgroup {
   color: var(--text-primary);
 }
 
-/* Pie del Sidebar: Rol & Tema */
-.sidebar-footer {
-  margin-top: auto;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--border-color);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
-.sidebar-user-role-wrap {
-  display: flex;
-  align-items: center;
-}
-
-.btn-icon-subbar {
-  background: var(--bg-surface-secondary);
-  border: 1px solid var(--border-color);
-  color: var(--text-primary);
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-sm);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.btn-icon-subbar:hover {
-  background: var(--bg-surface-tertiary);
-  color: var(--primary);
-  border-color: var(--primary);
-}
-
 /* ==========================================================================
    ESTADO COLAPSADO DEL SIDEBAR (.nav-subbar.collapsed)
    ========================================================================== */
@@ -553,20 +447,9 @@ button, input, select, textarea, optgroup {
   min-width: 68px;
 }
 
-.nav-subbar.collapsed .sidebar-main-heading,
 .nav-subbar.collapsed .sidebar-section-title,
-.nav-subbar.collapsed .module-text,
-.nav-subbar.collapsed .sidebar-user-role-wrap {
+.nav-subbar.collapsed .module-text {
   display: none !important;
-}
-
-.nav-subbar.collapsed .sidebar-header-row {
-  justify-content: center;
-  padding: 0 0 0.35rem;
-}
-
-.nav-subbar.collapsed .sidebar-inner-toggle svg {
-  transform: rotate(180deg);
 }
 
 .nav-subbar.collapsed .nav-module-btn {
@@ -579,16 +462,6 @@ button, input, select, textarea, optgroup {
   background: var(--bg-surface-secondary);
   border-color: var(--primary);
   border-left-width: 1px;
-}
-
-.nav-subbar.collapsed .sidebar-toggle-item {
-  justify-content: center;
-  padding: 0.5rem 0;
-}
-
-.nav-subbar.collapsed .sidebar-footer {
-  justify-content: center;
-  flex-direction: column;
 }
 
 /* Multi-Tag Token Search Input */
@@ -1751,10 +1624,8 @@ button, input, select, textarea, optgroup {
     width: 250px;
     min-width: 250px;
   }
-  .nav-subbar.collapsed .sidebar-main-heading,
   .nav-subbar.collapsed .sidebar-section-title,
-  .nav-subbar.collapsed .module-text,
-  .nav-subbar.collapsed .sidebar-user-role-wrap {
+  .nav-subbar.collapsed .module-text {
     display: inline !important;
   }
   .main-container {
@@ -2824,47 +2695,6 @@ button, input, select, textarea, optgroup {
   gap: 0.35rem;
 }
 
-.btn-action-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-sm);
-  background-color: var(--bg-surface-secondary);
-  border: 1px solid var(--border-color);
-  font-size: 0.95rem;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  box-shadow: var(--shadow-sm);
-  user-select: none;
-}
-
-.btn-action-icon:hover {
-  transform: translateY(-1px) scale(1.08);
-  box-shadow: var(--shadow-md);
-}
-
-.btn-action-icon:active {
-  transform: scale(0.95);
-}
-
-.btn-action-view:hover {
-  background-color: var(--primary-light);
-  border-color: var(--primary);
-  color: var(--primary);
-}
-
-.btn-action-edit:hover {
-  background-color: rgba(245, 158, 11, 0.15);
-  border-color: #f59e0b;
-}
-
-.btn-action-delete:hover {
-  background-color: var(--status-danger-bg);
-  border-color: var(--status-danger-border);
-}
-
 /* Barra de herramientas en encabezado de Drill Down */
 .drilldown-action-toolbar {
   display: flex;
@@ -2957,16 +2787,6 @@ button, input, select, textarea, optgroup {
   cursor: not-allowed !important;
   font-family: var(--font-mono);
   font-weight: 600;
-}
-
-[data-theme="dark"] .btn-action-edit:hover {
-  background-color: rgba(245, 158, 11, 0.25);
-  border-color: #fbbf24;
-}
-
-[data-theme="dark"] .btn-action-delete:hover {
-  background-color: rgba(239, 68, 68, 0.25);
-  border-color: #f87171;
 }
 
 /* ==========================================================================
@@ -3771,38 +3591,6 @@ button, input, select, textarea, optgroup {
 /* ==========================================================================
    DIAGNÓSTICO EJECUTIVO EN 1 CLIC & KILL-SWITCH (HALO CLARO)
    ========================================================================== */
-
-/* Botón Acción Rápida en Tabla */
-.btn-action-diag {
-  background: rgba(245, 158, 11, 0.12);
-  border: 1px solid rgba(245, 158, 11, 0.35);
-  color: #D97706;
-  border-radius: var(--radius-sm);
-  padding: 0.25rem 0.45rem;
-  font-size: 0.85rem;
-  line-height: 1;
-  transition: all 0.2s ease-in-out;
-  cursor: pointer;
-}
-
-.btn-action-diag:hover {
-  background: #F59E0B;
-  color: #ffffff;
-  border-color: #D97706;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(245, 158, 11, 0.25);
-}
-
-[data-theme="dark"] .btn-action-diag {
-  background: rgba(245, 158, 11, 0.2);
-  border-color: rgba(245, 158, 11, 0.4);
-  color: #FBBF24;
-}
-
-[data-theme="dark"] .btn-action-diag:hover {
-  background: #F59E0B;
-  color: #ffffff;
-}
 
 /* Modal XL Dialog */
 .modal-dialog-xl {
@@ -5295,4 +5083,215 @@ button, input, select, textarea, optgroup {
     animation: none;
     transition: none;
   }
+}
+
+/* ==========================================================================
+   NAVEGACIÓN SIMPLIFICADA (FASE 1 UX)
+   Menú de usuario en la cabecera, grupo Administración y menú "⋯" por fila
+   ========================================================================== */
+
+/* Grupo Administración del menú lateral */
+.sidebar-admin-section {
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-color);
+}
+
+/* Botón del menú de usuario (avatar + nombre) */
+.user-menu-wrapper {
+  position: relative;
+}
+
+.app-header .user-menu-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  padding: 3px 10px 3px 3px;
+  cursor: pointer;
+  color: #FDEDEA;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.app-header .user-menu-btn:hover,
+.app-header .user-menu-btn[aria-expanded="true"] {
+  background: rgba(0, 0, 0, 0.18);
+  border-color: rgba(253, 237, 234, 0.22);
+}
+
+.app-header .user-menu-btn:focus-visible {
+  outline: 2px solid #FDEDEA;
+  outline-offset: 2px;
+}
+
+.user-menu-chevron {
+  opacity: 0.8;
+  transition: transform var(--transition-fast);
+}
+
+.user-menu-btn[aria-expanded="true"] .user-menu-chevron {
+  transform: rotate(180deg);
+}
+
+/* Panel desplegable del menú de usuario */
+.user-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 264px;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.5rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 120;
+  color: var(--text-primary);
+}
+
+.user-menu-header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  padding: 0.5rem 0.6rem 0.65rem;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 0.25rem;
+}
+
+.user-menu-name {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.user-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.55rem 0.6rem;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 0.86rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.user-menu-item:hover,
+.user-menu-item:focus-visible {
+  background: var(--bg-surface-secondary);
+  outline: none;
+}
+
+.user-menu-item-icon {
+  width: 18px;
+  display: inline-flex;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.user-menu-section {
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.5rem 0.6rem 0.6rem;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+  margin: 0.25rem 0;
+}
+
+.user-menu-section-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.user-menu-toggle-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.user-menu-logout {
+  color: var(--text-secondary);
+}
+
+/* Filas de proyectos: la fila completa abre el detalle */
+#projects-table-body tr.project-row {
+  cursor: pointer;
+}
+
+#projects-table-body tr.project-row:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+/* Botón "⋯" de acciones por fila */
+.btn-row-menu {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.btn-row-menu:hover,
+.btn-row-menu[aria-expanded="true"] {
+  background: var(--bg-surface-secondary);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+.btn-row-menu:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+/* Menú flotante de acciones por fila */
+.row-actions-menu {
+  position: fixed;
+  min-width: 200px;
+  flex-direction: column;
+  padding: 0.35rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 130;
+}
+
+.row-actions-item {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 0.86rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.row-actions-item:hover,
+.row-actions-item:focus-visible {
+  background: var(--bg-surface-secondary);
+  outline: none;
+}
+
+/* Hitos del proyecto dentro de la pestaña Resumen */
+#tab-pane-summary .timeline-card {
+  margin-bottom: 1.25rem;
 }

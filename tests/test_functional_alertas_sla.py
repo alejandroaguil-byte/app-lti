@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from playwright.sync_api import Page, expect
 
 from backend.main import app
-from tests.conftest import create_access_token, create_portal_jwt
+from tests.conftest import create_access_token, create_portal_jwt, open_user_menu, close_user_menu
 
 client = TestClient(app)
 
@@ -296,7 +296,9 @@ def test_ft_alt_e2e_004_kill_switch_cero_rastros(halo_page: Page, base_url: str)
     expect(bell_wrapper).to_be_visible()
 
     # Apagar Kill-Switch
+    open_user_menu(halo_page)
     toggle_btn.click()
+    close_user_menu(halo_page)
     halo_page.wait_for_timeout(300)
 
     # Verificar estado OFF
@@ -311,7 +313,9 @@ def test_ft_alt_e2e_004_kill_switch_cero_rastros(halo_page: Page, base_url: str)
     assert pref == "false"
 
     # Reactivar
+    open_user_menu(halo_page)
     toggle_btn.click()
+    close_user_menu(halo_page)
     halo_page.wait_for_timeout(300)
     expect(toggle_btn).to_have_attribute("aria-pressed", "true")
     expect(halo_page.locator("#alerts-toggle-label")).to_have_text("Alertas: ON")

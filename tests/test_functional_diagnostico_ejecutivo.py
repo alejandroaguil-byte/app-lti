@@ -5,7 +5,19 @@ Especificación: SPECS_DIAGNOSTICO_EJECUTIVO.md
 
 import pytest
 from playwright.sync_api import Page, expect
-from tests.conftest import create_portal_jwt
+from tests.conftest import (
+    create_portal_jwt,
+    open_user_menu,
+    close_user_menu,
+    click_user_menu_control,
+    open_project_row,
+)
+
+
+def _first_row_menu_diag(halo_page: Page):
+    """Opens the first row's "⋯" menu and returns the diagnosis action locator."""
+    halo_page.locator("#projects-table-body tr.project-row").first.locator(".btn-row-menu").click()
+    return halo_page.locator("#row-actions-menu .btn-action-diag")
 
 
 @pytest.fixture
@@ -50,23 +62,25 @@ def test_diagnostico_ejecutivo_toggle_ui_and_killswitch(halo_page: Page, base_ur
 
     # 1. Validar presencia del botón toggle y estado inicial ON
     toggle_btn = halo_page.locator("#diag-toggle-btn")
+    open_user_menu(halo_page)
     expect(toggle_btn).to_be_visible()
+    close_user_menu(halo_page)
     expect(halo_page.locator("#diagnosis-toggle-label")).to_have_text("Diagnóstico: ON")
     assert "is-off" not in (toggle_btn.get_attribute("class") or "")
 
-    # 2. Validar que las filas de la tabla tienen el botón de acción rápida de diagnóstico
-    diag_row_btns = halo_page.locator("#projects-table-body tr .btn-action-diag")
-    expect(diag_row_btns.first).to_be_visible()
-    assert diag_row_btns.count() > 0
+    # 2. Validar que el menú "⋯" de la fila ofrece la acción rápida de diagnóstico
+    expect(_first_row_menu_diag(halo_page)).to_be_visible()
+    halo_page.keyboard.press("Escape")
 
     # 3. Apagar Kill-Switch (Toggle OFF)
-    toggle_btn.click()
+    click_user_menu_control(halo_page, "#diag-toggle-btn")
     halo_page.wait_for_timeout(300)
     expect(halo_page.locator("#diagnosis-toggle-label")).to_have_text("Diagnóstico: OFF")
     assert "is-off" in (toggle_btn.get_attribute("class") or "")
 
-    # Verificar que los botones .btn-action-diag desaparecen de las filas
-    expect(diag_row_btns).to_have_count(0)
+    # Verificar que la acción .btn-action-diag desaparece del menú de la fila
+    expect(_first_row_menu_diag(halo_page)).to_have_count(0)
+    halo_page.keyboard.press("Escape")
 
     # Verificar que las columnas estándar de la tabla siguen operativas
     first_row_cells = halo_page.locator("#projects-table-body tr").first.locator("td")
@@ -79,15 +93,17 @@ def test_diagnostico_ejecutivo_toggle_ui_and_killswitch(halo_page: Page, base_ur
     halo_page.wait_for_selector("#projects-table-body tr", state="visible", timeout=15000)
 
     expect(halo_page.locator("#diagnosis-toggle-label")).to_have_text("Diagnóstico: OFF")
-    expect(halo_page.locator("#projects-table-body tr .btn-action-diag")).to_have_count(0)
+    expect(_first_row_menu_diag(halo_page)).to_have_count(0)
+    halo_page.keyboard.press("Escape")
 
     # 5. Reactivar con Kill-Switch (Toggle ON)
     toggle_btn_re = halo_page.locator("#diag-toggle-btn")
-    toggle_btn_re.click()
+    click_user_menu_control(halo_page, "#diag-toggle-btn")
     halo_page.wait_for_timeout(300)
     expect(halo_page.locator("#diagnosis-toggle-label")).to_have_text("Diagnóstico: ON")
     assert "is-off" not in (toggle_btn_re.get_attribute("class") or "")
-    expect(halo_page.locator("#projects-table-body tr .btn-action-diag").first).to_be_visible()
+    expect(_first_row_menu_diag(halo_page)).to_be_visible()
+    halo_page.keyboard.press("Escape")
 
 
 def test_diagnostico_ejecutivo_modal_launch_and_content(halo_page: Page, base_url: str):
@@ -99,9 +115,8 @@ def test_diagnostico_ejecutivo_modal_launch_and_content(halo_page: Page, base_ur
     modal = halo_page.locator("#modal-executive-diagnosis")
     expect(modal).not_to_be_visible()
 
-    # Abrir modal mediante botón rápido en la primera fila
-    first_diag_btn = halo_page.locator("#projects-table-body tr .btn-action-diag").first
-    first_diag_btn.click()
+    # Abrir modal mediante la acción rápida del menú "⋯" de la primera fila
+    _first_row_menu_diag(halo_page).click()
 
     # Modal debe ser visible
     expect(modal).to_be_visible()
@@ -142,7 +157,7 @@ def test_diagnostico_ejecutivo_copy_minuta_button(halo_page: Page, base_url: str
     _setup_app_session(halo_page, base_url)
 
     # Abrir diagnóstico del primer proyecto
-    halo_page.locator("#projects-table-body tr .btn-action-diag").first.click()
+    _first_row_menu_diag(halo_page).click()
     expect(halo_page.locator("#diag-content-wrapper")).to_be_visible(timeout=15000)
 
     copy_btn = halo_page.locator("#btn-copy-diag-minuta")
@@ -167,7 +182,7 @@ def test_diagnostico_ejecutivo_email_minuta_modal(halo_page: Page, base_url: str
     _setup_app_session(halo_page, base_url)
 
     # Abrir diagnóstico
-    halo_page.locator("#projects-table-body tr .btn-action-diag").first.click()
+    _first_row_menu_diag(halo_page).click()
     expect(halo_page.locator("#diag-content-wrapper")).to_be_visible(timeout=15000)
 
     num_val = halo_page.locator("#diag-val-num").inner_text()
@@ -204,7 +219,7 @@ def test_diagnostico_ejecutivo_drilldown_integration(halo_page: Page, base_url: 
     _setup_app_session(halo_page, base_url)
 
     # Entrar a drilldown en el primer proyecto
-    halo_page.locator("#projects-table-body tr .btn-action-view").first.click()
+    open_project_row(halo_page.locator("#projects-table-body tr.project-row").first)
     expect(halo_page.locator("#project-drilldown-section")).to_be_visible(timeout=10000)
 
     # Botón en toolbar de drilldown visible cuando Diagnóstico está ON
@@ -227,10 +242,10 @@ def test_diagnostico_ejecutivo_drilldown_integration(halo_page: Page, base_url: 
     expect(halo_page.locator("#projects-table-body")).to_be_visible()
 
     # Apagar Kill-Switch y volver a drilldown
-    halo_page.locator("#diag-toggle-btn").click()
+    click_user_menu_control(halo_page, "#diag-toggle-btn")
     halo_page.wait_for_timeout(300)
 
-    halo_page.locator("#projects-table-body tr .btn-action-view").first.click()
+    open_project_row(halo_page.locator("#projects-table-body tr.project-row").first)
     expect(halo_page.locator("#project-drilldown-section")).to_be_visible(timeout=10000)
 
     # En Kill-Switch OFF, el botón de diagnóstico en drilldown debe estar oculto

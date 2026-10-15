@@ -249,8 +249,11 @@ def test_t3_03_edit_modal_lideres_catalog(page: Page):
     helper_login(page)
     expect(page.locator("#module-projects-container")).to_be_visible()
 
-    # Buscar el primer botón de editar en la tabla
-    edit_btn = page.locator(".btn-action-edit").first
+    # Abrir el menú "⋯" de la primera fila y buscar la acción Editar
+    first_row = page.locator("#projects-table-body tr.project-row").first
+    first_row.wait_for(state="visible", timeout=20000)
+    first_row.locator(".btn-row-menu").click()
+    edit_btn = page.locator("#row-actions-menu .btn-action-edit")
     if edit_btn.is_visible():
         edit_btn.click()
         expect(page.locator("#edit-project-modal")).to_be_visible(timeout=5000)
@@ -527,9 +530,9 @@ def test_t5_03_end_to_end_lifecycle_creation_filter_and_assignment(page: Page, a
     row = page.locator(f"#projects-table-body tr").filter(has_text=proj_code).first
     expect(row).to_be_visible(timeout=10000)
 
-    # 6. Clic en botón Editar de esa fila
-    edit_btn = row.locator(".btn-action-edit")
-    edit_btn.scroll_into_view_if_needed()
+    # 6. Clic en Editar desde el menú "⋯" de esa fila
+    row.locator(".btn-row-menu").click()
+    edit_btn = page.locator("#row-actions-menu .btn-action-edit")
     with page.expect_response(lambda r: f"/api/proyectos/{created_id}" in r.url and r.status == 200, timeout=10000):
         edit_btn.click()
 

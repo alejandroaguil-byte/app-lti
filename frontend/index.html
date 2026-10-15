@@ -8,7 +8,7 @@
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   
   <!-- Pila Tipográfica Nativa del Portal HALO (sin dependencias externas) -->
-  <link rel="stylesheet" href="css/styles.css?v=9.1">
+  <link rel="stylesheet" href="css/styles.css?v=9.2">
 </head>
 <body>
 
@@ -70,11 +70,6 @@
       </div>
 
       <div class="user-area">
-        <div class="user-block">
-          <span class="user-avatar" id="user-avatar">LT</span>
-          <span class="user-name" id="username-label">Líder TI</span>
-          <span id="user-display-name" style="display: none;">Líder TI</span>
-        </div>
 
         <!-- ========================================================================
              CENTRO DE ALERTAS TEMPRANAS SLA & ESCALAMIENTO RÁPIDO (CAMPANA Y PANEL)
@@ -156,13 +151,65 @@
           </div>
         </div>
 
-        <button class="btn-logout" id="btn-logout" aria-label="Salir" title="Cerrar Sesión">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-            <path d="M16 17l5-5-5-5"/>
-            <path d="M21 12H9"/>
-          </svg>
-        </button>
+        <!-- Menú de usuario: nombre, rol, tema, preferencias (solo ADMIN) y cierre de sesión -->
+        <div class="user-menu-wrapper" id="user-menu-wrapper">
+          <button type="button" class="user-menu-btn user-block" id="user-menu-btn" title="Menú de usuario" aria-haspopup="true" aria-expanded="false" aria-controls="user-menu-dropdown">
+            <span class="user-avatar" id="user-avatar">LT</span>
+            <span class="user-name" id="username-label">Líder TI</span>
+            <svg class="user-menu-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+          <span id="user-display-name" style="display: none;">Líder TI</span>
+
+          <div class="user-menu-dropdown" id="user-menu-dropdown" role="menu" aria-label="Menú de usuario" style="display: none;">
+            <div class="user-menu-header">
+              <span class="user-menu-name" id="user-menu-name">Líder TI</span>
+              <span id="user-role-badge" class="badge badge-info">Líder</span>
+            </div>
+
+            <button type="button" class="user-menu-item" id="theme-toggle-btn" role="menuitem" title="Cambiar Modo Claro / Oscuro" aria-label="Cambiar tema">
+              <span class="user-menu-item-icon" id="theme-icon">🌙</span>
+              <span id="theme-toggle-label">Modo oscuro</span>
+            </button>
+
+            <!-- Preferencias: interruptores de funciones (Kill-Switch), visibles solo para ADMIN -->
+            <div class="user-menu-section" id="user-menu-preferences" style="display: none;">
+              <span class="user-menu-section-title">Preferencias</span>
+              <div class="user-menu-toggle-list">
+                <button id="health-score-toggle-btn" class="btn-subbar-toggle sidebar-toggle-item" title="Activar o desactivar el Semáforo de Salud de proyectos" aria-label="Toggle Semáforo de Salud">
+                  <span class="health-toggle-icon toggle-item-icon">🚦</span>
+                  <span class="health-toggle-label module-text" id="health-toggle-label">Salud: ON</span>
+                </button>
+                <button id="diag-toggle-btn" class="btn-subbar-toggle sidebar-toggle-item" title="Activar o desactivar Diagnóstico Ejecutivo en 1 Clic" aria-label="Toggle Diagnóstico Ejecutivo">
+                  <span class="diagnosis-toggle-icon toggle-item-icon">⚡</span>
+                  <span class="diagnosis-toggle-label module-text" id="diagnosis-toggle-label">Diagnóstico: ON</span>
+                </button>
+                <button id="pdf-export-toggle-btn" class="btn-subbar-toggle sidebar-toggle-item" title="Activar o desactivar Exportación de Ficha Ejecutiva a PDF" aria-label="Toggle Exportación PDF" aria-pressed="true">
+                  <span class="pdf-toggle-icon toggle-item-icon">📄</span>
+                  <span class="pdf-toggle-label module-text" id="pdf-toggle-label">Ficha PDF: ON</span>
+                </button>
+                <button id="timeline-toggle-btn" class="btn-subbar-toggle sidebar-toggle-item" title="Activar o desactivar el Historial del Proyecto" aria-label="Toggle Timeline Visual" aria-pressed="true">
+                  <span class="timeline-toggle-icon toggle-item-icon">⏱️</span>
+                  <span class="timeline-toggle-label module-text" id="timeline-toggle-label">Historial: ON</span>
+                </button>
+                <button id="alerts-toggle-btn" class="btn-subbar-toggle sidebar-toggle-item" title="Activar o desactivar Centro de Alertas Tempranas SLA" aria-label="Toggle Alertas Tempranas SLA" aria-pressed="true">
+                  <span class="alerts-toggle-icon toggle-item-icon">🔔</span>
+                  <span class="alerts-toggle-label module-text" id="alerts-toggle-label">Alertas: ON</span>
+                </button>
+              </div>
+            </div>
+
+            <button type="button" class="user-menu-item user-menu-logout" id="btn-logout" role="menuitem" aria-label="Salir" title="Cerrar Sesión">
+              <svg class="user-menu-item-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                <path d="M16 17l5-5-5-5"/>
+                <path d="M21 12H9"/>
+              </svg>
+              <span>Cerrar sesión</span>
+            </button>
+          </div>
+        </div>
         <button id="logout-btn" style="display: none;" aria-hidden="true"></button>
       </div>
     </header>
@@ -173,91 +220,39 @@
       <nav class="nav-subbar" id="nav-subbar" aria-label="Navegación de módulos">
         <div class="sidebar-inner">
 
-          <!-- Encabezado del Sidebar con botón contraer/expandir -->
-          <div class="sidebar-header-row">
-            <span class="sidebar-main-heading">MENÚ</span>
-            <button id="sidebar-inner-toggle-btn" class="sidebar-inner-toggle" title="Contraer / Expandir barra lateral" aria-label="Contraer barra lateral">
-              <svg class="chevron-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="15 18 9 12 15 6"></polyline>
-              </svg>
-            </button>
+          <!-- Módulos principales -->
+          <div class="sidebar-section">
+            <div class="nav-modules sidebar-nav-list" id="sidebar-main-modules">
+              <button id="nav-btn-projects" class="nav-module-btn active" title="Seguimiento de proyectos">
+                <span class="module-icon">📊</span>
+                <span class="module-text">Proyectos</span>
+              </button>
+              <button id="nav-btn-direct-search" class="nav-module-btn" title="Búsqueda directa en las tablas de origen">
+                <span class="module-icon">🔎</span>
+                <span class="module-text">Búsqueda</span>
+              </button>
+              <button id="nav-btn-tickets" class="nav-module-btn" title="Generador de tickets en Service Manager">
+                <span class="module-icon">🤖</span>
+                <span class="module-text">Tickets SM</span>
+              </button>
+              <button id="nav-btn-solicitud-lti" class="nav-module-btn" title="Nueva solicitud de Líder TI para un proyecto">
+                <span class="module-icon">📝</span>
+                <span class="module-text">Solicitudes LTI</span>
+              </button>
+            </div>
           </div>
 
-          <!-- SECCIÓN 1: MÓDULOS DE NAVEGACIÓN -->
-          <div class="sidebar-section">
+          <!-- Administración (solo ADMIN) -->
+          <div class="sidebar-section sidebar-admin-section" id="sidebar-admin-section" style="display: none;">
             <div class="sidebar-section-header">
-              <span class="sidebar-section-title">MÓDULOS</span>
+              <span class="sidebar-section-title">Administración</span>
             </div>
             <div class="nav-modules sidebar-nav-list">
-              <button id="nav-btn-projects" class="nav-module-btn active" title="Seguimiento de Proyectos y Drill Down">
-                <span class="module-icon">📊</span>
-                <span class="module-text">Seguimiento Proyectos</span>
-              </button>
-              <button id="nav-btn-direct-search" class="nav-module-btn" title="Búsqueda directa en tablas completas">
-                <span class="module-icon">🔎</span>
-                <span class="module-text">Búsqueda Directa en Tablas</span>
-              </button>
-              <button id="nav-btn-tickets" class="nav-module-btn" title="Generador Automatizado de Tickets en Service Manager">
-                <span class="module-icon">🤖</span>
-                <span class="module-text">Generador de Tickets</span>
-              </button>
-              <button id="nav-btn-solicitud-lti" class="nav-module-btn" title="Ingreso de Nueva Solicitud LTI">
-                <span class="module-icon">📝</span>
-                <span class="module-text">Solicitud LTI</span>
-              </button>
-              <button id="nav-btn-usuarios" class="nav-module-btn" title="Gestión y Mantenedor de Usuarios del Sistema" style="display: none;">
+              <button id="nav-btn-usuarios" class="nav-module-btn" title="Gestión de usuarios del sistema" style="display: none;">
                 <span class="module-icon">👥</span>
                 <span class="module-text">Usuarios</span>
               </button>
             </div>
-          </div>
-
-          <!-- SECCIÓN 2: CONFIGURACIONES (Switches ON/OFF) -->
-          <div class="sidebar-section sidebar-config-section" id="sidebar-config-section">
-            <div class="sidebar-section-header">
-              <span class="sidebar-section-title">⚙️ CONFIGURACIONES</span>
-            </div>
-            <div class="sidebar-config-list">
-              <!-- Botón Kill-Switch / Toggle del Semáforo de Salud -->
-              <button id="health-score-toggle-btn" class="btn-subbar-toggle sidebar-toggle-item" title="Activar o desactivar el Semáforo de Salud de proyectos" aria-label="Toggle Semáforo de Salud">
-                <span class="health-toggle-icon toggle-item-icon">🚦</span>
-                <span class="health-toggle-label module-text" id="health-toggle-label">Salud: ON</span>
-              </button>
-
-              <!-- Botón Kill-Switch / Toggle de Diagnóstico Ejecutivo en 1 Clic -->
-              <button id="diag-toggle-btn" class="btn-subbar-toggle sidebar-toggle-item" title="Activar o desactivar Diagnóstico Ejecutivo en 1 Clic" aria-label="Toggle Diagnóstico Ejecutivo">
-                <span class="diagnosis-toggle-icon toggle-item-icon">⚡</span>
-                <span class="diagnosis-toggle-label module-text" id="diagnosis-toggle-label">Diagnóstico: ON</span>
-              </button>
-
-              <!-- Botón Kill-Switch / Toggle de Exportación a PDF -->
-              <button id="pdf-export-toggle-btn" class="btn-subbar-toggle sidebar-toggle-item" title="Activar o desactivar Exportación de Ficha Ejecutiva a PDF" aria-label="Toggle Exportación PDF" aria-pressed="true">
-                <span class="pdf-toggle-icon toggle-item-icon">📄</span>
-                <span class="pdf-toggle-label module-text" id="pdf-toggle-label">Ficha PDF: ON</span>
-              </button>
-
-              <!-- Botón Kill-Switch / Toggle de Timeline Visual -->
-              <button id="timeline-toggle-btn" class="btn-subbar-toggle sidebar-toggle-item" title="Activar o desactivar Línea de Tiempo Visual del Proyecto" aria-label="Toggle Timeline Visual" aria-pressed="true">
-                <span class="timeline-toggle-icon toggle-item-icon">⏱️</span>
-                <span class="timeline-toggle-label module-text" id="timeline-toggle-label">Timeline: ON</span>
-              </button>
-
-              <!-- Botón Kill-Switch / Toggle del Centro de Alertas Tempranas -->
-              <button id="alerts-toggle-btn" class="btn-subbar-toggle sidebar-toggle-item" title="Activar o desactivar Centro de Alertas Tempranas SLA" aria-label="Toggle Alertas Tempranas SLA" aria-pressed="true">
-                <span class="alerts-toggle-icon toggle-item-icon">🔔</span>
-                <span class="alerts-toggle-label module-text" id="alerts-toggle-label">Alertas: ON</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- SECCIÓN 3: PIE DEL SIDEBAR (Rol & Tema) -->
-          <div class="sidebar-footer nav-subbar-actions">
-            <div class="sidebar-user-role-wrap">
-              <span id="user-role-badge" class="badge badge-info">Líder</span>
-            </div>
-            <button id="theme-toggle-btn" class="btn-icon-subbar" title="Cambiar Modo Claro / Oscuro" aria-label="Cambiar tema">
-              <span id="theme-icon">🌙</span>
-            </button>
           </div>
 
         </div>
@@ -470,23 +465,13 @@
             </div>
           </div>
 
-          <!-- Componente Línea de Tiempo Cronológica -->
-          <div class="timeline-card" id="project-timeline-container">
-            <div class="timeline-header">
-              <span>⏱️ Línea de Tiempo de Hitos del Proyecto</span>
-            </div>
-            <div class="timeline-track" id="timeline-track-steps">
-              <!-- Dynamically populated and ordered chronologically -->
-            </div>
-          </div>
-
           <!-- Navigation Tabs -->
           <div class="tabs-header">
             <button class="tab-btn active" data-tab="summary">
               📋 Resumen del Proyecto
             </button>
             <button class="tab-btn" data-tab="timeline" id="tab-btn-timeline">
-              📈 Línea de Tiempo <span class="tab-badge" id="tab-count-timeline">0</span>
+              📈 Historial <span class="tab-badge" id="tab-count-timeline">0</span>
             </button>
             <button class="tab-btn" data-tab="solots">
               ⚡ Solot (Backlog Operaciones) <span class="tab-badge" id="tab-count-solots">0</span>
@@ -501,10 +486,19 @@
 
           <!-- Tab 1: Resumen -->
           <div id="tab-pane-summary" class="tab-pane">
+            <!-- Hitos clave del proyecto (resumen de fechas) -->
+            <div class="timeline-card" id="project-timeline-container">
+              <div class="timeline-header">
+                <span>Hitos del proyecto</span>
+              </div>
+              <div class="timeline-track" id="timeline-track-steps">
+                <!-- Dynamically populated and ordered chronologically -->
+              </div>
+            </div>
             <div id="summary-content"></div>
           </div>
 
-          <!-- Tab: Línea de Tiempo Visual (Visual Roadmap) -->
+          <!-- Tab: Historial (cronología completa de eventos del proyecto) -->
           <div id="tab-pane-timeline" class="tab-pane" style="display: none;">
             <!-- Cabecera Ejecutiva de Métricas del Timeline -->
             <div class="timeline-kpi-grid" id="timeline-kpi-grid">
@@ -1611,6 +1605,9 @@
     <!-- ====================================================================
          e) MODAL DE EDICIÓN DE PROYECTO
          ==================================================================== -->
+    <!-- Menú flotante "⋯" de acciones por fila de proyecto -->
+    <div id="row-actions-menu" class="row-actions-menu" role="menu" aria-label="Acciones del proyecto" style="display: none;"></div>
+
     <div id="edit-project-modal" class="modal-backdrop" style="display: none;">
       <div class="modal-dialog modal-dialog-lg" role="dialog" aria-modal="true" aria-labelledby="modal-edit-project-title">
         
@@ -2134,6 +2131,6 @@
 
   <!-- Scripts -->
   <script src="js/auth.js?v=6.0"></script>
-  <script src="js/app.js?v=9.1"></script>
+  <script src="js/app.js?v=9.2"></script>
 </body>
 </html>

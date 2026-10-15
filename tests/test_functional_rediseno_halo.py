@@ -25,7 +25,7 @@ import xml.etree.ElementTree as ET
 import pytest
 import requests
 from playwright.sync_api import Page, expect
-from tests.conftest import create_portal_jwt
+from tests.conftest import create_portal_jwt, open_user_menu, close_user_menu
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FAVICON_PATH = os.path.join(BASE_DIR, "frontend", "favicon.svg")
@@ -202,13 +202,14 @@ def test_cp_halo_04_html_nav_subbar_structure():
     """
     CP-HALO-04: Sub-barra de navegación modular <nav class="nav-subbar">
     - Contenedor <nav class="nav-subbar" id="nav-subbar" aria-label="Navegación de módulos">.
-    - Contenedor .nav-modules con los 5 botones de módulos identificados por id:
-      1. #nav-btn-projects ("📊 Seguimiento Proyectos")
-      2. #nav-btn-direct-search ("🔎 Búsqueda Directa en Tablas")
-      3. #nav-btn-tickets ("🤖 Generador de Tickets")
-      4. #nav-btn-solicitud-lti ("📝 Solicitud LTI")
-      5. #nav-btn-usuarios ("👥 Usuarios")
-    - Contenedor .nav-subbar-actions con badge de rol #user-role-badge y botón de tema #theme-toggle-btn (#theme-icon).
+    - Contenedor .nav-modules con los 5 botones de módulos identificados por id (nombres cortos, fase 1 UX):
+      1. #nav-btn-projects ("Proyectos")
+      2. #nav-btn-direct-search ("Búsqueda")
+      3. #nav-btn-tickets ("Tickets SM")
+      4. #nav-btn-solicitud-lti ("Solicitudes LTI")
+      5. #nav-btn-usuarios ("Usuarios", bajo "Administración")
+    - El badge de rol #user-role-badge y el conmutador de tema #theme-toggle-btn (#theme-icon) viven en el
+      menú de usuario de la cabecera, no en la barra lateral.
     """
     with open(INDEX_PATH, "r", encoding="utf-8") as f:
         html = f.read()
@@ -219,20 +220,21 @@ def test_cp_halo_04_html_nav_subbar_structure():
 
     # Módulos requeridos
     expected_buttons = [
-        ("nav-btn-projects", "Seguimiento Proyectos"),
-        ("nav-btn-direct-search", "Búsqueda Directa en Tablas"),
-        ("nav-btn-tickets", "Generador de Tickets"),
-        ("nav-btn-solicitud-lti", "Solicitud LTI"),
+        ("nav-btn-projects", "Proyectos"),
+        ("nav-btn-direct-search", "Búsqueda"),
+        ("nav-btn-tickets", "Tickets SM"),
+        ("nav-btn-solicitud-lti", "Solicitudes LTI"),
         ("nav-btn-usuarios", "Usuarios")
     ]
     for btn_id, btn_text in expected_buttons:
         assert f'id="{btn_id}"' in subbar_html, f"Botón de módulo #{btn_id} no encontrado en nav-subbar"
         assert btn_text in subbar_html, f"Texto '{btn_text}' no encontrado para botón #{btn_id}"
 
-    # Badge de rol y conmutador de tema
-    assert 'id="user-role-badge"' in subbar_html, "Badge #user-role-badge no encontrado en nav-subbar"
-    assert 'id="theme-toggle-btn"' in subbar_html, "Conmutador de tema #theme-toggle-btn no encontrado en nav-subbar"
-    assert 'id="theme-icon"' in subbar_html, "Elemento #theme-icon no encontrado en nav-subbar"
+    # Badge de rol y conmutador de tema: en el menú de usuario de la cabecera
+    header_html = re.search(r'<header class="app-header">.*?</header>', html, re.DOTALL).group(0)
+    for el_id in ("user-role-badge", "theme-toggle-btn", "theme-icon"):
+        assert f'id="{el_id}"' not in subbar_html, f"#{el_id} no debe estar en nav-subbar"
+        assert f'id="{el_id}"' in header_html, f"#{el_id} no encontrado en el menú de usuario de la cabecera"
 
 
 # ==============================================================================
@@ -478,7 +480,9 @@ def test_cp_halo_11_e2e_rendered_header_and_subbar(halo_page: Page, base_url: st
     # Validar user area
     expect(halo_page.locator("#user-avatar")).to_be_visible()
     expect(halo_page.locator("#username-label")).to_be_visible()
+    open_user_menu(halo_page)
     expect(halo_page.locator("#btn-logout")).to_be_visible()
+    close_user_menu(halo_page)
 
     # Validar sub-barra y módulos
     expect(halo_page.locator("#nav-subbar")).to_be_visible()
@@ -511,6 +515,7 @@ def test_cp_halo_12_e2e_theme_toggle_header_immutability(halo_page: Page, base_u
 
     # Estado inicial: light
     theme_btn = halo_page.locator("#theme-toggle-btn")
+    open_user_menu(halo_page)
     expect(theme_btn).to_be_visible()
 
     initial_theme = halo_page.locator("html").get_attribute("data-theme")

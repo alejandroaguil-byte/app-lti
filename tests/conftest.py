@@ -138,3 +138,38 @@ def page():
         yield page
         context.close()
         browser.close()
+
+
+# ---------------------------------------------------------------------------
+# Navigation helpers (phase 1 UX): moved controls live in the user menu and
+# in the per-row "⋯" menu, so tests open those menus before interacting.
+# ---------------------------------------------------------------------------
+def open_user_menu(page):
+    """Opens the header user menu (theme, preferences, logout) if it is closed."""
+    if not page.locator("#user-menu-dropdown").is_visible():
+        page.locator("#user-menu-btn").click()
+        page.locator("#user-menu-dropdown").wait_for(state="visible", timeout=5000)
+
+
+def close_user_menu(page):
+    if page.locator("#user-menu-dropdown").is_visible():
+        page.keyboard.press("Escape")
+        page.locator("#user-menu-dropdown").wait_for(state="hidden", timeout=5000)
+
+
+def click_user_menu_control(page, selector: str):
+    """Clicks a control inside the user menu (feature toggle or theme) and closes the menu."""
+    open_user_menu(page)
+    page.locator(f"#user-menu-dropdown {selector}").click()
+    close_user_menu(page)
+
+
+def open_project_row(row):
+    """Opens the project detail by clicking the row (first cell)."""
+    row.locator("td").first.click()
+
+
+def click_row_action(page, row, action_class: str):
+    """Opens the row "⋯" menu and clicks the action with the given class (e.g. btn-action-edit)."""
+    row.locator(".btn-row-menu").click()
+    page.locator(f"#row-actions-menu .{action_class}").click()

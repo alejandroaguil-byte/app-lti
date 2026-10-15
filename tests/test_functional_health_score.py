@@ -5,7 +5,7 @@ Especificación: SPECS_SEMAFORO_SALUD_PROYECTOS.md
 
 import pytest
 from playwright.sync_api import Page, expect
-from tests.conftest import create_portal_jwt
+from tests.conftest import create_portal_jwt, open_user_menu, close_user_menu
 
 @pytest.fixture
 def halo_page():
@@ -58,7 +58,9 @@ def test_health_score_ui_toggle_and_clean_fallback(halo_page: Page, base_url: st
 
     # 1. Validar botón toggle
     toggle_btn = halo_page.locator("#health-score-toggle-btn")
+    open_user_menu(halo_page)
     expect(toggle_btn).to_be_visible()
+    close_user_menu(halo_page)
     expect(halo_page.locator("#health-toggle-label")).to_have_text("Salud: ON")
 
     # 2. Validar grid de KPIs de salud
@@ -91,7 +93,9 @@ def test_health_score_ui_toggle_and_clean_fallback(halo_page: Page, base_url: st
     assert "active-health-filter" not in (critical_card.get_attribute("class") or "")
 
     # 7. Apagar con Kill-Switch (Toggle OFF)
+    open_user_menu(halo_page)
     toggle_btn.click()
+    close_user_menu(halo_page)
     halo_page.wait_for_timeout(300)
     expect(halo_page.locator("#health-toggle-label")).to_have_text("Salud: OFF")
     assert "is-off" in (toggle_btn.get_attribute("class") or "")
@@ -113,7 +117,9 @@ def test_health_score_ui_toggle_and_clean_fallback(halo_page: Page, base_url: st
 
     # 9. Reactivar con Kill-Switch (Toggle ON)
     toggle_btn_re = halo_page.locator("#health-score-toggle-btn")
+    open_user_menu(halo_page)
     toggle_btn_re.click()
+    close_user_menu(halo_page)
     halo_page.wait_for_timeout(300)
     expect(halo_page.locator("#health-toggle-label")).to_have_text("Salud: ON")
     expect(health_grid).to_be_visible()

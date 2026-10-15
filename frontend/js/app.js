@@ -64,6 +64,8 @@ const App = {
 
   async init() {
     this.initSidebar();
+    this.initUserMenu();
+    this.initRowActionsMenu();
     this.initTheme();
     this.initHealthScore();
     this.initExecutiveDiagnosis();
@@ -92,8 +94,7 @@ const App = {
   initSidebar() {
     const sidebar = document.getElementById('nav-subbar');
     const toggleBtn = document.getElementById('sidebar-toggle-btn');
-    const innerToggleBtn = document.getElementById('sidebar-inner-toggle-btn');
-    
+
     if (!sidebar) return;
 
     // Recuperar preferencia de colapso desde localStorage
@@ -108,13 +109,169 @@ const App = {
       const nowCollapsed = sidebar.classList.contains('collapsed');
       localStorage.setItem('halo_sidebar_collapsed', nowCollapsed ? 'true' : 'false');
       if (toggleBtn) toggleBtn.classList.toggle('is-collapsed', nowCollapsed);
-      if (innerToggleBtn) {
-        innerToggleBtn.title = nowCollapsed ? 'Expandir barra lateral' : 'Contraer barra lateral';
-      }
     };
 
     if (toggleBtn) toggleBtn.addEventListener('click', toggle);
-    if (innerToggleBtn) innerToggleBtn.addEventListener('click', toggle);
+  },
+
+  // --------------------------------------------------------------------------
+  // USER MENU (Nombre, rol, tema, preferencias y cierre de sesión)
+  // --------------------------------------------------------------------------
+  initUserMenu() {
+    const wrapper = document.getElementById('user-menu-wrapper');
+    const btn = document.getElementById('user-menu-btn');
+    if (!wrapper || !btn) return;
+
+    btn.addEventListener('click', () => {
+      if (this.isUserMenuOpen()) {
+        this.closeUserMenu();
+      } else {
+        this.openUserMenu();
+      }
+    });
+
+    // Fase de captura: otros paneles (campana de alertas) detienen la propagación de sus clics
+    document.addEventListener('click', (e) => {
+      if (this.isUserMenuOpen() && !wrapper.contains(e.target)) {
+        this.closeUserMenu();
+      }
+    }, true);
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && this.isUserMenuOpen()) {
+        this.closeUserMenu();
+        btn.focus();
+      }
+    });
+  },
+
+  isUserMenuOpen() {
+    const dropdown = document.getElementById('user-menu-dropdown');
+    return !!dropdown && dropdown.style.display !== 'none';
+  },
+
+  openUserMenu() {
+    const dropdown = document.getElementById('user-menu-dropdown');
+    const btn = document.getElementById('user-menu-btn');
+    if (!dropdown) return;
+    this.closeAlertsDropdown();
+    this.closeRowActionsMenu();
+    dropdown.style.display = 'flex';
+    if (btn) btn.setAttribute('aria-expanded', 'true');
+  },
+
+  closeUserMenu() {
+    const dropdown = document.getElementById('user-menu-dropdown');
+    const btn = document.getElementById('user-menu-btn');
+    if (dropdown) dropdown.style.display = 'none';
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+  },
+
+  // Los interruptores de funciones son una herramienta de ADMIN: el resto de los roles
+  // trabaja siempre con los valores por defecto y no conserva preferencias antiguas.
+  resetFeaturePreferencesForNonAdmin(rol) {
+    if (rol === 'ADMIN') return;
+    [
+      'halo_health_score_enabled',
+      'halo_executive_diagnosis_enabled',
+      'halo_export_pdf_enabled',
+      'halo_timeline_enabled',
+      'halo_alerts_enabled',
+    ].forEach(key => localStorage.removeItem(key));
+    this.applyHealthScoreState(false);
+    this.applyExecutiveDiagnosisState(false);
+    this.applyPdfExportState(false);
+    this.applyTimelineState(false);
+    this.applyAlertsState(false);
+  },
+
+  // --------------------------------------------------------------------------
+  // ROW ACTIONS MENU ("⋯" en cada fila de proyectos)
+  // --------------------------------------------------------------------------
+  initRowActionsMenu() {
+    const menu = document.getElementById('row-actions-menu');
+    if (!menu) return;
+
+    menu.addEventListener('click', (e) => {
+      const item = e.target.closest('[data-row-action]');
+      if (!item) return;
+      const projectId = Number(menu.dataset.projectId);
+      const action = item.dataset.rowAction;
+      this.closeRowActionsMenu();
+      if (action === 'edit') {
+        this.openEditProjectModal(projectId);
+      } else if (action === 'diagnosis') {
+        this.openDiagnosticoModal(projectId);
+      }
+    });
+
+    document.addEventListener('click', (e) => {
+      if (menu.style.display !== 'none' && !menu.contains(e.target) && !e.target.closest('.btn-row-menu')) {
+        this.closeRowActionsMenu();
+      }
+    }, true);
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && menu.style.display !== 'none') {
+        this.closeRowActionsMenu(true);
+      }
+    });
+
+    window.addEventListener('scroll', () => this.closeRowActionsMenu(), true);
+    window.addEventListener('resize', () => this.closeRowActionsMenu());
+  },
+
+  openRowActionsMenu(projectId, triggerBtn) {
+    const menu = document.getElementById('row-actions-menu');
+    if (!menu || !triggerBtn) return;
+
+    if (menu.style.display !== 'none' && Number(menu.dataset.projectId) === projectId) {
+      this.closeRowActionsMenu(true);
+      return;
+    }
+    this.closeRowActionsMenu();
+    this.closeUserMenu();
+
+    const items = [
+      `<button type="button" class="row-actions-item btn-action-edit" role="menuitem" data-row-action="edit">Editar</button>`,
+    ];
+    if (this.isExecutiveDiagnosisActive()) {
+      items.push(`<button type="button" class="row-actions-item btn-action-diag" role="menuitem" data-row-action="diagnosis">Diagnóstico ejecutivo</button>`);
+    }
+    menu.innerHTML = items.join('');
+    menu.dataset.projectId = String(projectId);
+    menu.style.display = 'flex';
+
+    const rect = triggerBtn.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    const gap = 4;
+    let top = rect.bottom + gap;
+    if (top + menuRect.height > window.innerHeight - 8) {
+      top = Math.max(8, rect.top - menuRect.height - gap);
+    }
+    const left = Math.max(8, rect.right - menuRect.width);
+    menu.style.top = `${top}px`;
+    menu.style.left = `${left}px`;
+
+    this._rowMenuTrigger = triggerBtn;
+    triggerBtn.setAttribute('aria-expanded', 'true');
+    const first = menu.querySelector('.row-actions-item');
+    if (first) first.focus();
+  },
+
+  closeRowActionsMenu(restoreFocus = false) {
+    const menu = document.getElementById('row-actions-menu');
+    if (!menu || menu.style.display === 'none') return;
+    menu.style.display = 'none';
+    menu.innerHTML = '';
+    delete menu.dataset.projectId;
+    if (this._rowMenuTrigger) {
+      this._rowMenuTrigger.setAttribute('aria-expanded', 'false');
+      if (restoreFocus && document.body.contains(this._rowMenuTrigger)) {
+        this._rowMenuTrigger.focus();
+      }
+      this._rowMenuTrigger = null;
+    }
   },
 
   // --------------------------------------------------------------------------
@@ -140,6 +297,10 @@ const App = {
     const icon = document.getElementById('theme-icon');
     if (icon) {
       icon.textContent = theme === 'dark' ? '☀️' : '🌙';
+    }
+    const label = document.getElementById('theme-toggle-label');
+    if (label) {
+      label.textContent = theme === 'dark' ? 'Modo claro' : 'Modo oscuro';
     }
   },
 
@@ -751,7 +912,7 @@ const App = {
     const next = !current;
     localStorage.setItem('halo_timeline_enabled', next ? 'true' : 'false');
     this.applyTimelineState(true);
-    const msg = next ? '⏱️ Línea de Tiempo activada' : '⏱️ Línea de Tiempo desactivada';
+    const msg = next ? 'Historial del proyecto activado' : 'Historial del proyecto desactivado';
     this.showToast(msg, 'info');
   },
 
@@ -766,12 +927,12 @@ const App = {
       toggleBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
       if (active) {
         toggleBtn.classList.remove('is-off');
-        toggleBtn.title = 'Desactivar Línea de Tiempo Visual';
-        if (toggleLabel) toggleLabel.textContent = 'Timeline: ON';
+        toggleBtn.title = 'Desactivar el Historial del Proyecto';
+        if (toggleLabel) toggleLabel.textContent = 'Historial: ON';
       } else {
         toggleBtn.classList.add('is-off');
-        toggleBtn.title = 'Activar Línea de Tiempo Visual';
-        if (toggleLabel) toggleLabel.textContent = 'Timeline: OFF';
+        toggleBtn.title = 'Activar el Historial del Proyecto';
+        if (toggleLabel) toggleLabel.textContent = 'Historial: OFF';
       }
     }
 
@@ -1370,6 +1531,21 @@ const App = {
         });
       }
     });
+
+    // Project rows: a click (or Enter) anywhere outside the actions cell opens the detail
+    const projectsTbody = document.getElementById('projects-table-body');
+    if (projectsTbody) {
+      projectsTbody.addEventListener('click', (e) => {
+        if (e.target.closest('.col-action-cell')) return;
+        const row = e.target.closest('tr.project-row');
+        if (row) this.drillDownById(Number(row.dataset.projectId));
+      });
+      projectsTbody.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' || !e.target.matches('tr.project-row')) return;
+        e.preventDefault();
+        this.drillDownById(Number(e.target.dataset.projectId));
+      });
+    }
 
     // Module 1 Filter changes
     const searchInput = document.getElementById('filter-search');
@@ -2170,9 +2346,14 @@ const App = {
       if (navUsuarios) navUsuarios.style.display = 'inline-flex';
     }
 
-    const configSection = document.getElementById('sidebar-config-section');
-    if (configSection) {
-      configSection.style.display = rolUpper === 'PM' ? 'none' : 'block';
+    const adminSection = document.getElementById('sidebar-admin-section');
+    if (adminSection) {
+      adminSection.style.display = rolUpper === 'ADMIN' ? 'flex' : 'none';
+    }
+
+    const preferences = document.getElementById('user-menu-preferences');
+    if (preferences) {
+      preferences.style.display = rolUpper === 'ADMIN' ? 'flex' : 'none';
     }
   },
 
@@ -2197,6 +2378,10 @@ const App = {
       const usernameLabel = document.getElementById('username-label');
       if (usernameLabel) {
         usernameLabel.textContent = displayName;
+      }
+      const userMenuName = document.getElementById('user-menu-name');
+      if (userMenuName) {
+        userMenuName.textContent = displayName;
       }
 
       // Calcular e inyectar iniciales de usuario en mayúsculas (ej: 'AA', 'LT')
@@ -2229,6 +2414,9 @@ const App = {
         }
       }
       this.applyRBACRules(user.rol);
+      this.resetFeaturePreferencesForNonAdmin(
+        (user.rol || ((user.adminLevel >= 2 || user.is_super_admin) ? 'ADMIN' : 'PM')).toUpperCase()
+      );
     }
 
     let initialModule = 'projects';
@@ -2539,22 +2727,14 @@ const App = {
       return;
     }
 
-    const user = Auth.getUser();
-    const isAdmin = user && (user.rol || '').toUpperCase() === 'ADMIN';
-    const isDiagActive = this.isExecutiveDiagnosisActive();
+    this.closeRowActionsMenu();
 
     tbody.innerHTML = proyectos.map(p => {
       const solicitanteFormatted = this.formatSolicitante(p.Solicitante);
       const isUnmatched = solicitanteFormatted.startsWith('NO IDENTIFICADO');
-      const deleteBtnHtml = isAdmin
-        ? `<button type="button" class="btn-action-icon btn-action-delete" onclick="App.openDeleteProjectModal(${p.ID})" title="Eliminar proyecto" aria-label="Eliminar Proyecto">🗑️</button>`
-        : '';
-      const diagBtnHtml = isDiagActive
-        ? `<button type="button" class="btn-action-icon btn-action-diag" onclick="App.openDiagnosticoModal(${p.ID})" title="Diagnóstico Ejecutivo en 1 Clic" aria-label="Diagnóstico">⚡</button>`
-        : '';
 
       return `
-        <tr>
+        <tr class="project-row" data-project-id="${p.ID}" tabindex="0" title="Abrir detalle del proyecto">
           <td>
             <div class="col-project-client" title="${this.escapeHtml(p.Cliente || '')}">
               ${this.escapeHtml(p.Cliente || 'Sin título')}
@@ -2575,16 +2755,11 @@ const App = {
             ${this.escapeHtml(p.Detalle || 'Sin detalle')}
           </td>
           <td class="col-action-cell">
-            <div class="action-buttons-group">
-              <button type="button" class="btn-action-icon btn-action-view" onclick="App.drillDownById(${p.ID})" title="Ver detalle completo (Drill Down)" aria-label="Ver Detalle">
-                🔍
-              </button>
-              ${diagBtnHtml}
-              <button type="button" class="btn-action-icon btn-action-edit" onclick="App.openEditProjectModal(${p.ID})" title="Editar proyecto" aria-label="Editar Proyecto">
-                ✏️
-              </button>
-              ${deleteBtnHtml}
-            </div>
+            <button type="button" class="btn-row-menu" onclick="App.openRowActionsMenu(${p.ID}, this)" title="Más acciones" aria-label="Más acciones" aria-haspopup="true" aria-expanded="false">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+                <circle cx="5" cy="12" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="19" cy="12" r="1.8"></circle>
+              </svg>
+            </button>
           </td>
         </tr>
       `;
