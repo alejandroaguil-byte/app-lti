@@ -212,6 +212,11 @@ SMTP_FROM=alejandro.aguilarm@clarovtr.cl
 SMTP_TIMEOUT=30
 SMTP_DEFAULT_RECIPIENT=alejandro.aguilarm@clarovtr.cl
 
+# Solo desarrollo/pruebas (NUNCA en produccion): redirige TODO correo a esta(s) direccion(es),
+# sin CC/BCC y con prefijo [DEV] en el asunto, y el monitor de 6 horas no marca recordatorios
+# (los atiende produccion). Un valor invalido bloquea el envio.
+# EMAIL_REDIRECT_TO=alejandro.aguilarm@clarovtr.cl
+
 # ==============================================================================
 # CONFIGURACIÓN GENERAL Y BASE DE DATOS
 # ==============================================================================

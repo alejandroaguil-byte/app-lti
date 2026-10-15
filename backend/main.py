@@ -61,6 +61,7 @@ from .email_service import (
     send_solicitud_creada_email,
     send_solicitud_recordatorio_email,
     send_solicitud_asignada_email,
+    is_email_redirect_active,
     COORDINADORES_LTI_EMAILS
 )
 
@@ -72,31 +73,46 @@ REMINDER_INTERVAL_HOURS = int(os.getenv("REMINDER_INTERVAL_HOURS", "6"))
 REMINDER_INTERVAL_MINUTES = REMINDER_INTERVAL_HOURS * 60
 
 
+def run_reminder_cycle() -> int:
+    """Ejecuta un ciclo del monitor de 6 horas. Retorna la cantidad de recordatorios procesados.
+
+    Con EMAIL_REDIRECT_TO activo (desarrollo) no procesa nada: la BD es compartida con producción
+    y marcar recordatorios aquí impediría que producción los envíe a los coordinadores.
+    """
+    if is_email_redirect_active():
+        logger.debug("[SCHEDULER] EMAIL_REDIRECT_TO activo: ciclo de recordatorios omitido (lo atiende producción).")
+        return 0
+
+    logger.debug("[SCHEDULER] Evaluando solicitudes LTI sin asignar pendientes de recordatorio...")
+    pendientes = get_proyectos_pendientes_recordatorio(intervalo_minutos=REMINDER_INTERVAL_MINUTES)
+    validos = [
+        p for p in pendientes 
+        if is_valid_project_number(
+            p.get("Numero_Proyecto"), 
+            p.get("Cliente"), 
+            p.get("Tipo_Servicio"),
+            p.get("Solicitante")
+        )
+    ]
+    if not validos:
+        logger.debug("[SCHEDULER] No hay solicitudes pendientes de recordatorio en este ciclo.")
+        return 0
+
+    logger.info(f"[SCHEDULER] Se encontraron {len(validos)} solicitudes válidas pendientes para recordatorio.")
+    send_solicitud_recordatorio_email(validos, horas_transcurridas=REMINDER_INTERVAL_HOURS)
+    for p in validos:
+        registrar_recordatorio_enviado(p["ID"])
+        logger.info(f"[SCHEDULER] Recordatorio marcado en BD para proyecto ID {p['ID']} (N° {p.get('Numero_Proyecto')}).")
+    return len(validos)
+
+
 async def reminder_scheduler_loop():
     """Loop asíncrono para verificar y despachar recordatorios periódicos cada 6 horas."""
     logger.info(f"[SCHEDULER] Loop de recordatorios de Solicitud LTI activo (check cada {REMINDER_CHECK_SECONDS}s, umbral {REMINDER_INTERVAL_HOURS}h).")
     while True:
         try:
             await asyncio.sleep(REMINDER_CHECK_SECONDS)
-            logger.debug("[SCHEDULER] Evaluando solicitudes LTI sin asignar pendientes de recordatorio...")
-            pendientes = get_proyectos_pendientes_recordatorio(intervalo_minutos=REMINDER_INTERVAL_MINUTES)
-            validos = [
-                p for p in pendientes 
-                if is_valid_project_number(
-                    p.get("Numero_Proyecto"), 
-                    p.get("Cliente"), 
-                    p.get("Tipo_Servicio"),
-                    p.get("Solicitante")
-                )
-            ]
-            if validos:
-                logger.info(f"[SCHEDULER] Se encontraron {len(validos)} solicitudes válidas pendientes para recordatorio.")
-                send_solicitud_recordatorio_email(validos, horas_transcurridas=REMINDER_INTERVAL_HOURS)
-                for p in validos:
-                    registrar_recordatorio_enviado(p["ID"])
-                    logger.info(f"[SCHEDULER] Recordatorio marcado en BD para proyecto ID {p['ID']} (N° {p.get('Numero_Proyecto')}).")
-            else:
-                logger.debug("[SCHEDULER] No hay solicitudes pendientes de recordatorio en este ciclo.")
+            run_reminder_cycle()
         except asyncio.CancelledError:
             logger.info("[SCHEDULER] Tarea de recordatorios cancelada limpiamente.")
             break
@@ -822,9 +838,12 @@ def ejecutar_recordatorios_manual(current_user: dict = Depends(require_admin)):
         }
 
     email_res = send_solicitud_recordatorio_email(pendientes, horas_transcurridas=REMINDER_INTERVAL_HOURS)
+    # Con EMAIL_REDIRECT_TO (desarrollo) no se marca en BD: producción debe seguir enviando el recordatorio real
+    registrar_en_bd = not is_email_redirect_active()
     detalles = []
     for p in pendientes:
-        registrar_recordatorio_enviado(p["ID"])
+        if registrar_en_bd:
+            registrar_recordatorio_enviado(p["ID"])
         detalles.append({
             "id": p.get("ID"),
             "numero_proyecto": p.get("Numero_Proyecto"),
@@ -838,6 +857,7 @@ def ejecutar_recordatorios_manual(current_user: dict = Depends(require_admin)):
         "message": f"Chequeo manual ejecutado exitosamente. Se notificaron {len(pendientes)} solicitudes.",
         "recordatorios_enviados": len(pendientes),
         "email_delivery": email_res.get("success", False),
+        "registrado_en_bd": registrar_en_bd,
         "detalles": detalles
     }
 

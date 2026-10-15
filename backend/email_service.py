@@ -106,6 +106,44 @@ def parse_and_validate_recipients(to_input: Union[str, List[str]]) -> List[str]:
     return cleaned
 
 
+DEV_SUBJECT_PREFIX = "[DEV] "
+
+
+def is_email_redirect_active() -> bool:
+    """True si este servidor opera con EMAIL_REDIRECT_TO definido (ambiente no productivo)."""
+    return bool((os.getenv("EMAIL_REDIRECT_TO") or "").strip())
+
+
+def apply_email_redirect(
+    to_addrs: List[str],
+    cc_addrs: List[str],
+    bcc_addrs: List[str],
+    subject: str,
+) -> tuple:
+    """
+    Ambientes no productivos: si EMAIL_REDIRECT_TO está definido, todo correo va solo a esa(s)
+    dirección(es), sin CC/BCC y con prefijo [DEV]. Sin la variable, retorna los valores intactos.
+    Un valor inválido bloquea el envío para nunca caer a los destinatarios reales.
+    """
+    raw_redirect = (os.getenv("EMAIL_REDIRECT_TO") or "").strip()
+    if not raw_redirect:
+        return to_addrs, cc_addrs, bcc_addrs, subject
+
+    redirect_addrs = parse_and_validate_recipients(raw_redirect)
+    if not redirect_addrs:
+        raise ValueError(
+            "EMAIL_REDIRECT_TO está definido pero no contiene correos válidos; envío bloqueado."
+        )
+
+    logger.warning(
+        f"EMAIL_REDIRECT_TO activo: '{subject}' redirigido a {redirect_addrs} "
+        f"(originales To={to_addrs}, CC={cc_addrs}, BCC={bcc_addrs})"
+    )
+    if not subject.startswith(DEV_SUBJECT_PREFIX.strip()):
+        subject = f"{DEV_SUBJECT_PREFIX}{subject}"
+    return redirect_addrs, [], [], subject
+
+
 def build_mime_message(
     from_addr: str,
     to_addrs: List[str],
@@ -224,6 +262,8 @@ def send_ticket_notification_email(
 
     final_att_bytes = attachment_bytes if attachment_bytes is not None else adjunto_bytes
     final_att_name = attachment_filename or adjunto_nombre
+
+    recipients, _cc, _bcc, final_subject = apply_email_redirect(recipients, [], [], final_subject)
 
     # 4. Validar tamaño del archivo adjunto
     if final_att_bytes and len(final_att_bytes) > MAX_ATTACHMENT_SIZE_BYTES:
@@ -384,6 +424,10 @@ def send_email_notification(
     # Si falta texto plano, crear fallback básico
     if not final_text and final_html:
         final_text = re.sub(r"<[^>]+>", " ", final_html).strip()
+
+    clean_to, clean_cc, clean_bcc, clean_subject = apply_email_redirect(
+        clean_to, clean_cc, clean_bcc, clean_subject
+    )
 
     # 4. Validar adjunto si existe
     if attachment_bytes and len(attachment_bytes) > MAX_ATTACHMENT_SIZE_BYTES:
@@ -793,15 +837,26 @@ generate_asignacion_lti_html = build_solicitud_asignada_email_html
 # FUNCIONES DESPACHADORAS DE CORREO (RESILIENTES Y SIN BLOQUEO)
 # -----------------------------------------------------------------------------
 
+def is_test_project_number(numero_proyecto: Any) -> bool:
+    """True si el N° de proyecto corresponde a datos de prueba (contiene 'QA' o 'TEST')."""
+    num_upper = str(numero_proyecto or "").upper()
+    return "QA" in num_upper or "TEST" in num_upper
+
+
 def send_solicitud_creada_email(proyecto_data: dict, solicitante_nombre: Optional[str] = None) -> dict:
     """
     Despacha la notificación formal de ingreso de una nueva solicitud LTI a los coordinadores generales:
     - alejandro.aguilarm@clarovtr.cl
     - pablo.castillo@clarovtr.cl
     Captura excepciones para no romper la transacción ni el flujo del usuario.
+    Los proyectos de prueba (N° con 'QA' o 'TEST') no se notifican en ningún ambiente.
     """
     try:
         num = proyecto_data.get("Numero_Proyecto") or "S/N"
+        if is_test_project_number(num):
+            logger.info(f"Notificación de creación omitida para proyecto de prueba {num}.")
+            return {"success": False, "skipped": True, "error": "Proyecto de prueba (QA/TEST): notificación omitida"}
+
         cli = proyecto_data.get("Cliente") or "CLIENTE"
         asunto = f"[HALO LTI] Nueva Solicitud de Proyecto Ingresada — Proyecto N° {num} ({cli})"
 
@@ -842,6 +897,8 @@ def send_solicitud_recordatorio_email(
     """
     try:
         items = [pendientes] if isinstance(pendientes, dict) else list(pendientes)
+        # Los proyectos de prueba (N° con 'QA' o 'TEST') no se notifican en ningún ambiente
+        items = [p for p in items if not is_test_project_number(p.get("Numero_Proyecto"))]
         if not items:
             return {"success": True, "message": "No hay proyectos pendientes para notificar."}
 
@@ -889,6 +946,10 @@ def send_solicitud_asignada_email(
         from .db import resolve_user_email
 
         num = proyecto_data.get("Numero_Proyecto") or "S/N"
+        if is_test_project_number(num):
+            logger.info(f"Notificación de asignación omitida para proyecto de prueba {num}.")
+            return {"success": False, "skipped": True, "error": "Proyecto de prueba (QA/TEST): notificación omitida"}
+
         cli = proyecto_data.get("Cliente") or "CLIENTE"
         lt_final = lt_nombre or proyecto_data.get("LT_Asignado") or "Líder Técnico"
         pm_ident = proyecto_data.get("Solicitante")

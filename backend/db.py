@@ -1774,7 +1774,12 @@ def is_valid_project_number(
     - Números de proyecto nulos, vacíos o con longitud significativa inválida.
     - Números de prueba o dummy repetidos (ej: '0001111111', '1111111', '111111', '999999', '000000').
     - Registros donde Cliente o Solicitante contenga 'PROYECTO DEMO' o 'NO IDENTIFICADO'.
+    - Proyectos de prueba automatizada (N° con 'QA' o 'TEST').
     """
+    from .email_service import is_test_project_number
+    if is_test_project_number(numero_proyecto):
+        return False
+
     if tipo_servicio and str(tipo_servicio).strip().lower() in ('reunión', 'reunion'):
         return False
 
