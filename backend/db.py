@@ -4022,6 +4022,67 @@ def procesar_alertas_sla(raw_tickets: list, raw_solots: list, lider: str = None,
             crit_by_proj[a["proyecto_id"]] = crit_by_proj.get(a["proyecto_id"], 0) + 1
     proyectos_criticos = sum(1 for count in crit_by_proj.values() if count >= 2)
 
+    # Agrupación por proyecto: alcance completo (post-filtro de líder), independiente de
+    # severidad, tipo y límite. Solo alertas con proyecto_id.
+    sev_order = {"CRITICAL": 1, "WARNING": 2, "INFO": 3}
+    alertas_canonicas = sorted(
+        alertas_alcance,
+        key=lambda a: (
+            sev_order.get(a.get("severidad"), 99),
+            -int(a.get("dias_fuera_sla") or 0),
+            str(a.get("id"))
+        )
+    )
+    grupos_proy = {}
+    alertas_sin_proyecto = 0
+    for a in alertas_canonicas:
+        pid = a.get("proyecto_id")
+        if not pid:
+            alertas_sin_proyecto += 1
+            continue
+        g = grupos_proy.get(pid)
+        if g is None:
+            g = grupos_proy[pid] = {
+                "proyecto_id": pid,
+                "numero_proyecto": None,
+                "cliente": None,
+                "lt_asignado": None,
+                "severidad": a.get("severidad"),
+                "total_alertas": 0,
+                "criticas": 0,
+                "advertencias": 0,
+                "solots": 0,
+                "tickets": 0,
+                "max_dias_fuera_sla": 0,
+                "alertas": []
+            }
+        for campo in ("numero_proyecto", "cliente", "lt_asignado"):
+            if not g[campo] and a.get(campo):
+                g[campo] = a.get(campo)
+        g["total_alertas"] += 1
+        if a.get("severidad") == "CRITICAL":
+            g["criticas"] += 1
+        elif a.get("severidad") == "WARNING":
+            g["advertencias"] += 1
+        if a.get("tipo") == "solot":
+            g["solots"] += 1
+        elif a.get("tipo") == "ticket":
+            g["tickets"] += 1
+        g["max_dias_fuera_sla"] = max(g["max_dias_fuera_sla"], int(a.get("dias_fuera_sla") or 0))
+        if len(g["alertas"]) < 5:
+            g["alertas"].append(a)
+
+    def _clave_proyecto(g):
+        pid = g["proyecto_id"]
+        return (
+            sev_order.get(g["severidad"], 99),
+            -g["criticas"],
+            -g["max_dias_fuera_sla"],
+            (0, pid, "") if isinstance(pid, int) else (1, 0, str(pid))
+        )
+
+    proyectos = sorted(grupos_proy.values(), key=_clave_proyecto)
+
     resumen = {
         "total_alertas": len(alertas_alcance),
         "criticas": criticas_count,
@@ -4031,7 +4092,11 @@ def procesar_alertas_sla(raw_tickets: list, raw_solots: list, lider: str = None,
         "solots_vencidas": solots_venc,
         "solots_proximas_vencer": solots_prox,
         "solots_sin_compromiso": solots_sin_comp,
-        "proyectos_criticos": proyectos_criticos
+        "proyectos_criticos": proyectos_criticos,
+        "proyectos_con_alertas": len(proyectos),
+        "proyectos_alerta_criticos": sum(1 for g in proyectos if g["severidad"] == "CRITICAL"),
+        "proyectos_alerta_advertencia": sum(1 for g in proyectos if g["severidad"] == "WARNING"),
+        "alertas_sin_proyecto": alertas_sin_proyecto
     }
 
     # 5. Filtrar por Severidad si se solicitó
@@ -4059,7 +4124,6 @@ def procesar_alertas_sla(raw_tickets: list, raw_solots: list, lider: str = None,
     # 1º Severidad: CRITICAL (1) > WARNING (2) > INFO (3)
     # 2º Días fuera de SLA descendente
     # 3º ID descendente
-    sev_order = {"CRITICAL": 1, "WARNING": 2, "INFO": 3}
     alertas_filtradas.sort(
         key=lambda a: (
             sev_order.get(a.get("severidad"), 99),
@@ -4086,6 +4150,7 @@ def procesar_alertas_sla(raw_tickets: list, raw_solots: list, lider: str = None,
         },
         "resumen": resumen,
         "alertas": alertas_result,
+        "proyectos": proyectos,
         "minuta_escalamiento": minuta
     }
 

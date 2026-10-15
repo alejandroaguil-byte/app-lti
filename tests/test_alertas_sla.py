@@ -325,3 +325,185 @@ def test_ut_alt_010_generacion_minuta_escalamiento():
     assert "Alertas Críticas (🔴): 10" in minuta["texto_plano"]
     assert "SD1234 - Falla Core B2B" in minuta["texto_plano"]
     assert len(minuta["destinatarios_sugeridos"]) >= 2
+
+
+# ==============================================================================
+# S16: Agrupación de alertas por proyecto (contrato aditivo de procesar_alertas_sla)
+# ==============================================================================
+def _fecha_hace(dias):
+    return (datetime.date.today() - datetime.timedelta(days=dias)).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _ticket(inc, dias, pid, lider="Alejandro Aguilar", cliente="Cliente A", numero="0001"):
+    return {
+        "CC_INCIDENT_ID": inc,
+        "STATUS": "Abierto",
+        "SUBMIT_DATE": _fecha_hace(dias),
+        "BRIEF_DESCRIPTION": f"Ticket {inc}",
+        "p_id": pid,
+        "p_numero": numero,
+        "p_cliente": cliente,
+        "p_lider": lider,
+    }
+
+
+def _solot(otp, dias_vencida, pid, lider="Alejandro Aguilar", cliente="Cliente A", numero="0001"):
+    return {
+        "ID_OTP": otp,
+        "ESTADO_OTP": "4- Revision",
+        "FECHA_COMPROMETIDA": _fecha_hace(dias_vencida),
+        "FECHA_INSERT": _fecha_hace(dias_vencida + 10),
+        "DESCR_OTP": f"Solot {otp}",
+        "p_id": pid,
+        "p_numero": numero,
+        "p_cliente": cliente,
+        "p_lider": lider,
+    }
+
+
+def _escenario_proyectos():
+    """Proyecto 100: 2 solots críticas + 1 ticket crítico + 1 ticket warning.
+    Proyecto 200: solo 1 ticket warning. Proyecto 300: 1 solot crítica (LT distinto).
+    Dos alertas sin proyecto (una crítica, una warning)."""
+    raw_tickets = [
+        _ticket("T-100-C", 20, 100, cliente="Cliente A", numero="0100"),
+        _ticket("T-100-W", 9, 100, cliente="Cliente A", numero="0100"),
+        _ticket("T-200-W", 12, 200, lider="Erwin Sandoval", cliente="Cliente B", numero="0200"),
+        _ticket("T-NOPROY-C", 30, None),
+    ]
+    raw_solots = [
+        _solot(1001, 40, 100, cliente="Cliente A", numero="0100"),
+        _solot(1002, 5, 100, cliente="Cliente A", numero="0100"),
+        _solot(3001, 25, 300, lider="Erwin Sandoval", cliente="Cliente C", numero="0300"),
+        {
+            "ID_OTP": 9999,
+            "ESTADO_OTP": "1- Asignada",
+            "FECHA_COMPROMETIDA": None,
+            "FECHA_INSERT": _fecha_hace(15),
+            "DESCR_OTP": "Sin proyecto",
+            "p_lider": "Alejandro Aguilar",
+        },
+    ]
+    return raw_tickets, raw_solots
+
+
+def test_ut_alt_011_proyectos_agrupa_conteos_y_peor_severidad():
+    raw_tickets, raw_solots = _escenario_proyectos()
+    res = procesar_alertas_sla(raw_tickets, raw_solots)
+
+    assert "proyectos" in res
+    por_id = {p["proyecto_id"]: p for p in res["proyectos"]}
+    assert set(por_id) == {100, 200, 300}
+
+    p100 = por_id[100]
+    assert p100["numero_proyecto"] == "0100"
+    assert p100["cliente"] == "Cliente A"
+    assert p100["lt_asignado"] == "Alejandro Aguilar"
+    assert p100["severidad"] == "CRITICAL"
+    assert p100["total_alertas"] == 4
+    assert p100["criticas"] == 3
+    assert p100["advertencias"] == 1
+    assert p100["solots"] == 2
+    assert p100["tickets"] == 2
+    assert p100["max_dias_fuera_sla"] == 40
+
+    p200 = por_id[200]
+    assert p200["severidad"] == "WARNING"
+    assert p200["criticas"] == 0
+    assert p200["advertencias"] == 1
+    assert p200["tickets"] == 1
+    assert p200["solots"] == 0
+    assert p200["max_dias_fuera_sla"] == 12
+
+
+def test_ut_alt_012_alertas_sin_proyecto_excluidas_y_contadas():
+    raw_tickets, raw_solots = _escenario_proyectos()
+    res = procesar_alertas_sla(raw_tickets, raw_solots)
+
+    ids_en_proyectos = {a["id"] for p in res["proyectos"] for a in p["alertas"]}
+    assert "TICKET-T-NOPROY-C" not in ids_en_proyectos
+    assert "SOLOT-9999" not in ids_en_proyectos
+    assert sum(p["total_alertas"] for p in res["proyectos"]) == res["resumen"]["total_alertas"] - 2
+    assert res["resumen"]["alertas_sin_proyecto"] == 2
+
+
+def test_ut_alt_013_proyectos_independientes_de_limite_severidad_y_tipo():
+    raw_tickets, raw_solots = _escenario_proyectos()
+    base = procesar_alertas_sla(raw_tickets, raw_solots)
+    filtrado = procesar_alertas_sla(raw_tickets, raw_solots, severidad="advertencia", tipo="ticket", limite=1)
+
+    assert len(filtrado["alertas"]) == 1
+    assert filtrado["proyectos"] == base["proyectos"]
+    assert filtrado["resumen"]["proyectos_con_alertas"] == base["resumen"]["proyectos_con_alertas"]
+    assert filtrado["resumen"]["alertas_sin_proyecto"] == base["resumen"]["alertas_sin_proyecto"]
+
+
+def test_ut_alt_014_proyectos_respetan_filtro_lider():
+    raw_tickets, raw_solots = _escenario_proyectos()
+    res = procesar_alertas_sla(raw_tickets, raw_solots, lider="Erwin Sandoval")
+
+    assert {p["proyecto_id"] for p in res["proyectos"]} == {200, 300}
+    assert res["resumen"]["proyectos_con_alertas"] == 2
+    assert res["resumen"]["alertas_sin_proyecto"] == 0
+
+
+def test_ut_alt_015_alertas_por_proyecto_top5_en_orden_canonico():
+    raw_tickets = []
+    raw_solots = [_solot(2000 + i, 10 + i, 500, numero="0500") for i in range(7)]
+    raw_tickets.append(_ticket("T-500-W", 9, 500, numero="0500"))
+
+    res = procesar_alertas_sla(raw_tickets, raw_solots)
+    assert len(res["proyectos"]) == 1
+    p = res["proyectos"][0]
+    assert p["total_alertas"] == 8
+    assert len(p["alertas"]) == 5
+    # Orden canónico: severidad, días fuera de SLA desc, id desc
+    assert [a["dias_fuera_sla"] for a in p["alertas"]] == [16, 15, 14, 13, 12]
+    assert all(a["severidad"] == "CRITICAL" for a in p["alertas"])
+    assert p["max_dias_fuera_sla"] == 16
+
+
+def test_ut_alt_016_orden_de_proyectos():
+    raw_tickets = [
+        _ticket("T-A-W", 13, 10),      # WARNING, 13d
+        _ticket("T-B-W", 9, 20),       # WARNING, 9d
+        _ticket("T-C-C", 16, 30),      # CRITICAL x1, 16d
+        _ticket("T-D-C", 30, 40),      # CRITICAL x1, 30d
+        _ticket("T-E-C", 15, 50),      # CRITICAL x1, 15d (+ otra crítica => 2 críticas)
+        _ticket("T-E2-C", 15, 50),
+        _ticket("T-F-C", 30, 35),      # CRITICAL x1, 30d, empata con 40 => proyecto_id asc
+        _ticket("T-G-W", 13, 5),       # WARNING, 13d, empata con 10 => proyecto_id asc
+    ]
+    res = procesar_alertas_sla(raw_tickets, [])
+    orden = [p["proyecto_id"] for p in res["proyectos"]]
+    # críticos primero (más críticas, luego mayor atraso, luego id), luego advertencias
+    assert orden == [50, 35, 40, 30, 5, 10, 20]
+
+
+def test_ut_alt_017_resumen_contadores_de_proyectos():
+    raw_tickets, raw_solots = _escenario_proyectos()
+    res = procesar_alertas_sla(raw_tickets, raw_solots)
+    r = res["resumen"]
+    assert r["proyectos_con_alertas"] == 3
+    assert r["proyectos_alerta_criticos"] == 2      # 100 y 300
+    assert r["proyectos_alerta_advertencia"] == 1   # 200
+    assert r["alertas_sin_proyecto"] == 2
+
+
+def test_ut_alt_018_resumen_existente_no_cambia_y_sin_alertas():
+    raw_tickets, raw_solots = _escenario_proyectos()
+    r = procesar_alertas_sla(raw_tickets, raw_solots)["resumen"]
+    assert r["total_alertas"] == 8
+    assert r["criticas"] == 5
+    assert r["advertencias"] == 3
+    assert r["tickets_sla_criticos"] == 2
+    assert r["tickets_sla_advertencia"] == 2
+    assert r["solots_vencidas"] == 3
+    assert r["solots_proximas_vencer"] == 0
+    assert r["solots_sin_compromiso"] == 1
+    assert r["proyectos_criticos"] == 1
+
+    vacio = procesar_alertas_sla([], [])
+    assert vacio["proyectos"] == []
+    assert vacio["resumen"]["proyectos_con_alertas"] == 0
+    assert vacio["resumen"]["alertas_sin_proyecto"] == 0
