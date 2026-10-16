@@ -90,3 +90,16 @@ def test_e2e_assigner_downgraded_to_lectura_still_sees_assignment_modules(page: 
     expect(page.locator("#nav-btn-projects")).to_be_visible()
     expect(page.locator("#nav-btn-direct-search")).to_be_visible()
     _search_backlog(page)
+
+
+def test_e2e_restricted_lti_does_not_see_assign_button(page: Page):
+    """S5/L6: only full-visibility users get the Asignar LTI button in Búsqueda > Solots."""
+    _login(page, username="juan.barrera", admin_level=1, tool_perm="operador")
+    page.click("#nav-btn-direct-search")
+    page.select_option("#direct-search-table-select", "solots")
+    page.fill("#direct-search-input-field", BACKLOG_NRO)
+    page.press("#direct-search-input-field", "Enter")
+    page.click("#direct-search-submit-btn")
+    page.click("[data-search-tab='solots']")
+    expect(page.locator("#direct-solots-table-body tr").first).to_be_visible(timeout=20000)
+    expect(page.locator("#direct-solots-table-body .btn-assign-lti")).to_have_count(0)

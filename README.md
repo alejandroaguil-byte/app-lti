@@ -157,6 +157,14 @@ Diseñada con la identidad visual corporativa de Claro Chile (cabecera instituci
     - **Interfaz simplificada**: navegación con 4 módulos, iconos de línea sin emojis, tablero con 4 KPI y alertas SLA agrupadas por proyecto.
     - **Protección de datos**: redirección de correos en desarrollo (`EMAIL_REDIRECT_TO`), sin correos para proyectos QA/TEST y pruebas que solo limpian sus propios datos. Detalle en [RELEASE_v1.9.0.md](RELEASE_v1.9.0.md).
 
+14. **Ciclo de Vida de Proyectos, Bitácora y Visibilidad por LTI (v1.10.0)**:
+    - **4 estados**: `Generado` (solicitud del PM sin LTI), `En ejecucion` (LTI asignado; el cambio es automático al asignar), `En revision` y `Cerrado`. El estado legado `Atendido` se trata como `Cerrado`; `scripts/migrar_estados_proyectos.py` migra los datos (dry-run por defecto, `--apply` con respaldo JSON en `backups_iacdi/`).
+    - **Notas obligatorias**: al pasar a *En revisión* se exige el motivo y al pasar a *Cerrado* la información de cierre (`nota_estado` en `PUT /api/proyectos/{id}`); ambas quedan en la bitácora y admiten evidencias adjuntas.
+    - **Bitácora del proyecto**: pestaña *Bitácora* en el detalle con entradas de texto libre (autor y fecha) y adjuntos. Endpoints `GET/POST /api/proyectos/{id}/bitacora`, `POST /api/proyectos/{id}/bitacora/{entrada}/adjuntos` (campo `archivo`) y `GET /api/proyectos/{id}/adjuntos/{adjunto}`. Tablas `dbo.Proyecto_Bitacora` y `dbo.Proyecto_Adjuntos` (se crean solas al iniciar).
+    - **Adjuntos**: máximo 9 MB por archivo (nginx limita `/app-lti/` a 10 MB por request); PDF, imágenes, Office, MSG, EML, ZIP, TXT y CSV. Se guardan en `ADJUNTOS_DIR` (por defecto `data/adjuntos/`, fuera de git y excluido del despliegue).
+    - **Visibilidad**: cada usuario ve solo los proyectos de su LTI; `alejandro.aguilar` y `pablo.castillo` ven todos (ver sección RBAC).
+    - **Tarjetas KPI explicadas**: cada tarjeta muestra una burbuja con su significado al pasar el mouse o con el foco del teclado.
+
 ---
 
 ## 🛠️ Stack Tecnológico
@@ -291,12 +299,17 @@ El token JWT del Portal define la capacidad de escritura de la sesión:
 - **Bloqueo Local:** Si el usuario tiene `activo = 0` en `dbo.App_Usuarios`, el backend deniega el acceso con `403 Forbidden`.
 - **Asignadores autorizados (`LTI_ASSIGNER_USERNAMES` en `backend/config.py`):** `alejandro.aguilar` y `pablo.castillo` nunca quedan por debajo del rol `LTI`. Si el Portal (`"lectura"`) o el rol local los dejaría como `PM`, su rol efectivo pasa a `LTI` para que siempre puedan asignar LTI. Siguen necesitando acceso en el Portal y estar activos.
 
-### 3. Asignación de LTI a Proyectos
+### 3. Visibilidad de Proyectos
+- **Visibilidad total (`FULL_PROJECT_VISIBILITY_USERNAMES` en `backend/config.py`):** `alejandro.aguilar` y `pablo.castillo` ven todos los proyectos y pueden filtrar por cualquier Líder TI.
+- **Resto de usuarios (cualquier rol, incluidos otros ADMIN):** solo ven proyectos cuyo `LT_Asignado` es su propio `lt_asignado`; sin `lt_asignado` no ven proyectos. El backend ignora el filtro `lt` en listado, KPIs y alertas, y responde `404` en el detalle, edición, eliminación y bitácora de proyectos ajenos. La búsqueda del módulo Búsqueda no cambia, pero su botón **Asignar LTI** queda solo para estos dos usuarios (`403` para el resto).
+- `GET /api/auth/me` informa `ve_todos_proyectos`; el frontend bloquea el filtro de Líder TI cuando es `false`.
+
+### 4. Asignación de LTI a Proyectos
 - **Desde Proyectos:** menú "⋯" → **Editar** → "LT Asignado" (`PUT /api/proyectos/{id}`). Cubre las solicitudes que crean los PM.
-- **Desde Búsqueda → Solots (`CT_BACKLOG_OPERACIONES2`):** botón **Asignar LTI** en cada fila (`POST /api/backlog/asignar-lti`, roles `LTI`/`ADMIN`). Si el proyecto ya existe en `dbo.Proyectos` solo cambia `LT_Asignado`; si no existe, se crea con el cliente y el PM del backlog y estado `Generado`. La tabla del backlog nunca se modifica.
+- **Desde Búsqueda → Solots (`CT_BACKLOG_OPERACIONES2`):** botón **Asignar LTI** en cada fila (`POST /api/backlog/asignar-lti`, solo `alejandro.aguilar` y `pablo.castillo`). Si el proyecto ya existe en `dbo.Proyectos` solo cambia `LT_Asignado`; si no existe, se crea con el cliente y el PM del backlog y estado `En ejecucion`. La tabla del backlog nunca se modifica.
 - En ambos casos, si el proyecto no tenía LTI se envía el correo de asignación.
 
-### 4. Centralización de Gestión de Identidades
+### 5. Centralización de Gestión de Identidades
 - **Alta de cuentas y contraseñas:** Centralizadas al 100% en el Portal de Acceso. App LTI no almacena `password_hash` ni expone formularios de creación de cuentas o reseteo de claves.
 - **Mantenedor Local de App LTI (`👥 Usuarios`):** Exclusivo para administradores locales, permitiendo asignar el rol del negocio (`PM`, `LTI`, `ADMIN`), vincular el Líder TI responsable (`lt_asignado`) y alternar el estado activo/bloqueado.
 

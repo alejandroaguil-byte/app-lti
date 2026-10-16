@@ -772,6 +772,12 @@ def asignar_lti_desde_backlog(
     current_user: dict = Depends(require_lti_or_admin)
 ):
     """Asigna un LTI a un proyecto del backlog de operaciones (crea el proyecto si no existe)."""
+    # Puede tocar proyectos de cualquier LTI: solo para usuarios con visibilidad total
+    if not ve_todos_los_proyectos(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo los coordinadores de Líderes TI pueden asignar LTI desde el backlog"
+        )
     numero_proyecto = (req.numero_proyecto or "").strip()
     lt_asignado = (req.lt_asignado or "").strip()
 

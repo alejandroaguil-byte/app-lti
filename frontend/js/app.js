@@ -3379,7 +3379,7 @@ const App = {
         <td>${this.escapeHtml(s.SERVICIO || '-')}</td>
         <td>${this.escapeHtml(s.ASIGNADO_OTP || '-')}</td>
         <td>
-          ${s.NRO_PROYECTO ? `<button type="button" class="btn btn-primary btn-sm btn-assign-lti" data-nro="${this.escapeHtml(s.NRO_PROYECTO)}" data-cliente="${this.escapeHtml(s.CLI_CLIENTE || '')}">Asignar LTI</button>` : '-'}
+          ${(s.NRO_PROYECTO && Auth.getUser()?.ve_todos_proyectos) ? `<button type="button" class="btn btn-primary btn-sm btn-assign-lti" data-nro="${this.escapeHtml(s.NRO_PROYECTO)}" data-cliente="${this.escapeHtml(s.CLI_CLIENTE || '')}">Asignar LTI</button>` : '-'}
         </td>
       </tr>
     `).join('');

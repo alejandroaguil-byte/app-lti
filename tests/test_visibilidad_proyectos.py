@@ -456,3 +456,37 @@ def test_s5_put_nota_de_20000_caracteres_es_valida(datos):
     res = client.put("/api/proyectos/123", json=body, headers=_h("alejandro.aguilar"))
     assert res.status_code == 200, res.text
     assert datos["calls"] == ["update_proyecto"]
+
+
+# ---------------------------------------------------------------------------
+# S5 / L6 — Asignar LTI desde Búsqueda: solo usuarios con visibilidad total
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def asignar_env(monkeypatch):
+    llamadas = []
+    monkeypatch.setattr(main_module, "get_lideres_list", lambda: ["Juan Barrera", "Erwin Sandoval"])
+
+    def fake_assign(**kwargs):
+        llamadas.append(kwargs)
+        return {"success": True, "action": "updated", "data": {"ID": 1}, "was_assigned": False}
+
+    monkeypatch.setattr(main_module, "assign_lti_from_backlog", fake_assign)
+    return llamadas
+
+
+@pytest.mark.parametrize("username", [u for u, _ in RESTRINGIDOS_CON_LT] + RESTRINGIDOS_SIN_LT)
+def test_s5_asignar_lti_backlog_restringido_es_403_sin_escribir(asignar_env, username):
+    res = client.post("/api/backlog/asignar-lti", json={"numero_proyecto": "12345", "lt_asignado": "Erwin Sandoval"},
+                      headers=_h(username))
+    assert res.status_code == 403
+    assert res.json()["detail"] == "Solo los coordinadores de Líderes TI pueden asignar LTI desde el backlog"
+    assert asignar_env == []
+
+
+@pytest.mark.parametrize("username", FULL)
+def test_s5_asignar_lti_backlog_usuarios_completos_pueden_asignar(asignar_env, username):
+    res = client.post("/api/backlog/asignar-lti", json={"numero_proyecto": "12345", "lt_asignado": "Erwin Sandoval"},
+                      headers=_h(username))
+    assert res.status_code == 200, res.text
+    assert len(asignar_env) == 1
