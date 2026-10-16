@@ -28,6 +28,9 @@ from .db import (
     delete_usuario,
     get_lideres_list,
     get_estados_list,
+    CANONICAL_ESTADOS_SHAREPOINT,
+    normalizar_estado_proyecto,
+    resolver_estado_por_asignacion,
     get_proyectos,
     get_proyecto_by_id,
     get_solots_by_proyecto,
@@ -235,6 +238,7 @@ class ProyectoUpdateRequest(BaseModel):
     detalle: str
     tipo_servicio: Optional[str] = "Otros"
     comentario: Optional[str] = None
+    nota_estado: Optional[str] = None
 
 class BacklogAsignacionRequest(BaseModel):
     numero_proyecto: str
@@ -474,6 +478,7 @@ def actualizar_proyecto(
     lt_asignado = req.lt_asignado.strip() if req.lt_asignado and req.lt_asignado.strip() else None
     tipo_servicio = req.tipo_servicio.strip() if req.tipo_servicio and req.tipo_servicio.strip() else "Otros"
     comentario = req.comentario.strip() if req.comentario and req.comentario.strip() else None
+    nota_estado = req.nota_estado.strip() if req.nota_estado and req.nota_estado.strip() else None
 
     if not cliente or not estado or not detalle:
         raise HTTPException(
@@ -481,20 +486,35 @@ def actualizar_proyecto(
             detail="Los campos 'cliente', 'estado' y 'detalle' son obligatorios"
         )
 
-    estado_map = {
-        "generado": "Generado",
-        "en revision": "En revision",
-        "en revisión": "En revision",
-        "atendido": "Atendido"
-    }
-    estado_normalizado = estado_map.get(estado.lower(), estado)
-    estados_permitidos = ["Generado", "En revision", "Atendido"]
-    if estado_normalizado not in estados_permitidos:
+    estado_normalizado = normalizar_estado_proyecto(estado)
+    if estado_normalizado is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Estado inválido. Los estados permitidos son: {', '.join(estados_permitidos)}"
+            detail=f"Estado inválido. Los estados permitidos son: {', '.join(CANONICAL_ESTADOS_SHAREPOINT)}"
         )
     estado = estado_normalizado
+
+    # La nota de revisión / cierre solo se exige cuando el estado cambia hacia En revision o Cerrado.
+    # 'Atendido' (legado) equivale a 'Cerrado' al decidir si hubo cambio.
+    estado_anterior = None
+    if estado in ("En revision", "Cerrado"):
+        actual = get_proyecto_by_id(proyecto_id)
+        if not actual:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proyecto no encontrado")
+        estado_anterior = normalizar_estado_proyecto(actual.get("Estado")) or actual.get("Estado")
+        if estado_anterior != estado and not nota_estado:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Debe documentar el motivo para pasar el proyecto a 'En revisión'"
+                    if estado == "En revision"
+                    else "Debe documentar la información de cierre para pasar el proyecto a 'Cerrado'"
+                )
+            )
+    # nota_estado queda validada y recortada; el registro en la bitácora lo hace T2 cuando estado_anterior != estado.
+
+    # Un proyecto 'Generado' con LTI asignado pasa automáticamente a 'En ejecucion'
+    estado = resolver_estado_por_asignacion(estado, lt_asignado)
 
     result = update_proyecto(
         proyecto_id=proyecto_id,

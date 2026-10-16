@@ -521,18 +521,46 @@ def get_lideres_list():
 
 CANONICAL_ESTADOS_SHAREPOINT = [
     "Generado",
+    "En ejecucion",
     "En revision",
-    "Atendido"
+    "Cerrado"
 ]
+
+# Alias aceptados al normalizar (sin tildes, en minúsculas). 'Atendido' es el estado legado de 'Cerrado'.
+_ESTADOS_ALIAS = {
+    "generado": "Generado",
+    "en ejecucion": "En ejecucion",
+    "en revision": "En revision",
+    "cerrado": "Cerrado",
+    "atendido": "Cerrado",
+}
+
+def normalizar_estado_proyecto(estado) -> Optional[str]:
+    """
+    Normaliza un estado de proyecto ignorando mayúsculas y tildes ('en ejecución' -> 'En ejecucion').
+    El estado legado 'Atendido' se normaliza a 'Cerrado'. Retorna None si no pertenece al catálogo.
+    """
+    if estado is None:
+        return None
+    import unicodedata
+    nfkd = unicodedata.normalize('NFKD', str(estado))
+    clave = ''.join(c for c in nfkd if not unicodedata.combining(c)).strip().lower()
+    return _ESTADOS_ALIAS.get(clave)
+
+def resolver_estado_por_asignacion(estado: str, lt_asignado) -> str:
+    """Un proyecto 'Generado' con LTI asignado pasa a 'En ejecucion'; los demás estados no se alteran."""
+    if estado == "Generado" and not _is_unassigned_lt(lt_asignado):
+        return "En ejecucion"
+    return estado
 
 def get_estados_list() -> dict:
     """
     Retorna el catálogo canónico oficial de estados de proyectos SharePoint (dbo.Proyectos)
     y la lista de estados dinámicos de solots SGA (dbo.CT_BACKLOG_OPERACIONES2).
     
-    Para SharePoint, devuelve siempre los 3 estados oficiales del ciclo de vida:
-    ['Generado', 'En revision', 'Atendido'], evitando dependencias frágiles de los
-    registros transitorios existentes en la tabla.
+    Para SharePoint, devuelve siempre los 4 estados oficiales del ciclo de vida:
+    ['Generado', 'En ejecucion', 'En revision', 'Cerrado'], evitando dependencias frágiles de los
+    registros transitorios existentes en la tabla. El estado legado 'Atendido' se trata como 'Cerrado'.
     """
     estados_sp = list(CANONICAL_ESTADOS_SHAREPOINT)
     estados_sga = []
@@ -714,8 +742,13 @@ def get_proyectos(lt_filter=None, search=None, estado_sp=None, estado_sga=None):
                 params.append(lt_filter)
 
             if estado_sp:
-                sql += " AND p.Estado = %s"
-                params.append(estado_sp)
+                estado_sp_norm = normalizar_estado_proyecto(estado_sp) or estado_sp
+                if estado_sp_norm == "Cerrado":
+                    # 'Atendido' es el estado legado de 'Cerrado'
+                    sql += " AND p.Estado IN ('Cerrado', 'Atendido')"
+                else:
+                    sql += " AND p.Estado = %s"
+                    params.append(estado_sp_norm)
 
             if estado_sga:
                 sql += " AND EXISTS (SELECT 1 FROM dbo.CT_BACKLOG_OPERACIONES2 b WITH (NOLOCK) WHERE (b.ID_Proyecto = p.ID OR b.Numero_Proyecto_Limpio = p.Numero_Proyecto) AND b.ESTADO_OTP = %s)"
@@ -981,8 +1014,8 @@ def get_dashboard_kpis(lt_filter=None):
             cursor.execute(sql_proy, tuple(params_proy))
             total_proyectos = cursor.fetchone()['total']
 
-            # 2. Proyectos En Curso (Estado = 'Generado')
-            sql_en_curso = "SELECT COUNT(1) as total FROM dbo.Proyectos p WITH (NOLOCK) WHERE p.Estado = 'Generado' AND (p.Tipo_Servicio IS NULL OR p.Tipo_Servicio <> 'Reunión')"
+            # 2. Proyectos En Curso (Estado = 'En ejecucion' o 'En revision')
+            sql_en_curso = "SELECT COUNT(1) as total FROM dbo.Proyectos p WITH (NOLOCK) WHERE p.Estado IN ('En ejecucion', 'En revision') AND (p.Tipo_Servicio IS NULL OR p.Tipo_Servicio <> 'Reunión')"
             params_ec = []
             if lt_filter == "__UNASSIGNED__":
                 sql_en_curso += " AND (p.LT_Asignado IS NULL OR LTRIM(RTRIM(p.LT_Asignado)) = '' OR LOWER(LTRIM(RTRIM(p.LT_Asignado))) = 'sin asignar')"
@@ -992,8 +1025,8 @@ def get_dashboard_kpis(lt_filter=None):
             cursor.execute(sql_en_curso, tuple(params_ec))
             proyectos_en_curso = cursor.fetchone()['total']
 
-            # 3. Proyectos Atendidos (Estado = 'Atendido')
-            sql_atendidos = "SELECT COUNT(1) as total FROM dbo.Proyectos p WITH (NOLOCK) WHERE p.Estado = 'Atendido' AND (p.Tipo_Servicio IS NULL OR p.Tipo_Servicio <> 'Reunión')"
+            # 3. Proyectos Cerrados (Estado = 'Cerrado'; 'Atendido' es el estado legado)
+            sql_atendidos = "SELECT COUNT(1) as total FROM dbo.Proyectos p WITH (NOLOCK) WHERE p.Estado IN ('Cerrado', 'Atendido') AND (p.Tipo_Servicio IS NULL OR p.Tipo_Servicio <> 'Reunión')"
             params_at = []
             if lt_filter == "__UNASSIGNED__":
                 sql_atendidos += " AND (p.LT_Asignado IS NULL OR LTRIM(RTRIM(p.LT_Asignado)) = '' OR LOWER(LTRIM(RTRIM(p.LT_Asignado))) = 'sin asignar')"
@@ -1118,6 +1151,7 @@ def get_dashboard_kpis(lt_filter=None):
                 'total_proyectos': total_proyectos,
                 'proyectos_en_curso': proyectos_en_curso,
                 'proyectos_atendidos': proyectos_atendidos,
+                'proyectos_cerrados': proyectos_atendidos,
                 'pendientes_asignar': pendientes_asignar,
                 'efectividad': efectividad,
                 'total_tickets': total_tickets,
@@ -1462,7 +1496,10 @@ def create_solicitud_lti(
     solicitante: Union[str, None] = None, 
     tipo_servicio: Union[str, None] = "Otros"
 ) -> dict:
-    """Inserta una nueva solicitud en dbo.Proyectos forzando Estado='Generado' y Tipo_Servicio='Otros'."""
+    """
+    Inserta una nueva solicitud en dbo.Proyectos con Tipo_Servicio='Otros'.
+    El Estado es 'Generado' salvo que se pida 'En ejecucion' (asignación directa de LTI desde el backlog).
+    """
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
@@ -1503,7 +1540,8 @@ def create_solicitud_lti(
             formatted_num = format_numero_proyecto(num_clean)
             lt_val = lt_asignado.strip()[:50] if (lt_asignado and str(lt_asignado).strip()) else None
 
-            # 4. Inserción en dbo.Proyectos forzando Estado = 'Generado' y Tipo_Servicio = 'Otros'
+            # 4. Inserción en dbo.Proyectos: Estado 'Generado' (o 'En ejecucion' si se asigna LTI) y Tipo_Servicio = 'Otros'
+            estado_inicial = "En ejecucion" if estado == "En ejecucion" else "Generado"
             insert_sql = """
                 INSERT INTO dbo.Proyectos (
                     ID,
@@ -1522,7 +1560,7 @@ def create_solicitud_lti(
                 cliente.strip()[:100],
                 formatted_num[:50],
                 lt_val,
-                'Generado',  # Inmutable: Siempre 'Generado'
+                estado_inicial,  # Solo 'Generado' o 'En ejecucion'
                 detalle.strip(),
                 'Otros',     # Fijo y Oculto: Siempre 'Otros'
                 dt_to_insert,
@@ -1540,7 +1578,7 @@ def create_solicitud_lti(
                     "Cliente": cliente.strip()[:100],
                     "Numero_Proyecto": formatted_num[:50],
                     "LT_Asignado": lt_val,
-                    "Estado": "Generado",
+                    "Estado": estado_inicial,
                     "Detalle": detalle.strip(),
                     "Tipo_Servicio": "Otros",
                     "Creado": dt_to_insert,
@@ -1675,12 +1713,17 @@ def get_backlog_proyecto(numero_proyecto: str) -> Optional[dict]:
         conn.close()
 
 def update_proyecto_lt(proyecto_id: int, lt_asignado: str) -> Optional[dict]:
-    """Actualiza solo LT_Asignado de un proyecto en dbo.Proyectos y retorna el registro."""
+    """
+    Actualiza LT_Asignado de un proyecto en dbo.Proyectos y retorna el registro.
+    Un proyecto 'Generado' pasa a 'En ejecucion'; En revision / Cerrado no se degradan.
+    """
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
             cursor.execute(
-                "UPDATE dbo.Proyectos SET LT_Asignado = %s WHERE ID = %s",
+                "UPDATE dbo.Proyectos SET LT_Asignado = %s, "
+                "Estado = CASE WHEN Estado = 'Generado' THEN 'En ejecucion' ELSE Estado END "
+                "WHERE ID = %s",
                 (str(lt_asignado).strip()[:50], proyecto_id)
             )
             conn.commit()
@@ -1702,8 +1745,9 @@ def assign_lti_from_backlog(numero_proyecto: str, lt_asignado: str, actor_nombre
     """
     Asigna un LTI a un proyecto del backlog de operaciones.
 
-    - Si el proyecto ya existe en dbo.Proyectos, cambia solo LT_Asignado (action='updated').
-    - Si no existe, lo crea con los datos del backlog, Estado 'Generado' (action='created').
+    - Si el proyecto ya existe en dbo.Proyectos, cambia LT_Asignado y, si estaba 'Generado', lo pasa a
+      'En ejecucion' (action='updated').
+    - Si no existe, lo crea con los datos del backlog, Estado 'En ejecucion' (action='created').
     Nunca escribe en dbo.CT_BACKLOG_OPERACIONES2.
     """
     lt_val = str(lt_asignado).strip()
@@ -1722,7 +1766,7 @@ def assign_lti_from_backlog(numero_proyecto: str, lt_asignado: str, actor_nombre
                 cliente=str(backlog_row.get("CLI_CLIENTE") or "").strip(),
                 numero_proyecto=str(numero_proyecto).strip(),
                 lt_asignado=lt_val,
-                estado="Generado",
+                estado="En ejecucion",
                 fecha_solicitud=datetime.date.today().isoformat(),
                 detalle=BACKLOG_ASSIGNMENT_DETALLE,
                 solicitante=solicitante,
@@ -1927,7 +1971,7 @@ def is_valid_project_number(
 def get_proyectos_pendientes_recordatorio(intervalo_minutos: int = 360, conn=None) -> List[dict]:
     """
     Obtiene los proyectos válidos sin Líder Técnico asignado que requieren recordatorio:
-    - Estado <> 'Atendido'
+    - Estado no cerrado (<> 'Cerrado' y <> 'Atendido', el estado legado)
     - Tipo_Servicio <> 'Reunión'
     - LT_Asignado IS NULL o vacío o 'sin asignar'
     - Proyecto válido (no dummy tipo 0001111111 ni demo)
@@ -1962,7 +2006,7 @@ def get_proyectos_pendientes_recordatorio(intervalo_minutos: int = 360, conn=Non
                     END AS Minutos_Desde_Ultimo_Hito
                 FROM dbo.Proyectos p WITH (NOLOCK)
                 WHERE (p.LT_Asignado IS NULL OR LTRIM(RTRIM(p.LT_Asignado)) = '' OR LOWER(LTRIM(RTRIM(p.LT_Asignado))) = 'sin asignar')
-                  AND ISNULL(p.Estado, '') <> 'Atendido'
+                  AND ISNULL(p.Estado, '') NOT IN ('Cerrado', 'Atendido')
                   AND (p.Tipo_Servicio IS NULL OR LOWER(LTRIM(RTRIM(p.Tipo_Servicio))) NOT IN ('reunión', 'reunion'))
                   AND p.Numero_Proyecto NOT LIKE '%111111%'
                   AND p.Numero_Proyecto NOT LIKE '%999999%'
@@ -4299,12 +4343,12 @@ def get_alertas_tempranas_sla(lider: str = None, severidad: str = "todas", tipo:
                     FROM dbo.Proyectos p WITH (NOLOCK)
                     WHERE (sd.ID_Proyecto = p.ID OR (sd.Numero_Proyecto_Limpio IS NOT NULL AND sd.Numero_Proyecto_Limpio = p.Numero_Proyecto))
                       AND (p.Tipo_Servicio IS NULL OR p.Tipo_Servicio <> 'Reunión')
-                    ORDER BY CASE WHEN p.Estado <> 'Atendido' THEN 0 ELSE 1 END, p.ID DESC
+                    ORDER BY CASE WHEN p.Estado NOT IN ('Cerrado', 'Atendido') THEN 0 ELSE 1 END, p.ID DESC
                 ) p
                 WHERE sd.STATUS NOT IN ('Cerrado', 'Resuelto', 'Closed', 'Resolved')
                   AND TRY_CAST(sd.SUBMIT_DATE AS DATETIME2) IS NOT NULL
                   AND DATEDIFF(day, TRY_CAST(sd.SUBMIT_DATE AS DATETIME2), GETDATE()) > 7
-                  AND (p.ID IS NULL OR p.Estado <> 'Atendido')
+                  AND (p.ID IS NULL OR p.Estado NOT IN ('Cerrado', 'Atendido'))
             """
             params_t = []
             if lider and lider.strip() and lider.strip().lower() not in ("todos", "todas", "all"):
@@ -4337,7 +4381,7 @@ def get_alertas_tempranas_sla(lider: str = None, severidad: str = "todas", tipo:
                     FROM dbo.Proyectos p WITH (NOLOCK)
                     WHERE (b.ID_Proyecto = p.ID OR (b.Numero_Proyecto_Limpio IS NOT NULL AND b.Numero_Proyecto_Limpio = p.Numero_Proyecto))
                       AND (p.Tipo_Servicio IS NULL OR p.Tipo_Servicio <> 'Reunión')
-                    ORDER BY CASE WHEN p.Estado <> 'Atendido' THEN 0 ELSE 1 END, p.ID DESC
+                    ORDER BY CASE WHEN p.Estado NOT IN ('Cerrado', 'Atendido') THEN 0 ELSE 1 END, p.ID DESC
                 ) p
                 WHERE b.ESTADO_OTP NOT IN ('Cerrada', '5- Ejecutada', '5- Ejecutada Tareas Pendientes', 'Abortado', 'En Aborcion', 'Eliminada', 'Aprobado')
                   AND (
@@ -4346,7 +4390,7 @@ def get_alertas_tempranas_sla(lider: str = None, severidad: str = "todas", tipo:
                     (b.FECHA_COMPROMETIDA IS NULL AND DATEDIFF(day, b.FECHA_INSERT, GETDATE()) > 10)
                   )
                   AND (p.ID IS NOT NULL OR b.ID_Proyecto IS NOT NULL)
-                  AND (p.ID IS NULL OR p.Estado <> 'Atendido')
+                  AND (p.ID IS NULL OR p.Estado NOT IN ('Cerrado', 'Atendido'))
             """
             params_s = []
             if lider and lider.strip() and lider.strip().lower() not in ("todos", "todas", "all"):

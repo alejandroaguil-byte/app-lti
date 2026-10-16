@@ -249,7 +249,7 @@ def test_s3_creates_project_when_missing(app_user, backlog):
     assert created["cliente"] == "CLIENTE QA BACKLOG"
     assert created["numero_proyecto"] == "QA-777"
     assert created["lt_asignado"] == "Juan Barrera"
-    assert created["estado"] == "Generado"
+    assert created["estado"] == "En ejecucion"
     assert created["tipo_servicio"] == "Otros"
     assert created["detalle"] == "Asignado directamente desde el backlog de operaciones SGA."
     assert created["solicitante"] == "JUAN PM"
@@ -355,20 +355,44 @@ def test_s3_get_backlog_proyecto_unknown_number_is_none():
     assert db_module.get_backlog_proyecto(f"QA-NO-EXISTE-{int(time.time())}") is None
 
 
-def test_s3_update_proyecto_lt_changes_only_lt():
-    numero = f"QA-LTI-{int(time.time())}"
-    created = db_module.create_solicitud_lti(
-        cliente="CLIENTE QA LTI", numero_proyecto=numero, lt_asignado=None,
-        fecha_solicitud="2026-10-16", detalle="Detalle QA LTI", solicitante="PM QA",
-    )
-    assert created["success"], created
-    before = db_module.check_proyecto_exists(numero)
+def test_s3_update_proyecto_lt_changes_only_lt_and_estado(monkeypatch):
+    """Mocked connection (the shared DB is production): only LT_Asignado and the Generado -> En ejecucion step are written."""
+    executed = []
 
-    updated = db_module.update_proyecto_lt(before["ID"], "Juan Barrera")
+    class _Cursor:
+        def __enter__(self):
+            return self
 
-    # Stored dbo.Proyectos columns (get_proyecto_by_id derives Solicitante from the backlog)
-    after = db_module.check_proyecto_exists(numero)
+        def __exit__(self, *args):
+            return False
+
+        def execute(self, sql, params=None):
+            executed.append((" ".join(sql.split()), params))
+
+    class _Conn:
+        commits = 0
+
+        def cursor(self):
+            return _Cursor()
+
+        def commit(self):
+            _Conn.commits += 1
+
+        def rollback(self):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(db_module, "get_db_connection", lambda: _Conn())
+    monkeypatch.setattr(db_module, "get_proyecto_by_id", lambda pid: {"ID": pid, "LT_Asignado": "Juan Barrera"})
+
+    updated = db_module.update_proyecto_lt(55, "Juan Barrera")
+
     assert updated["LT_Asignado"] == "Juan Barrera"
-    assert after["LT_Asignado"] == "Juan Barrera"
-    for col in ("ID", "Cliente", "Numero_Proyecto", "Estado", "Detalle", "Comentario", "Tipo_Servicio", "Creado", "Solicitante"):
-        assert after[col] == before[col], col
+    assert executed == [(
+        "UPDATE dbo.Proyectos SET LT_Asignado = %s, "
+        "Estado = CASE WHEN Estado = 'Generado' THEN 'En ejecucion' ELSE Estado END WHERE ID = %s",
+        ("Juan Barrera", 55),
+    )]
+    assert _Conn.commits == 1
