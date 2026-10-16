@@ -151,6 +151,12 @@ Diseñada con la identidad visual corporativa de Claro Chile (cabecera instituci
     - **Estandarización de Identidad Institucional PCDI**: Firma, membretes y plantillas homologadas bajo la denominación oficial **PCDI • Claro Chile / VTR** (sustituyendo "Dirección de Operaciones TI").
     - **Plantillas HTML Corporativas HALO**: Diseño institucional con estilos CSS inline compatibles con Outlook desktop y web, header Rojo Claro `#B52217`, acentos Teal `#0097A9`, cajas de alerta `#FDEDEA` / `#DA291C` y enlaces directos de gestión en el portal.
 
+13. **Asignación Directa de LTI e Interfaz HALO Simplificada (v1.9.0)**:
+    - **Asignación desde el backlog**: botón **Asignar LTI** en Búsqueda → Solots (`POST /api/backlog/asignar-lti`); crea el proyecto en `dbo.Proyectos` si no existe o solo cambia su LTI.
+    - **Asignadores autorizados**: `alejandro.aguilar` y `pablo.castillo` siempre pueden asignar LTI, sin importar su rol (ver sección RBAC).
+    - **Interfaz simplificada**: navegación con 4 módulos, iconos de línea sin emojis, tablero con 4 KPI y alertas SLA agrupadas por proyecto.
+    - **Protección de datos**: redirección de correos en desarrollo (`EMAIL_REDIRECT_TO`), sin correos para proyectos QA/TEST y pruebas que solo limpian sus propios datos. Detalle en [RELEASE_v1.9.0.md](RELEASE_v1.9.0.md).
+
 ---
 
 ## 🛠️ Stack Tecnológico
