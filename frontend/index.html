@@ -724,6 +724,7 @@
                       <th>Producto</th>
                       <th>Servicio</th>
                       <th>Asignado</th>
+                      <th>Acción</th>
                     </tr>
                   </thead>
                   <tbody id="direct-solots-table-body"></tbody>
@@ -1702,6 +1703,69 @@
     </div>
 
     <!-- ====================================================================
+         e2) MODAL DE ASIGNACIÓN DE LTI DESDE EL BACKLOG DE OPERACIONES
+         ==================================================================== -->
+    <div id="assign-lti-modal" class="modal-backdrop" style="display: none;">
+      <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modal-assign-lti-title">
+
+        <div class="modal-header">
+          <div class="modal-header-brand">
+            <div class="modal-icon-edit"><i class="ui-icon-slot" data-icon="edit" data-icon-size="22"></i></div>
+            <div>
+              <h3 id="modal-assign-lti-title" class="modal-title">Asignar LTI</h3>
+              <p class="modal-subtitle">Si el proyecto no está en Proyectos, se crea con estado Generado</p>
+            </div>
+          </div>
+          <button type="button" class="modal-close-btn" id="btn-close-assign-lti-modal-icon" aria-label="Cerrar modal">&times;</button>
+        </div>
+
+        <div id="assign-lti-error-alert" class="solicitud-alert-banner alert-danger" style="display: none; margin: 1rem 1.5rem 0 1.5rem;">
+          <div class="alert-icon"><i class="ui-icon-slot" data-icon="x-circle" data-icon-size="20"></i></div>
+          <div class="alert-content">
+            <div class="alert-title">No se pudo asignar el LTI</div>
+            <div class="alert-description" id="assign-lti-error-desc"></div>
+          </div>
+        </div>
+
+        <div class="modal-body">
+          <form id="assign-lti-form" onsubmit="event.preventDefault();">
+            <div class="solicitud-form-grid">
+              <div class="form-group">
+                <label class="form-label" for="assign-lti-nro">N° de Proyecto</label>
+                <div class="input-plain">
+                  <input type="text" id="assign-lti-nro" class="form-input input-readonly" disabled readonly>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="assign-lti-cliente">Cliente</label>
+                <div class="input-plain">
+                  <input type="text" id="assign-lti-cliente" class="form-input input-readonly" disabled readonly>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="assign-lti-lider">Líder TI <span class="form-required">*</span></label>
+                <div class="input-plain">
+                  <select id="assign-lti-lider" class="form-select" required>
+                    <option value="">— Selecciona un Líder TI —</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </form>
+        </div>
+
+        <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+          <button type="button" id="btn-cancel-assign-lti-modal" class="btn btn-secondary">Cancelar</button>
+          <button type="button" id="btn-save-assign-lti-modal" class="btn btn-primary btn-execute">
+            <span id="assign-lti-modal-spinner" class="spinner-inline" style="display: none;"></span>
+            <span>Asignar</span>
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ====================================================================
          f) MODAL DE CONFIRMACIÓN DE ELIMINACIÓN
          ==================================================================== -->
     <div id="delete-project-modal" class="modal-backdrop" style="display: none;">
@@ -2068,6 +2132,6 @@
   <!-- Scripts -->
   <script src="js/auth.js?v=6.0"></script>
   <script src="js/icons.js?v=9.4"></script>
-  <script src="js/app.js?v=9.4"></script>
+  <script src="js/app.js?v=9.5"></script>
 </body>
 </html>

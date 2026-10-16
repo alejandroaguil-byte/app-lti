@@ -2038,6 +2038,24 @@ const App = {
       });
     }
 
+    // Assign LTI from backlog (Busqueda > Solots)
+    const directSolotsBody = document.getElementById('direct-solots-table-body');
+    if (directSolotsBody) {
+      directSolotsBody.addEventListener('click', (e) => {
+        const btn = e.target.closest('.btn-assign-lti');
+        if (btn) this.openAssignLtiModal(btn.dataset.nro, btn.dataset.cliente);
+      });
+    }
+    document.getElementById('btn-close-assign-lti-modal-icon')?.addEventListener('click', () => this.closeAssignLtiModal());
+    document.getElementById('btn-cancel-assign-lti-modal')?.addEventListener('click', () => this.closeAssignLtiModal());
+    document.getElementById('btn-save-assign-lti-modal')?.addEventListener('click', () => this.submitAssignLtiForm());
+    const assignLtiModal = document.getElementById('assign-lti-modal');
+    if (assignLtiModal) {
+      assignLtiModal.addEventListener('click', (e) => {
+        if (e.target === assignLtiModal) this.closeAssignLtiModal();
+      });
+    }
+
     // Edit Project Modal Events
     const btnCloseEditIcon = document.getElementById('btn-close-edit-modal-icon');
     if (btnCloseEditIcon) {
@@ -3222,7 +3240,7 @@ const App = {
   renderDirectSolots(list) {
     const tbody = document.getElementById('direct-solots-table-body');
     if (!list || list.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="12" class="empty-state"><p>No se encontraron Solots coincidentes.</p></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="13" class="empty-state"><p>No se encontraron Solots coincidentes.</p></td></tr>`;
       return;
     }
     tbody.innerHTML = list.map(s => `
@@ -3241,6 +3259,9 @@ const App = {
         <td>${this.escapeHtml(s.PRODUCTO || '-')}</td>
         <td>${this.escapeHtml(s.SERVICIO || '-')}</td>
         <td>${this.escapeHtml(s.ASIGNADO_OTP || '-')}</td>
+        <td>
+          ${s.NRO_PROYECTO ? `<button type="button" class="btn btn-primary btn-sm btn-assign-lti" data-nro="${this.escapeHtml(s.NRO_PROYECTO)}" data-cliente="${this.escapeHtml(s.CLI_CLIENTE || '')}">Asignar LTI</button>` : '-'}
+        </td>
       </tr>
     `).join('');
   },
@@ -5049,6 +5070,75 @@ const App = {
   closeEditProjectModal() {
     const modal = document.getElementById('edit-project-modal');
     if (modal) modal.style.display = 'none';
+  },
+
+  // --------------------------------------------------------------------------
+  // ASIGNACIÓN DE LTI DESDE EL BACKLOG DE OPERACIONES (Búsqueda > Solots)
+  // --------------------------------------------------------------------------
+  async openAssignLtiModal(nroProyecto, cliente) {
+    if (!this.lideresList || this.lideresList.length === 0) {
+      await this.loadLideres();
+    }
+    document.getElementById('assign-lti-nro').value = nroProyecto || '';
+    document.getElementById('assign-lti-cliente').value = cliente || '';
+
+    const select = document.getElementById('assign-lti-lider');
+    select.innerHTML = '<option value="">— Selecciona un Líder TI —</option>';
+    (this.lideresList || []).forEach(lt => {
+      const opt = document.createElement('option');
+      opt.value = lt;
+      opt.textContent = lt;
+      select.appendChild(opt);
+    });
+
+    document.getElementById('assign-lti-error-alert').style.display = 'none';
+    document.getElementById('assign-lti-modal').style.display = 'flex';
+  },
+
+  closeAssignLtiModal() {
+    const modal = document.getElementById('assign-lti-modal');
+    if (modal) modal.style.display = 'none';
+  },
+
+  async submitAssignLtiForm() {
+    const nroProyecto = document.getElementById('assign-lti-nro').value.trim();
+    const lider = document.getElementById('assign-lti-lider').value;
+    const errAlert = document.getElementById('assign-lti-error-alert');
+    const errDesc = document.getElementById('assign-lti-error-desc');
+    const btn = document.getElementById('btn-save-assign-lti-modal');
+    const spinner = document.getElementById('assign-lti-modal-spinner');
+
+    if (!lider) {
+      errAlert.style.display = 'flex';
+      errDesc.textContent = 'Selecciona un Líder TI.';
+      return;
+    }
+
+    errAlert.style.display = 'none';
+    btn.disabled = true;
+    spinner.style.display = 'inline-block';
+
+    try {
+      const res = await Auth.fetchWithAuth('/api/backlog/asignar-lti', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ numero_proyecto: nroProyecto, lt_asignado: lider })
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        throw new Error(result.detail || result.message || 'Error al asignar el LTI');
+      }
+
+      this.closeAssignLtiModal();
+      this.showToast(result.message, 'success');
+      await Promise.all([this.loadProjects(), this.loadKPIs()]);
+    } catch (err) {
+      errAlert.style.display = 'flex';
+      errDesc.textContent = err.message;
+    } finally {
+      btn.disabled = false;
+      spinner.style.display = 'none';
+    }
   },
 
   async submitEditProjectForm() {

@@ -283,8 +283,14 @@ El token JWT del Portal define la capacidad de escritura de la sesión:
 - **Portal `"operador"` (o Super Admin `adminLevel >= 2`):** Permite ejecutar operaciones según el rol registrado en App LTI (`ADMIN` o `LTI`), habilitando edición de proyectos, creación de tickets Service Manager y gestión de solicitudes.
 - **Portal `"lectura"` o sin asignación:** Restringe forzosamente la sesión al perfil **`PM` (Solo Lectura / Solicitud LTI)**, impidiendo cualquier acción de escritura o acceso al mantenedor de usuarios, independientemente del rol local.
 - **Bloqueo Local:** Si el usuario tiene `activo = 0` en `dbo.App_Usuarios`, el backend deniega el acceso con `403 Forbidden`.
+- **Asignadores autorizados (`LTI_ASSIGNER_USERNAMES` en `backend/config.py`):** `alejandro.aguilar` y `pablo.castillo` nunca quedan por debajo del rol `LTI`. Si el Portal (`"lectura"`) o el rol local los dejaría como `PM`, su rol efectivo pasa a `LTI` para que siempre puedan asignar LTI. Siguen necesitando acceso en el Portal y estar activos.
 
-### 3. Centralización de Gestión de Identidades
+### 3. Asignación de LTI a Proyectos
+- **Desde Proyectos:** menú "⋯" → **Editar** → "LT Asignado" (`PUT /api/proyectos/{id}`). Cubre las solicitudes que crean los PM.
+- **Desde Búsqueda → Solots (`CT_BACKLOG_OPERACIONES2`):** botón **Asignar LTI** en cada fila (`POST /api/backlog/asignar-lti`, roles `LTI`/`ADMIN`). Si el proyecto ya existe en `dbo.Proyectos` solo cambia `LT_Asignado`; si no existe, se crea con el cliente y el PM del backlog y estado `Generado`. La tabla del backlog nunca se modifica.
+- En ambos casos, si el proyecto no tenía LTI se envía el correo de asignación.
+
+### 4. Centralización de Gestión de Identidades
 - **Alta de cuentas y contraseñas:** Centralizadas al 100% en el Portal de Acceso. App LTI no almacena `password_hash` ni expone formularios de creación de cuentas o reseteo de claves.
 - **Mantenedor Local de App LTI (`👥 Usuarios`):** Exclusivo para administradores locales, permitiendo asignar el rol del negocio (`PM`, `LTI`, `ADMIN`), vincular el Líder TI responsable (`lt_asignado`) y alternar el estado activo/bloqueado.
 
