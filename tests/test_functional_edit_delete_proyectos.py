@@ -42,7 +42,7 @@ def helper_login(page: Page, username: str = "alejandro.aguilar", password: str 
     page.wait_for_selector("#app-view", state="visible", timeout=25000)
     page.wait_for_function("() => window.App && window.App.isInitialized === true", timeout=25000)
     page.wait_for_selector("#projects-table-body tr:not(:has-text('Cargando proyectos'))", timeout=15000)
-    page.wait_for_selector("#filter-estado-sp option[value='Atendido']", state="attached", timeout=10000)
+    page.wait_for_selector("#filter-estado-sp option[value='Cerrado']", state="attached", timeout=10000)
     page.wait_for_selector("#filter-lt option[value='Alejandro Aguilar']", state="attached", timeout=10000)
 
 
@@ -105,7 +105,7 @@ def test_api_put_proyecto_valido(auth_token):
     payload = {
         "cliente": "CLIENTE MODIFICADO QA SA",
         "lt_asignado": "Luis Tiznado",
-        "estado": "En revision",
+        "estado": "En ejecucion",
         "tipo_servicio": "Virtual Datacenter (VDC)",
         "detalle": "Detalle técnico modificado exitosamente.",
         "comentario": "Comentario de revisión técnica."
@@ -118,10 +118,35 @@ def test_api_put_proyecto_valido(auth_token):
     data = body.get("data") or {}
     assert data.get("Cliente") == "CLIENTE MODIFICADO QA SA"
     assert data.get("LT_Asignado") == "Luis Tiznado"
-    assert data.get("Estado") == "En revision"
+    assert data.get("Estado") == "En ejecucion"
     assert data.get("Tipo_Servicio") == "Virtual Datacenter (VDC)"
     assert data.get("Detalle") == "Detalle técnico modificado exitosamente."
     assert data.get("Comentario") == "Comentario de revisión técnica."
+
+
+def test_api_put_proyecto_cambio_a_revision_o_cierre_exige_nota(auth_token):
+    """API-01b: Pasar a 'En revisión' o 'Cerrado' sin nota responde 400 y no modifica el proyecto."""
+    proj = create_test_project_in_db("QA-TEST-API-NOTA")
+    proj_id = proj["ID"]
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    base = {"cliente": "CLIENTE QA", "lt_asignado": "Alejandro Aguilar", "detalle": "Detalle válido"}
+
+    res = requests.put(f"{BASE_URL}/api/proyectos/{proj_id}", headers=headers, json={**base, "estado": "En revision"})
+    assert res.status_code == 400
+    assert res.json()["detail"] == "Debe documentar el motivo para pasar el proyecto a 'En revisión'"
+
+    res = requests.put(f"{BASE_URL}/api/proyectos/{proj_id}", headers=headers,
+                       json={**base, "estado": "Cerrado", "nota_estado": "   "})
+    assert res.status_code == 400
+    assert res.json()["detail"] == "Debe documentar la información de cierre para pasar el proyecto a 'Cerrado'"
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT Estado FROM dbo.Proyectos WHERE ID = %s", (proj_id,))
+            assert cursor.fetchone()["Estado"] == "Generado"
+    finally:
+        conn.close()
 
 
 def test_api_put_proyecto_campos_obligatorios_vacios(auth_token):
@@ -283,7 +308,7 @@ def test_e2e_02_open_and_populate_edit_modal(page: Page):
 def test_e2e_03_full_edit_flow_from_table(page: Page):
     """
     E2E-03: Flujo Completo de Edición y Persistencia desde la Tabla.
-    Modificar Cliente, LT Asignado, Estado a 'Atendido', Detalle y Comentario -> Guardar Cambios.
+    Modificar Cliente, LT Asignado, Estado a 'En ejecución', Detalle y Observaciones -> Guardar Cambios.
     Verificar cierre de modal, Toast de éxito, actualización de la fila y persistencia en MSSQL.
     """
     proj = create_test_project_in_db("QA-TEST-E2E-03")
@@ -302,11 +327,11 @@ def test_e2e_03_full_edit_flow_from_table(page: Page):
     # Modificar valores
     nuevo_cliente = f"CLIENTE MODIFICADO TEST E2E {int(time.time())}"
     nuevo_detalle = "Nuevo detalle técnico modificado vía Playwright E2E."
-    nuevo_comentario = "Proyecto atendido y verificado por Líder TI."
+    nuevo_comentario = "Seguimiento verificado por Líder TI."
 
     page.fill("#edit-project-cliente", nuevo_cliente)
     page.select_option("#edit-project-lt-asignado", "Alejandro Aguilar")
-    page.select_option("#edit-project-estado", "Atendido")
+    page.select_option("#edit-project-estado", "En ejecucion")
     page.select_option("#edit-project-tipo-servicio", "Hosting Virtual")
     page.fill("#edit-project-detalle", nuevo_detalle)
     page.fill("#edit-project-comentario", nuevo_comentario)
@@ -330,7 +355,7 @@ def test_e2e_03_full_edit_flow_from_table(page: Page):
             row = cursor.fetchone()
             assert row is not None
             assert row["Cliente"] == nuevo_cliente
-            assert row["Estado"] == "Atendido"
+            assert row["Estado"] == "En ejecucion"
             assert row["Detalle"] == nuevo_detalle
             assert row["Comentario"] == nuevo_comentario
             assert row["Tipo_Servicio"] == "Hosting Virtual"
@@ -373,14 +398,14 @@ def test_e2e_04_edit_from_drilldown_view(page: Page):
 
     nuevo_cliente = f"CLIENTE DRILLDOWN LIVE EDIT {int(time.time())}"
     page.fill("#edit-project-cliente", nuevo_cliente)
-    page.select_option("#edit-project-estado", "En revision")
+    page.select_option("#edit-project-estado", "En ejecucion")
     page.click("#btn-save-edit-modal")
 
     expect(page.locator("#edit-project-modal")).to_be_hidden(timeout=10000)
 
     # Verificar actualización en vivo en Drill Down Header y Resumen
     expect(page.locator("#dd-client-title")).to_contain_text(nuevo_cliente, timeout=10000)
-    expect(page.locator("#dd-status")).to_contain_text("En revision", timeout=10000)
+    expect(page.locator("#dd-status")).to_contain_text("En ejecución", timeout=10000)
     expect(page.locator("#summary-content")).to_contain_text(nuevo_cliente, timeout=10000)
 
 

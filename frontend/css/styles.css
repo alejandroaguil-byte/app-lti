@@ -5375,3 +5375,270 @@ button, input, select, textarea, optgroup {
   font-size: 0.76rem;
   color: var(--text-muted);
 }
+
+/* ==========================================================================
+   ESTADOS, BITÁCORA, VISIBILIDAD Y TOOLTIPS DE PROYECTOS
+   ========================================================================== */
+:root {
+  --tooltip-bg: #1F2430;
+  --tooltip-text: #F4F5F7;
+  --tooltip-title: #FFFFFF;
+  --tooltip-border: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="dark"] {
+  --tooltip-bg: #26334D;
+  --tooltip-text: #E2E8F0;
+  --tooltip-title: #FFFFFF;
+  --tooltip-border: #3B4C6B;
+}
+
+/* Tooltips de las tarjetas KPI (hover y foco de teclado) */
+.kpi-card {
+  position: relative;
+}
+
+.kpi-card:hover,
+.kpi-card:focus-visible {
+  z-index: 40;
+}
+
+.kpi-card:focus-visible {
+  outline: 2px solid var(--halo-teal);
+  outline-offset: 2px;
+}
+
+.kpi-tooltip {
+  position: absolute;
+  top: calc(100% + 12px);
+  left: 50%;
+  width: max-content;
+  max-width: 280px;
+  padding: 0.65rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  background-color: var(--tooltip-bg);
+  color: var(--tooltip-text);
+  border: 1px solid var(--tooltip-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  font-weight: 400;
+  text-align: left;
+  white-space: normal;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-50%, 6px);
+  transition: opacity 0.18s ease, transform 0.18s ease, visibility 0s linear 0.18s;
+  z-index: 50;
+}
+
+.kpi-tooltip::before {
+  content: "";
+  position: absolute;
+  top: -5px;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  background-color: var(--tooltip-bg);
+  border-top: 1px solid var(--tooltip-border);
+  border-left: 1px solid var(--tooltip-border);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.kpi-tooltip-title {
+  color: var(--tooltip-title);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.kpi-card:hover .kpi-tooltip,
+.kpi-card:focus-visible .kpi-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+  transition: opacity 0.18s ease, transform 0.18s ease, visibility 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kpi-tooltip,
+  .kpi-card:hover .kpi-tooltip,
+  .kpi-card:focus-visible .kpi-tooltip {
+    transition: none;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* Filtro de Líder TI bloqueado */
+.form-select.is-locked,
+.form-select:disabled.is-locked {
+  cursor: not-allowed;
+  opacity: 0.85;
+}
+
+/* Grupo colapsable (nota de revisión / cierre) */
+.collapse-group {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  margin-bottom: -1.25rem;
+  transition: grid-template-rows 0.25s ease, opacity 0.2s ease, margin-bottom 0.25s ease, visibility 0s linear 0.25s;
+}
+
+.collapse-group.is-open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+  margin-bottom: 0;
+  transition: grid-template-rows 0.25s ease, opacity 0.2s ease, margin-bottom 0.25s ease, visibility 0s;
+}
+
+.collapse-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .collapse-group,
+  .collapse-group.is-open {
+    transition: none;
+  }
+}
+
+.nota-estado-box {
+  padding: 1rem;
+  background-color: var(--bg-surface-secondary);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--halo-teal);
+  border-radius: var(--radius-md);
+}
+
+.nota-evidencias-label {
+  margin-top: 0.85rem;
+}
+
+.form-error-text {
+  margin-top: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--status-danger-text);
+}
+
+/* Pestaña Bitácora */
+.bitacora-form-card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.bitacora-form-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.bitacora-form-files {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.bitacora-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.bitacora-entry {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 0.9rem 1.1rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.bitacora-entry-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.bitacora-author {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.bitacora-date {
+  color: var(--text-secondary);
+}
+
+.bitacora-transition {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.bitacora-text {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-primary);
+}
+
+.bitacora-adjuntos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+}
+
+.bitacora-adjunto {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.65rem;
+  background-color: var(--bg-surface-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-full);
+  color: var(--halo-teal);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.bitacora-adjunto:hover,
+.bitacora-adjunto:focus-visible {
+  border-color: var(--halo-teal);
+  background-color: var(--status-info-bg);
+  outline: none;
+}
+
+.bitacora-adjunto-size {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.bitacora-empty {
+  text-align: center;
+  padding: 2rem 1rem;
+  color: var(--text-muted);
+  font-style: italic;
+  background-color: var(--bg-surface);
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-md);
+}

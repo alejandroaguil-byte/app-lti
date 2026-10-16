@@ -5,18 +5,20 @@ Documento de Referencia: SPECS_FILTRO_ESTADOS_SHAREPOINT.md
 
 Casos de Prueba:
 - Backend / API Tests:
-  - TC-EST-01: Catálogo Canónico Completo en /api/estados (['Generado', 'En revision', 'Atendido'])
+  - TC-EST-01: Catálogo Canónico Completo en /api/estados (['Generado', 'En ejecucion', 'En revision', 'Cerrado'])
   - TC-EST-02: Control RBAC en /api/estados (PM -> 403, ADMIN/LTI -> 200)
   - TC-EST-03: Filtrado por Estado 'Generado' (/api/proyectos?estado_sp=Generado)
   - TC-EST-04: Filtrado por Estado 'En revision' (/api/proyectos?estado_sp=En+revision)
-  - TC-EST-05: Filtrado por Estado 'Atendido' (/api/proyectos?estado_sp=Atendido)
+  - TC-EST-05: Filtrado por Estado 'Cerrado' (/api/proyectos?estado_sp=Cerrado)
+  - TC-EST-05b: El filtro 'Cerrado' incluye proyectos con el estado legado 'Atendido'
+  - TC-EST-05c: Filtrado por Estado 'En ejecucion'
   - TC-EST-06: Comodín Todos los Estados (/api/proyectos)
   - TC-EST-07: Resiliencia de get_estados_list() ante excepción en consulta SGA
 - Frontend / Playwright E2E Tests:
   - TC-E2E-01: Renderizado del selector #filter-estado-sp con las 4 opciones canónicas
   - TC-E2E-02: Filtrado Reactivo al Seleccionar 'Generado'
   - TC-E2E-03: Filtrado Reactivo al Seleccionar 'En revision'
-  - TC-E2E-04: Filtrado Reactivo al Seleccionar 'Atendido'
+  - TC-E2E-04: Filtrado Reactivo al Seleccionar 'Cerrado'
   - TC-E2E-05: Fallback Defensivo ante Error de Red en /api/estados
   - TC-E2E-06: Preservación de Filtro al Conmutar Módulos
 """
@@ -56,11 +58,11 @@ def helper_login(page: Page, username: str = "alejandro.aguilar", password: str 
     page.wait_for_selector("#projects-table", state="visible", timeout=10000)
     page.wait_for_selector("#projects-table-body tr", state="visible", timeout=10000)
     page.wait_for_selector("#projects-table-body tr:not(:has-text('Cargando proyectos'))", timeout=10000)
-    page.wait_for_selector("#filter-estado-sp option[value='Atendido']", state="attached", timeout=10000)
+    page.wait_for_selector("#filter-estado-sp option[value='Cerrado']", state="attached", timeout=10000)
 
 
 def create_test_project_with_state(estado: str, prefix: str = "QA-TEST-EST") -> dict:
-    """Crea un proyecto de prueba con un estado específico ('Generado', 'En revision', 'Atendido')."""
+    """Crea un proyecto de prueba con un estado específico ('Generado', 'En ejecucion', 'En revision', 'Cerrado' o el legado 'Atendido')."""
     unique_suffix = f"{int(time.time() * 1000) % 10000000}-{uuid.uuid4().hex[:6]}"
     res = create_solicitud_lti(
         cliente=f"CLIENTE PRUEBA QA ESTADO {unique_suffix}",
@@ -99,7 +101,7 @@ def create_test_project_with_state(estado: str, prefix: str = "QA-TEST-EST") -> 
 def test_tc_est_01_canonical_estados_endpoint(auth_token):
     """
     TC-EST-01: Catálogo Canónico Completo en /api/estados
-    Verifica que la API retorne exactamente ['Generado', 'En revision', 'Atendido'] en ese orden.
+    Verifica que la API retorne exactamente ['Generado', 'En ejecucion', 'En revision', 'Cerrado'] en ese orden.
     """
     headers = {"Authorization": f"Bearer {auth_token}"}
     resp = requests.get(f"{BASE_URL}/api/estados", headers=headers, timeout=5)
@@ -107,7 +109,7 @@ def test_tc_est_01_canonical_estados_endpoint(auth_token):
     data = resp.json()
 
     assert "estados_sharepoint" in data
-    assert data["estados_sharepoint"] == ["Generado", "En revision", "Atendido"]
+    assert data["estados_sharepoint"] == ["Generado", "En ejecucion", "En revision", "Cerrado"]
     assert "estados_sga" in data
     assert isinstance(data["estados_sga"], list)
 
@@ -137,7 +139,7 @@ def test_tc_est_02_rbac_estados_endpoint():
     })
     resp_lti = requests.get(f"{BASE_URL}/api/estados", headers={"Authorization": f"Bearer {lti_token}"}, timeout=5)
     assert resp_lti.status_code == 200
-    assert resp_lti.json()["estados_sharepoint"] == ["Generado", "En revision", "Atendido"]
+    assert resp_lti.json()["estados_sharepoint"] == ["Generado", "En ejecucion", "En revision", "Cerrado"]
 
     # 3. Token ADMIN
     admin_token = create_access_token({
@@ -148,7 +150,7 @@ def test_tc_est_02_rbac_estados_endpoint():
     })
     resp_admin = requests.get(f"{BASE_URL}/api/estados", headers={"Authorization": f"Bearer {admin_token}"}, timeout=5)
     assert resp_admin.status_code == 200
-    assert resp_admin.json()["estados_sharepoint"] == ["Generado", "En revision", "Atendido"]
+    assert resp_admin.json()["estados_sharepoint"] == ["Generado", "En ejecucion", "En revision", "Cerrado"]
 
 
 def test_tc_est_03_filter_by_estado_generado(auth_token):
@@ -181,19 +183,46 @@ def test_tc_est_04_filter_by_estado_en_revision(auth_token):
     assert any(p["ID"] == p2["id"] for p in projs)
 
 
-def test_tc_est_05_filter_by_estado_atendido(auth_token):
+def test_tc_est_05_filter_by_estado_cerrado(auth_token):
     """
-    TC-EST-05: Filtrado por Estado 'Atendido'
+    TC-EST-05: Filtrado por Estado 'Cerrado'
     """
-    p3 = create_test_project_with_state("Atendido")
+    p3 = create_test_project_with_state("Cerrado")
     headers = {"Authorization": f"Bearer {auth_token}"}
-    params = {"estado_sp": "Atendido", "search": p3["numero_proyecto"]}
+    params = {"estado_sp": "Cerrado", "search": p3["numero_proyecto"]}
     resp = requests.get(f"{BASE_URL}/api/proyectos", headers=headers, params=params, timeout=10)
     assert resp.status_code == 200
     projs = resp.json()
     assert len(projs) >= 1
-    assert all(p["Estado"] == "Atendido" for p in projs)
+    assert all(p["Estado"] == "Cerrado" for p in projs)
     assert any(p["ID"] == p3["id"] for p in projs)
+
+
+def test_tc_est_05b_cerrado_filter_includes_legacy_atendido(auth_token):
+    """
+    TC-EST-05b: El filtro 'Cerrado' también devuelve proyectos con el estado legado 'Atendido'
+    """
+    legacy = create_test_project_with_state("Atendido")
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    params = {"estado_sp": "Cerrado", "search": legacy["numero_proyecto"]}
+    resp = requests.get(f"{BASE_URL}/api/proyectos", headers=headers, params=params, timeout=10)
+    assert resp.status_code == 200
+    assert any(p["ID"] == legacy["id"] and p["Estado"] == "Atendido" for p in resp.json())
+
+
+def test_tc_est_05c_filter_by_estado_en_ejecucion(auth_token):
+    """
+    TC-EST-05c: Filtrado por Estado 'En ejecucion'
+    """
+    p4 = create_test_project_with_state("En ejecucion")
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    params = {"estado_sp": "En ejecucion", "search": p4["numero_proyecto"]}
+    resp = requests.get(f"{BASE_URL}/api/proyectos", headers=headers, params=params, timeout=10)
+    assert resp.status_code == 200
+    projs = resp.json()
+    assert len(projs) >= 1
+    assert all(p["Estado"] == "En ejecucion" for p in projs)
+    assert any(p["ID"] == p4["id"] for p in projs)
 
 
 def test_tc_est_06_wildcard_all_estados(auth_token):
@@ -203,7 +232,7 @@ def test_tc_est_06_wildcard_all_estados(auth_token):
     """
     p_gen = create_test_project_with_state("Generado")
     p_rev = create_test_project_with_state("En revision")
-    p_ate = create_test_project_with_state("Atendido")
+    p_ate = create_test_project_with_state("Cerrado")
 
     headers = {"Authorization": f"Bearer {auth_token}"}
     resp = requests.get(f"{BASE_URL}/api/proyectos", headers=headers, timeout=10)
@@ -225,7 +254,7 @@ def test_tc_est_07_resilience_on_db_exception():
     with patch("backend.db.get_db_connection") as mock_conn:
         mock_conn.side_effect = Exception("Simulated MSSQL Connection Failure for SGA")
         result = get_estados_list()
-        assert result["estados_sharepoint"] == ["Generado", "En revision", "Atendido"]
+        assert result["estados_sharepoint"] == ["Generado", "En ejecucion", "En revision", "Cerrado"]
         assert result["estados_sga"] == []
 
 
@@ -236,11 +265,12 @@ def test_tc_est_07_resilience_on_db_exception():
 def test_tc_e2e_01_filter_estado_sp_rendered_options(page: Page):
     """
     TC-E2E-01: Renderizado del Selector #filter-estado-sp
-    Verifica que el select contenga exactamente las 4 opciones requeridas:
+    Verifica que el select contenga exactamente las 5 opciones requeridas:
     - — Estado Sharepoint (Todos) — (value="")
     - Generado (value="Generado")
-    - En revision (value="En revision")
-    - Atendido (value="Atendido")
+    - En ejecución (value="En ejecucion")
+    - En revisión (value="En revision")
+    - Cerrado (value="Cerrado")
     """
     helper_login(page)
 
@@ -248,13 +278,14 @@ def test_tc_e2e_01_filter_estado_sp_rendered_options(page: Page):
     expect(select).to_be_visible()
 
     options = select.locator("option")
-    expect(options).to_have_count(4)
+    expect(options).to_have_count(5)
 
     expected_options = [
         {"value": "", "text": "— Estado Sharepoint (Todos) —"},
         {"value": "Generado", "text": "Generado"},
-        {"value": "En revision", "text": "En revision"},
-        {"value": "Atendido", "text": "Atendido"},
+        {"value": "En ejecucion", "text": "En ejecución"},
+        {"value": "En revision", "text": "En revisión"},
+        {"value": "Cerrado", "text": "Cerrado"},
     ]
 
     for idx, exp in enumerate(expected_options):
@@ -308,19 +339,24 @@ def test_tc_e2e_03_filter_reactive_en_revision(page: Page):
 
     row = helper_filter_by_estado(page, p_rev["numero_proyecto"], "En revision")
     expect(row).to_be_visible(timeout=10000)
-    expect(row.locator(".badge", has_text="En revision")).to_be_visible(timeout=10000)
+    expect(row.locator(".badge", has_text="En revisión")).to_be_visible(timeout=10000)
 
 
-def test_tc_e2e_04_filter_reactive_atendido(page: Page):
+def test_tc_e2e_04_filter_reactive_cerrado(page: Page):
     """
-    TC-E2E-04: Filtrado Reactivo al Seleccionar 'Atendido'
+    TC-E2E-04: Filtrado Reactivo al Seleccionar 'Cerrado' (incluye el estado legado 'Atendido', que se muestra como Cerrado)
     """
+    p_cer = create_test_project_with_state("Cerrado")
     p_ate = create_test_project_with_state("Atendido")
     helper_login(page)
 
-    row = helper_filter_by_estado(page, p_ate["numero_proyecto"], "Atendido")
+    row = helper_filter_by_estado(page, p_cer["numero_proyecto"], "Cerrado")
     expect(row).to_be_visible(timeout=10000)
-    expect(row.locator(".badge", has_text="Atendido")).to_be_visible(timeout=10000)
+    expect(row.locator(".badge", has_text="Cerrado")).to_be_visible(timeout=10000)
+
+    row_legacy = helper_filter_by_estado(page, p_ate["numero_proyecto"], "Cerrado")
+    expect(row_legacy.locator(".badge", has_text="Cerrado")).to_be_visible(timeout=10000)
+    expect(row_legacy.locator(".badge", has_text="Atendido")).to_have_count(0)
 
 
 def test_tc_e2e_05_defensive_fallback_on_api_error(page: Page):
@@ -342,10 +378,11 @@ def test_tc_e2e_05_defensive_fallback_on_api_error(page: Page):
     expect(select).to_be_visible()
 
     options = select.locator("option")
-    expect(options).to_have_count(4)
+    expect(options).to_have_count(5)
     expect(options.nth(1)).to_have_text("Generado")
-    expect(options.nth(2)).to_have_text("En revision")
-    expect(options.nth(3)).to_have_text("Atendido")
+    expect(options.nth(2)).to_have_text("En ejecución")
+    expect(options.nth(3)).to_have_text("En revisión")
+    expect(options.nth(4)).to_have_text("Cerrado")
 
 
 def test_tc_e2e_06_filter_preservation_on_module_switch(page: Page):

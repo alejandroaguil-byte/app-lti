@@ -8,7 +8,7 @@
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   
   <!-- Pila Tipográfica Nativa del Portal HALO (sin dependencias externas) -->
-  <link rel="stylesheet" href="css/styles.css?v=9.4">
+  <link rel="stylesheet" href="css/styles.css?v=9.6">
 </head>
 <body>
 
@@ -261,36 +261,52 @@
         <section id="projects-list-section">
           <!-- KPI Metrics Grid (6 Tarjetas) -->
           <div class="kpi-grid">
-            <div class="kpi-card kpi-proyectos">
+            <div class="kpi-card kpi-proyectos" id="kpi-card-proyectos" tabindex="0" aria-describedby="kpi-tip-proyectos">
               <div class="kpi-icon"><i class="ui-icon-slot" data-icon="projects" data-icon-size="22"></i></div>
               <div>
                 <div class="kpi-value" id="kpi-val-proyectos">0</div>
                 <div class="kpi-title">PROYECTOS ASIGNADOS</div>
               </div>
+              <div class="kpi-tooltip" id="kpi-tip-proyectos" role="tooltip">
+                <strong class="kpi-tooltip-title">Proyectos asignados</strong>
+                <span>Total de proyectos dentro del filtro de Líder TI actual, en cualquier estado.</span>
+              </div>
             </div>
 
-            <div class="kpi-card kpi-en-curso">
+            <div class="kpi-card kpi-en-curso" id="kpi-card-en-curso" tabindex="0" aria-describedby="kpi-tip-en-curso">
               <div class="kpi-icon"><i class="ui-icon-slot" data-icon="activity" data-icon-size="22"></i></div>
               <div>
                 <div class="kpi-value" id="kpi-val-en-curso">0</div>
                 <div class="kpi-title">PROYECTOS EN CURSO</div>
               </div>
+              <div class="kpi-tooltip" id="kpi-tip-en-curso" role="tooltip">
+                <strong class="kpi-tooltip-title">Proyectos en curso</strong>
+                <span>Proyectos con trabajo activo: en ejecución (ya tienen Líder TI) o en revisión.</span>
+              </div>
             </div>
 
-            <div class="kpi-card kpi-pendientes kpi-card-clickable" id="kpi-card-pendientes" title="Hacer clic para filtrar proyectos sin Líder TI asignado" tabindex="0" role="button" aria-label="Filtrar proyectos pendientes de asignación" aria-pressed="false">
+            <div class="kpi-card kpi-pendientes kpi-card-clickable" id="kpi-card-pendientes" tabindex="0" role="button" aria-label="Filtrar proyectos pendientes de asignación" aria-pressed="false" aria-describedby="kpi-tip-pendientes">
               <div class="kpi-icon"><i class="ui-icon-slot" data-icon="clock" data-icon-size="22"></i></div>
               <div>
                 <div class="kpi-value" id="kpi-val-pendientes-asignar">0</div>
                 <div class="kpi-title">PENDIENTES DE ASIGNAR</div>
               </div>
               <span class="kpi-clickable-badge">Filtrar</span>
+              <div class="kpi-tooltip" id="kpi-tip-pendientes" role="tooltip">
+                <strong class="kpi-tooltip-title">Pendientes de asignar</strong>
+                <span>Solicitudes de PM que todavía no tienen Líder TI asignado. <span class="kpi-tooltip-extra">Haz clic para filtrarlas.</span></span>
+              </div>
             </div>
 
-            <div class="kpi-card kpi-efectividad">
+            <div class="kpi-card kpi-efectividad" id="kpi-card-efectividad" tabindex="0" aria-describedby="kpi-tip-efectividad">
               <div class="kpi-icon"><i class="ui-icon-slot" data-icon="trending-up" data-icon-size="22"></i></div>
               <div>
                 <div class="kpi-value" id="kpi-val-efectividad">0%</div>
                 <div class="kpi-title">EFECTIVIDAD</div>
+              </div>
+              <div class="kpi-tooltip" id="kpi-tip-efectividad" role="tooltip">
+                <strong class="kpi-tooltip-title">Efectividad</strong>
+                <span>Porcentaje de proyectos cerrados sobre el total del filtro actual.</span>
               </div>
             </div>
           </div>
@@ -308,8 +324,9 @@
                 <select id="filter-estado-sp" class="form-select" title="Estado en SharePoint">
                   <option value="">— Estado Sharepoint (Todos) —</option>
                   <option value="Generado">Generado</option>
-                  <option value="En revision">En revision</option>
-                  <option value="Atendido">Atendido</option>
+                  <option value="En ejecucion">En ejecución</option>
+                  <option value="En revision">En revisión</option>
+                  <option value="Cerrado">Cerrado</option>
                 </select>
               </div>
 
@@ -404,7 +421,7 @@
 
               <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
                 <div id="dd-status">
-                  <span class="badge badge-success">Atendido</span>
+                  <span class="badge badge-success">Cerrado</span>
                 </div>
                 <!-- Indicador de Salud Operacional (Controlado por Kill-Switch) -->
                 <div id="dd-health-status" style="display: none;"></div>
@@ -437,6 +454,9 @@
             <button class="tab-btn active" data-tab="summary">
               Resumen
             </button>
+            <button class="tab-btn" data-tab="bitacora" id="tab-btn-bitacora">
+              Bitácora <span class="tab-badge" id="tab-count-bitacora">0</span>
+            </button>
             <button class="tab-btn" data-tab="timeline" id="tab-btn-timeline">
               Historial <span class="tab-badge" id="tab-count-timeline">0</span>
             </button>
@@ -463,6 +483,23 @@
               </div>
             </div>
             <div id="summary-content"></div>
+          </div>
+
+          <!-- Tab: Bitácora (historia del proyecto y trabajo del LTI) -->
+          <div id="tab-pane-bitacora" class="tab-pane" style="display: none;">
+            <div class="bitacora-form-card">
+              <label class="form-label" for="bitacora-nuevo-texto">Registrar avance</label>
+              <textarea id="bitacora-nuevo-texto" class="form-textarea" rows="3" maxlength="20000" placeholder="Describe el trabajo realizado, acuerdos con el cliente, hitos o cualquier novedad del proyecto..."></textarea>
+              <div class="bitacora-form-row">
+                <div class="bitacora-form-files">
+                  <input type="file" id="bitacora-nuevo-archivos" class="form-input" multiple accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.msg,.eml,.zip,.txt,.csv" aria-describedby="bitacora-files-help">
+                  <span class="form-help-text" id="bitacora-files-help">Adjuntos opcionales. Máx. 9 MB por archivo. PDF, imágenes, Office, MSG, EML, ZIP, TXT, CSV.</span>
+                </div>
+                <button type="button" id="btn-bitacora-agregar" class="btn btn-primary">Agregar a la bitácora</button>
+              </div>
+              <div id="bitacora-form-error" class="form-error-text" role="alert" style="display: none;"></div>
+            </div>
+            <div id="bitacora-list" class="bitacora-list"></div>
           </div>
 
           <!-- Tab: Historial (cronología completa de eventos del proyecto) -->
@@ -658,7 +695,7 @@
             <span style="font-weight: 600;">Sugerencias rápidas:</span>
             <span class="quick-tag-chip" onclick="App.addSearchTag('Alejandro Aguilar')">+ Alejandro Aguilar</span>
             <span class="quick-tag-chip" onclick="App.addSearchTag('Generado')">+ Generado</span>
-            <span class="quick-tag-chip" onclick="App.addSearchTag('Atendido')">+ Atendido</span>
+            <span class="quick-tag-chip" onclick="App.addSearchTag('Cerrado')">+ Cerrado</span>
             <span class="quick-tag-chip" onclick="App.addSearchTag('2- En ejecucion')">+ 2- En ejecución</span>
             <span class="quick-tag-chip" onclick="App.addSearchTag('Erwin Sandoval')">+ Erwin Sandoval</span>
             <span class="quick-tag-chip" onclick="App.addSearchTag('Juan Barrera')">+ Juan Barrera</span>
@@ -1641,9 +1678,10 @@
                 </label>
                 <div class="input-plain">
                   <select id="edit-project-estado" class="form-select" required>
-                    <option value="Generado">Generado (En Curso / Asignado)</option>
-                    <option value="En revision">En revision (Evaluación Técnica)</option>
-                    <option value="Atendido">Atendido (Completado / Finalizado)</option>
+                    <option value="Generado">Generado (solicitud sin Líder TI)</option>
+                    <option value="En ejecucion">En ejecución (Líder TI asignado)</option>
+                    <option value="En revision">En revisión (en validación)</option>
+                    <option value="Cerrado">Cerrado (proyecto finalizado)</option>
                   </select>
                 </div>
                 <span class="form-help-text">Etapa actual en el ciclo de vida del proyecto.</span>
@@ -1666,6 +1704,22 @@
                 <span class="form-help-text">Clasificación técnica del servicio.</span>
               </div>
 
+              <!-- Nota obligatoria al pasar a En revisión / Cerrado -->
+              <div id="edit-project-nota-group" class="collapse-group full-width" aria-hidden="true">
+                <div class="collapse-inner">
+                  <div class="nota-estado-box">
+                    <label class="form-label" for="edit-project-nota-estado" id="edit-project-nota-label">
+                      Motivo de la revisión <span class="form-required">*</span>
+                    </label>
+                    <textarea id="edit-project-nota-estado" class="form-textarea" rows="4" maxlength="20000" placeholder=""></textarea>
+                    <label class="form-label nota-evidencias-label" for="edit-project-evidencias">Evidencias</label>
+                    <input type="file" id="edit-project-evidencias" class="form-input" multiple accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.msg,.eml,.zip,.txt,.csv" aria-describedby="edit-project-evidencias-help">
+                    <span class="form-help-text" id="edit-project-evidencias-help">Evidencias opcionales. Máx. 9 MB por archivo. PDF, imágenes, Office, MSG, EML, ZIP, TXT, CSV.</span>
+                    <div id="edit-project-evidencias-error" class="form-error-text" role="alert" style="display: none;"></div>
+                  </div>
+                </div>
+              </div>
+
               <!-- Fila 4: Detalle del Proyecto (Ancho Completo) -->
               <div class="form-group full-width">
                 <label class="form-label" for="edit-project-detalle">
@@ -1677,10 +1731,10 @@
               <!-- Fila 5: Comentarios de Cierre / Seguimiento (Ancho Completo) -->
               <div class="form-group full-width">
                 <label class="form-label" for="edit-project-comentario">
-                  Comentarios de Cierre / Observaciones
+                  Observaciones
                 </label>
-                <textarea id="edit-project-comentario" class="form-textarea" rows="3" placeholder="Ingresa notas de cierre, resolución técnica, números de ticket o detalles para entrega..."></textarea>
-                <span class="form-help-text">Recomendado al cambiar el estado a 'Atendido'.</span>
+                <textarea id="edit-project-comentario" class="form-textarea" rows="3" placeholder="Notas generales del proyecto, aclaraciones o datos de contexto..."></textarea>
+                <span class="form-help-text">Notas generales del proyecto. La información de cierre se registra al cambiar el estado a Cerrado.</span>
               </div>
 
             </div>
@@ -2132,6 +2186,6 @@
   <!-- Scripts -->
   <script src="js/auth.js?v=6.0"></script>
   <script src="js/icons.js?v=9.4"></script>
-  <script src="js/app.js?v=9.5"></script>
+  <script src="js/app.js?v=9.6"></script>
 </body>
 </html>

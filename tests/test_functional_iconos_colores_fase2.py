@@ -12,7 +12,7 @@ Matriz de Cobertura:
 - CP-COL-01: Ningún elemento visible usa violeta o índigo.
 - CP-COL-02: Los íconos de los KPI son neutros (todos del mismo gris).
 - CP-COL-03: Los números de proyecto no se muestran en rojo (tabla y detalle).
-- CP-COL-04: El estado informativo ("Generado") usa el teal de HALO, no azul.
+- CP-COL-04: El estado informativo ("En ejecución") usa el teal de HALO, no azul.
 - CP-COL-05: Cliente y solicitante de la tabla no van en negrita fuerte.
 
 Todas las pruebas son de solo lectura sobre la BD.
@@ -274,6 +274,12 @@ def test_col_04_info_status_uses_halo_teal(page: Page):
     page.locator("#nav-btn-solicitud-lti").click()
     badge_rgb = None
     page.locator("#nav-btn-projects").click()
+    # El estado informativo es "En ejecución": se dibuja una fila simulada para no depender de los datos de la BD
+    page.evaluate("""() => App.renderProjectsTable([{
+        ID: 9901, Cliente: 'CLIENTE FIXTURE', Numero_Proyecto: '000QA-FIX-9901', LT_Asignado: 'Erwin Sandoval',
+        Estado: 'En ejecucion', Detalle: 'Detalle', Creado: '2026-10-01 10:00:00', Solicitante: 'Corp1- Pm',
+        salud: {score: 'NEUTRAL', color: 'gray', label: 'Sin datos', motivos: ['Sin datos']}
+    }])""")
     badge = page.locator("#projects-table-body .badge-info").first
     expect(badge).to_be_visible(timeout=15000)
     badge_rgb = parse_rgb(badge.evaluate("el => getComputedStyle(el).color"))

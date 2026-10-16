@@ -20,7 +20,25 @@ if (window.HALO_CONFIG.ENABLE_ALERTS === undefined) {
   window.HALO_CONFIG.ENABLE_ALERTS = true;
 }
 
-const CANONICAL_ESTADOS_SHAREPOINT = ['Generado', 'En revision', 'Atendido'];
+const CANONICAL_ESTADOS_SHAREPOINT = ['Generado', 'En ejecucion', 'En revision', 'Cerrado'];
+
+// Estados de proyecto: valor almacenado, etiqueta visible y color de la insignia.
+// 'Atendido' es el estado legado de 'Cerrado'.
+const ESTADO_PROYECTO_INFO = {
+  'generado': { value: 'Generado', label: 'Generado', badge: 'badge-neutral' },
+  'en ejecucion': { value: 'En ejecucion', label: 'En ejecución', badge: 'badge-info' },
+  'en revision': { value: 'En revision', label: 'En revisión', badge: 'badge-warning' },
+  'cerrado': { value: 'Cerrado', label: 'Cerrado', badge: 'badge-success' },
+  'atendido': { value: 'Cerrado', label: 'Cerrado', badge: 'badge-success' }
+};
+
+// Adjuntos de bitácora: mismos límites que el servidor (nginx limita las peticiones a 10 MB)
+const ADJUNTOS_MAX_BYTES = 9 * 1024 * 1024;
+const ADJUNTOS_EXTENSIONES = ['pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'msg', 'eml', 'zip', 'txt', 'csv'];
+
+const MSG_NOTA_REVISION = "Debe documentar el motivo para pasar el proyecto a 'En revisión'";
+const MSG_NOTA_CIERRE = "Debe documentar la información de cierre para pasar el proyecto a 'Cerrado'";
+const MSG_SOLO_PROPIOS = 'Solo puedes ver los proyectos asignados a ti';
 
 const App = {
   currentProject: null,
@@ -33,6 +51,9 @@ const App = {
   projectsData: [],
   lideresList: [],
   estadosSharepoint: [],
+  currentBitacora: [],
+  _bitacoraRequestId: 0,
+  _editEstadoOriginal: null,
   activeTab: 'summary',
   activeDirectSearchTab: 'proyectos',
   currentModule: 'projects', // 'projects' | 'direct-search' | 'tickets' | 'solicitud-lti' | 'usuarios'
@@ -2072,6 +2093,32 @@ const App = {
       btnSaveEdit.addEventListener('click', () => this.submitEditProjectForm());
     }
 
+    const editEstadoSelect = document.getElementById('edit-project-estado');
+    if (editEstadoSelect) {
+      editEstadoSelect.addEventListener('change', () => this.updateEstadoNotaGroup());
+    }
+    const editEvidencias = document.getElementById('edit-project-evidencias');
+    if (editEvidencias) {
+      editEvidencias.addEventListener('change', () => this.handleAdjuntosSelected('edit-project-evidencias', 'edit-project-evidencias-error'));
+    }
+
+    // Bitácora: formulario de nueva entrada y descarga de adjuntos
+    const bitacoraFiles = document.getElementById('bitacora-nuevo-archivos');
+    if (bitacoraFiles) {
+      bitacoraFiles.addEventListener('change', () => this.handleAdjuntosSelected('bitacora-nuevo-archivos', 'bitacora-form-error'));
+    }
+    const btnBitacoraAdd = document.getElementById('btn-bitacora-agregar');
+    if (btnBitacoraAdd) {
+      btnBitacoraAdd.addEventListener('click', () => this.submitBitacoraEntry());
+    }
+    const bitacoraList = document.getElementById('bitacora-list');
+    if (bitacoraList) {
+      bitacoraList.addEventListener('click', (e) => {
+        const btn = e.target.closest('.bitacora-adjunto');
+        if (btn) this.downloadAdjunto(btn.dataset.adjuntoId, btn.dataset.adjuntoNombre);
+      });
+    }
+
     const editProjectModal = document.getElementById('edit-project-modal');
     if (editProjectModal) {
       editProjectModal.addEventListener('click', (e) => {
@@ -2476,6 +2523,10 @@ const App = {
     }
 
     this.applyTimelineState(false);
+    this.currentBitacora = [];
+    this.renderBitacoraList();
+    const bitacoraBadge = document.getElementById('tab-count-bitacora');
+    if (bitacoraBadge) bitacoraBadge.textContent = '0';
     this.switchTab('summary');
     this.loadProjectDetails(project.ID);
   },
@@ -2484,6 +2535,7 @@ const App = {
   // DATA LOADING (MODULE 1)
   // --------------------------------------------------------------------------
   async loadInitialData() {
+    this.applyProjectVisibility();
     await Promise.all([
       this.loadLideres(),
       this.loadEstados(),
@@ -2492,6 +2544,60 @@ const App = {
     ]);
     await this.loadProjects();
     this.isInitialized = true;
+  },
+
+  // --------------------------------------------------------------------------
+  // ESTADOS DE PROYECTO (catálogo, etiquetas y normalización)
+  // --------------------------------------------------------------------------
+  estadoProyectoInfo(raw) {
+    if (raw === null || raw === undefined) return null;
+    const key = String(raw).trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    return ESTADO_PROYECTO_INFO[key] || null;
+  },
+
+  // Valor almacenado del estado ('En ejecución' -> 'En ejecucion', 'Atendido' -> 'Cerrado'); null si no es de proyecto
+  normalizeEstado(raw) {
+    const info = this.estadoProyectoInfo(raw);
+    return info ? info.value : null;
+  },
+
+  // Etiqueta visible del estado; los valores desconocidos se muestran tal cual
+  estadoLabel(raw) {
+    const info = this.estadoProyectoInfo(raw);
+    if (info) return info.label;
+    return raw === null || raw === undefined ? '' : String(raw);
+  },
+
+  // --------------------------------------------------------------------------
+  // VISIBILIDAD DE PROYECTOS (solo alejandro.aguilar y pablo.castillo ven todo)
+  // --------------------------------------------------------------------------
+  isRestrictedUser() {
+    const user = Auth.getUser();
+    return !!user && user.ve_todos_proyectos !== true;
+  },
+
+  lockLtFilter(select, user) {
+    const lt = String((user && user.lt_asignado) || '').trim();
+    select.innerHTML = '';
+    const opt = document.createElement('option');
+    opt.value = lt;
+    opt.textContent = lt || 'Mis proyectos';
+    opt.selected = true;
+    select.appendChild(opt);
+    select.value = lt;
+    select.disabled = true;
+    select.classList.add('is-locked');
+    select.title = MSG_SOLO_PROPIOS;
+  },
+
+  applyProjectVisibility() {
+    const card = document.getElementById('kpi-card-pendientes');
+    if (!card || !this.isRestrictedUser()) return;
+    card.classList.remove('kpi-card-clickable', 'active-filter');
+    card.removeAttribute('role');
+    card.removeAttribute('aria-pressed');
+    card.removeAttribute('aria-label');
+    card.querySelectorAll('.kpi-clickable-badge, .kpi-tooltip-extra').forEach(el => el.remove());
   },
 
   async loadLideres() {
@@ -2521,13 +2627,13 @@ const App = {
           const opt = document.createElement('option');
           opt.value = lt;
           opt.textContent = lt;
-          if (user && user.lt_asignado === lt && user.rol !== 'ADMIN') {
-            opt.selected = true;
-          }
           select.appendChild(opt);
         });
 
-        if (user && user.rol === 'ADMIN') {
+        // Quienes no tienen visibilidad total quedan fijos en su propio Líder TI
+        if (this.isRestrictedUser()) {
+          this.lockLtFilter(select, user);
+        } else {
           allOption.selected = true;
         }
 
@@ -2573,7 +2679,7 @@ const App = {
       this.estadosSharepoint.forEach(est => {
         const opt = document.createElement('option');
         opt.value = est;
-        opt.textContent = est;
+        opt.textContent = this.estadoLabel(est);
         selectSp.appendChild(opt);
       });
 
@@ -2633,6 +2739,7 @@ const App = {
   },
 
   filterByUnassigned() {
+    if (this.isRestrictedUser()) return;
     const select = document.getElementById('filter-lt');
     if (select) {
       if (select.value === '__UNASSIGNED__') {
@@ -2652,6 +2759,7 @@ const App = {
   },
 
   updateKPIActiveState() {
+    if (this.isRestrictedUser()) return;
     const currentLt = document.getElementById('filter-lt')?.value || '';
     const kpiPendientesCard = document.getElementById('kpi-card-pendientes');
     if (kpiPendientesCard) {
@@ -2802,6 +2910,7 @@ const App = {
   async loadProjectDetails(projectId) {
     this.renderSummaryTab(this.currentProject);
     this.renderProjectTimeline(this.currentProject);
+    this.loadBitacora(projectId);
     this.loadTimeline(projectId);
     this.loadSolots(projectId);
     this.loadTickets(projectId);
@@ -2898,6 +3007,19 @@ const App = {
     track.innerHTML = timelineHtml;
   },
 
+  // Última entrada de cierre de la bitácora; para proyectos históricos cerrados usa Observaciones (Comentario)
+  renderCierreContent(p) {
+    const box = 'background: var(--bg-surface-secondary); padding: 0.75rem; border-radius: var(--radius-sm); font-size: 0.88rem; line-height: 1.4;';
+    const cierre = (this.currentBitacora || []).find(e => e.tipo === 'CIERRE');
+    if (cierre && String(cierre.texto || '').trim()) {
+      return `<p style="${box} border-left: 3px solid var(--status-success-text); white-space: pre-wrap;">${this.escapeHtml(cierre.texto)}</p>`;
+    }
+    if (p && this.normalizeEstado(p.Estado) === 'Cerrado' && p.Comentario && p.Comentario.trim()) {
+      return `<p style="${box} border-left: 3px solid var(--status-success-text); white-space: pre-wrap;">${this.escapeHtml(p.Comentario)}</p>`;
+    }
+    return `<p style="${box} color: var(--text-muted); font-style: italic;">Sin comentarios de cierre</p>`;
+  },
+
   renderSummaryTab(p) {
     const container = document.getElementById('summary-content');
     if (!container) return;
@@ -2958,10 +3080,7 @@ const App = {
           </div>
           <div style="margin-top: 1rem;">
             <span class="detail-label" style="display: block; margin-bottom: 0.3rem;">Comentarios de Cierre:</span>
-            ${(p.Estado && p.Estado.toLowerCase().trim() === 'atendido' && p.Comentario && p.Comentario.trim()) 
-              ? `<p style="background: var(--bg-surface-secondary); padding: 0.75rem; border-radius: var(--radius-sm); font-size: 0.88rem; line-height: 1.4; border-left: 3px solid var(--status-success-text); white-space: pre-wrap;">${this.escapeHtml(p.Comentario)}</p>`
-              : `<p style="background: var(--bg-surface-secondary); padding: 0.75rem; border-radius: var(--radius-sm); font-size: 0.88rem; line-height: 1.4; color: var(--text-muted); font-style: italic;">Sin comentarios de cierre</p>`
-            }
+            <div id="summary-cierre">${this.renderCierreContent(p)}</div>
           </div>
           ${(this.isHealthScoreActive() && p.salud) ? `
             <div class="health-summary-card summary-${p.salud.score === 'HEALTHY' ? 'healthy' : (p.salud.score === 'WARNING' ? 'warning' : (p.salud.score === 'CRITICAL' ? 'critical' : 'neutral'))}">
@@ -4939,7 +5058,12 @@ const App = {
     }
     const raw = String(status).trim();
     const s = raw.toLowerCase();
-    
+
+    const estadoInfo = this.estadoProyectoInfo(raw);
+    if (estadoInfo) {
+      return `<span class="badge ${estadoInfo.badge}">${this.escapeHtml(estadoInfo.label)}</span>`;
+    }
+
     if (s.includes('atendido') || s.includes('cerrado') || s.includes('completado') || s.includes('ejecutada') || s.includes('closed')) {
       return `<span class="badge badge-success">${this.escapeHtml(raw)}</span>`;
     } else if (s.includes('generado') || s.includes('en ejecucion') || s.includes('en curso') || s.includes('en revision') || s.includes('en revisión')) {
@@ -4980,7 +5104,7 @@ const App = {
           `"${(this.formatNumeroProyecto(p.Numero_Proyecto) || '').replace(/"/g, '""')}"`,
           `"${(p.LT_Asignado || '').replace(/"/g, '""')}"`,
           `"${(this.formatSolicitante(p.Solicitante) || '').replace(/"/g, '""')}"`,
-          `"${(p.Estado || '').replace(/"/g, '""')}"`
+          `"${this.estadoLabel(p.Estado).replace(/"/g, '""')}"`
         ];
 
         if (isHealthActive) {
@@ -5007,6 +5131,237 @@ const App = {
   // --------------------------------------------------------------------------
   // EDICIÓN Y ELIMINACIÓN DE PROYECTOS (MODALES Y ACCIONES)
   // --------------------------------------------------------------------------
+  // Nota obligatoria solo cuando el estado cambia hacia En revisión o Cerrado
+  requiresEstadoNote(estado) {
+    return (estado === 'En revision' || estado === 'Cerrado') && estado !== this._editEstadoOriginal;
+  },
+
+  updateEstadoNotaGroup() {
+    const group = document.getElementById('edit-project-nota-group');
+    if (!group) return;
+    const estado = document.getElementById('edit-project-estado')?.value || '';
+    const needs = this.requiresEstadoNote(estado);
+    if (needs) {
+      const isRevision = estado === 'En revision';
+      const label = document.getElementById('edit-project-nota-label');
+      if (label) {
+        label.innerHTML = `${isRevision ? 'Motivo de la revisión' : 'Información de cierre'} <span class="form-required">*</span>`;
+      }
+      const textarea = document.getElementById('edit-project-nota-estado');
+      if (textarea) {
+        textarea.placeholder = isRevision
+          ? 'Explica por qué el proyecto pasa a revisión: qué se debe validar, quién lo revisa y qué falta para continuar...'
+          : 'Documenta lo necesario para cerrar el proyecto: entregables, validación del cliente, tickets o RFC de cierre y fecha de aceptación...';
+      }
+    }
+    group.classList.toggle('is-open', needs);
+    group.setAttribute('aria-hidden', needs ? 'false' : 'true');
+  },
+
+  resetEstadoNotaGroup() {
+    const textarea = document.getElementById('edit-project-nota-estado');
+    if (textarea) textarea.value = '';
+    const files = document.getElementById('edit-project-evidencias');
+    if (files) files.value = '';
+    this.showFieldError('edit-project-evidencias-error', '');
+    this.updateEstadoNotaGroup();
+  },
+
+  showFieldError(id, message) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = message || '';
+    el.style.display = message ? 'block' : 'none';
+  },
+
+  // Valida los archivos antes de enviarlos; retorna el mensaje de error o '' si todos son válidos
+  validateAdjuntos(files) {
+    for (const file of files) {
+      const ext = file.name.includes('.') ? file.name.split('.').pop().toLowerCase() : '';
+      if (!ADJUNTOS_EXTENSIONES.includes(ext)) {
+        return `El archivo "${file.name}" no tiene un formato permitido. Formatos aceptados: ${ADJUNTOS_EXTENSIONES.join(', ')}.`;
+      }
+      if (file.size === 0) {
+        return `El archivo "${file.name}" está vacío.`;
+      }
+      if (file.size > ADJUNTOS_MAX_BYTES) {
+        return `El archivo "${file.name}" supera el máximo de 9 MB.`;
+      }
+    }
+    return '';
+  },
+
+  // Valida al seleccionar: si algún archivo no cumple, se descarta la selección y se informa
+  handleAdjuntosSelected(inputId, errorId) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const message = this.validateAdjuntos(Array.from(input.files || []));
+    if (message) {
+      input.value = '';
+    }
+    this.showFieldError(errorId, message);
+  },
+
+  // Sube los archivos uno por uno a la entrada de bitácora; retorna los nombres de los que fallaron
+  async uploadAdjuntos(projectId, entryId, files) {
+    const failed = [];
+    for (const file of files) {
+      try {
+        const form = new FormData();
+        form.append('archivo', file, file.name);
+        const res = await Auth.fetchWithAuth(`/api/proyectos/${projectId}/bitacora/${entryId}/adjuntos`, {
+          method: 'POST',
+          body: form
+        });
+        if (!res.ok) failed.push(file.name);
+      } catch (e) {
+        failed.push(file.name);
+      }
+    }
+    return failed;
+  },
+
+  // --------------------------------------------------------------------------
+  // BITÁCORA DEL PROYECTO
+  // --------------------------------------------------------------------------
+  formatDateTimeDMY(value) {
+    const m = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+    if (!m) return this.formatDateDMY(value);
+    return `${m[3]}-${m[2]}-${m[1]} ${m[4]}:${m[5]}`;
+  },
+
+  formatFileSize(bytes) {
+    const n = Number(bytes) || 0;
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  },
+
+  async loadBitacora(projectId) {
+    const requestId = ++this._bitacoraRequestId;
+    let entries = null;
+    try {
+      const res = await Auth.fetchWithAuth(`/api/proyectos/${projectId}/bitacora`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      entries = await res.json();
+    } catch (e) {
+      console.warn('No se pudo cargar la bitácora:', e);
+    }
+    if (requestId !== this._bitacoraRequestId || !this.currentProject || this.currentProject.ID != projectId) return;
+
+    this.currentBitacora = Array.isArray(entries) ? entries : [];
+    const badge = document.getElementById('tab-count-bitacora');
+    if (badge) badge.textContent = this.currentBitacora.length;
+    this.renderBitacoraList(entries === null);
+    const cierre = document.getElementById('summary-cierre');
+    if (cierre) cierre.innerHTML = this.renderCierreContent(this.currentProject);
+  },
+
+  renderBitacoraList(loadFailed = false) {
+    const list = document.getElementById('bitacora-list');
+    if (!list) return;
+    if (loadFailed) {
+      list.innerHTML = '<div class="bitacora-empty">No se pudo cargar la bitácora. Intenta nuevamente.</div>';
+      return;
+    }
+    if (!this.currentBitacora || this.currentBitacora.length === 0) {
+      list.innerHTML = '<div class="bitacora-empty">Aún no hay registros en la bitácora de este proyecto. Usa el formulario superior para documentar el trabajo realizado.</div>';
+      return;
+    }
+    const chips = {
+      BITACORA: { label: 'Bitácora', cls: 'badge-neutral' },
+      REVISION: { label: 'En revisión', cls: 'badge-warning' },
+      CIERRE: { label: 'Cierre', cls: 'badge-success' }
+    };
+    list.innerHTML = this.currentBitacora.map(e => {
+      const chip = chips[e.tipo] || chips.BITACORA;
+      const transition = (e.estado_anterior || e.estado_nuevo)
+        ? `<span class="bitacora-transition">${this.escapeHtml(this.estadoLabel(e.estado_anterior))} → ${this.escapeHtml(this.estadoLabel(e.estado_nuevo))}</span>`
+        : '';
+      const adjuntos = (e.adjuntos || []).map(a => `
+        <button type="button" class="bitacora-adjunto" data-adjunto-id="${a.id}" data-adjunto-nombre="${this.escapeHtml(a.nombre)}" title="Descargar ${this.escapeHtml(a.nombre)}">
+          ${Icons.svg('paperclip', { size: 14 })}<span class="bitacora-adjunto-name">${this.escapeHtml(a.nombre)}</span><span class="bitacora-adjunto-size">${this.formatFileSize(a.tamano_bytes)}</span>
+        </button>`).join('');
+      return `
+        <article class="bitacora-entry" data-entry-id="${e.id}">
+          <div class="bitacora-entry-header">
+            <span class="badge bitacora-chip ${chip.cls}">${chip.label}</span>
+            <span class="bitacora-author">${this.escapeHtml(e.autor_nombre || e.autor_username || 'Usuario')}</span>
+            <span class="bitacora-date">${this.formatDateTimeDMY(e.creado)}</span>
+            ${transition}
+          </div>
+          <div class="bitacora-text">${this.escapeHtml(e.texto)}</div>
+          ${adjuntos ? `<div class="bitacora-adjuntos">${adjuntos}</div>` : ''}
+        </article>`;
+    }).join('');
+  },
+
+  // Descarga autenticada: se pide el archivo con la sesión y se entrega como blob con su nombre original
+  async downloadAdjunto(adjuntoId, nombre) {
+    if (!this.currentProject) return;
+    try {
+      const res = await Auth.fetchWithAuth(`/api/proyectos/${this.currentProject.ID}/adjuntos/${adjuntoId}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = nombre || 'adjunto';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      this.showToast('No se pudo descargar el archivo', 'danger');
+    }
+  },
+
+  async submitBitacoraEntry() {
+    if (!this.currentProject) return;
+    const projectId = this.currentProject.ID;
+    const textarea = document.getElementById('bitacora-nuevo-texto');
+    const fileInput = document.getElementById('bitacora-nuevo-archivos');
+    const btn = document.getElementById('btn-bitacora-agregar');
+    const texto = (textarea?.value || '').trim();
+    const files = Array.from(fileInput?.files || []);
+
+    if (!texto) {
+      this.showFieldError('bitacora-form-error', 'El texto de la bitácora es obligatorio');
+      return;
+    }
+    const filesError = this.validateAdjuntos(files);
+    if (filesError) {
+      this.showFieldError('bitacora-form-error', filesError);
+      return;
+    }
+    this.showFieldError('bitacora-form-error', '');
+    if (btn) btn.disabled = true;
+
+    try {
+      const res = await Auth.fetchWithAuth(`/api/proyectos/${projectId}/bitacora`, {
+        method: 'POST',
+        body: JSON.stringify({ texto })
+      });
+      const entry = await res.json();
+      if (!res.ok) {
+        throw new Error(entry.detail || entry.message || 'No se pudo registrar la entrada');
+      }
+      const failed = files.length > 0 ? await this.uploadAdjuntos(projectId, entry.id, files) : [];
+      if (textarea) textarea.value = '';
+      if (fileInput) fileInput.value = '';
+      await this.loadBitacora(projectId);
+      if (failed.length > 0) {
+        this.showToast(`Entrada registrada. No se pudo adjuntar: ${failed.join(', ')}.`, 'warning');
+      } else {
+        this.showToast('Entrada agregada a la bitácora', 'success');
+      }
+    } catch (err) {
+      this.showFieldError('bitacora-form-error', err.message);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  },
+
   async openEditProjectModal(projectId) {
     try {
       const res = await Auth.fetchWithAuth(`/api/proyectos/${projectId}`);
@@ -5046,8 +5401,10 @@ const App = {
       // Seleccionar Estado
       const estadoSelect = document.getElementById('edit-project-estado');
       if (estadoSelect) {
-        estadoSelect.value = project.Estado || 'Generado';
+        this._editEstadoOriginal = this.normalizeEstado(project.Estado) || 'Generado';
+        estadoSelect.value = this._editEstadoOriginal;
       }
+      this.resetEstadoNotaGroup();
 
       // Seleccionar Tipo de Servicio
       const tipoSelect = document.getElementById('edit-project-tipo-servicio');
@@ -5149,6 +5506,9 @@ const App = {
     const tipoServicio = document.getElementById('edit-project-tipo-servicio')?.value || 'Otros';
     const detalle = document.getElementById('edit-project-detalle')?.value.trim() || '';
     const comentario = document.getElementById('edit-project-comentario')?.value.trim() || '';
+    const notaEstado = document.getElementById('edit-project-nota-estado')?.value.trim() || '';
+    const needsNote = this.requiresEstadoNote(estado);
+    const evidencias = needsNote ? Array.from(document.getElementById('edit-project-evidencias')?.files || []) : [];
     const errAlert = document.getElementById('edit-project-error-alert');
     const errDesc = document.getElementById('edit-project-error-desc');
     const btn = document.getElementById('btn-save-edit-modal');
@@ -5157,6 +5517,20 @@ const App = {
     if (!cliente || !estado || !detalle) {
       if (errAlert) errAlert.style.display = 'flex';
       if (errDesc) errDesc.textContent = 'Cliente, Estado y Detalle son obligatorios.';
+      return;
+    }
+
+    if (needsNote && !notaEstado) {
+      if (errAlert) errAlert.style.display = 'flex';
+      if (errDesc) errDesc.textContent = estado === 'En revision' ? MSG_NOTA_REVISION : MSG_NOTA_CIERRE;
+      document.getElementById('edit-project-nota-estado')?.focus();
+      return;
+    }
+
+    const adjuntosError = this.validateAdjuntos(evidencias);
+    if (adjuntosError) {
+      if (errAlert) errAlert.style.display = 'flex';
+      if (errDesc) errDesc.textContent = adjuntosError;
       return;
     }
 
@@ -5174,7 +5548,8 @@ const App = {
           estado: estado,
           tipo_servicio: tipoServicio || 'Otros',
           detalle: detalle,
-          comentario: comentario || null
+          comentario: comentario || null,
+          nota_estado: needsNote ? notaEstado : null
         })
       });
 
@@ -5183,8 +5558,19 @@ const App = {
         throw new Error(result.detail || result.message || 'Error al guardar modificaciones');
       }
 
+      // Las evidencias se suben a la entrada de bitácora creada por el cambio de estado; si alguna falla,
+      // el proyecto ya quedó guardado y solo se advierte
+      let failedUploads = [];
+      if (result.bitacora_entry_id && evidencias.length > 0) {
+        failedUploads = await this.uploadAdjuntos(projectId, result.bitacora_entry_id, evidencias);
+      }
+
       this.closeEditProjectModal();
-      this.showToast('Proyecto actualizado exitosamente', 'success');
+      if (failedUploads.length > 0) {
+        this.showToast(`Proyecto actualizado. No se pudo adjuntar: ${failedUploads.join(', ')}. El proyecto quedó guardado.`, 'warning');
+      } else {
+        this.showToast('Proyecto actualizado exitosamente', 'success');
+      }
 
       // Sincronización Reactiva
       await Promise.all([
@@ -5202,6 +5588,7 @@ const App = {
         if (ltAssigned) ltAssigned.textContent = result.data.LT_Asignado || 'No asignado';
         if (ddStatus) ddStatus.innerHTML = this.renderStatusBadge(result.data.Estado);
         this.renderSummaryTab(result.data);
+        this.loadBitacora(projectId);
       }
     } catch (err) {
       if (errAlert) errAlert.style.display = 'flex';
