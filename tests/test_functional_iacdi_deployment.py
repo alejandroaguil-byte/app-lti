@@ -6,15 +6,15 @@ Host Remoto: iacdi (100.82.24.75)
 Puerto de Publicación: 8000
 
 Matriz de Cobertura de Pruebas:
-- TC-DEP-01: Conectividad Red & Tailscale HTTP/TCP al puerto 8000 en 100.82.24.75.
+- TC-DEP-01: Conectividad HTTP a la app publicada (solo con IACDI_URL).
 - TC-DEP-02: Conectividad y consultas a Base de Datos MSSQL (192.168.10.6:1433).
 - TC-DEP-03: Sincronización y validación del Seed de 38 Usuarios en dbo.App_Usuarios.
-- TC-DEP-04: Estado del Servicio Systemd de Usuario 'app-lti.service' (Active: active (running)).
+- TC-DEP-04: Estado del servicio systemd de sistema 'app-lti.service' (Active: active (running)).
 - TC-DEP-05: Verificación de Persistencia Linger habilitado (loginctl Linger=yes).
-- TC-DEP-06: Entrega integral de recursos Frontend SPA (index.html, styles.css, app.js, auth.js).
-- TC-DEP-07: Autenticación JWT (/api/auth/login, credenciales correctas/incorrectas y /api/auth/me).
-- TC-DEP-08: Acceso autenticado y rendimiento de endpoints operativos (/api/kpis, /api/proyectos, /api/lideres, /api/estados, /api/usuarios).
-- TC-DEP-09: Configuración de Hot-Reload en Uvicorn (--reload) y supervisión en el servidor remoto.
+- TC-DEP-06: Entrega integral de recursos Frontend SPA (index.html, styles.css, app.js, auth.js) (solo con IACDI_URL).
+- TC-DEP-07: Autenticación JWT (/api/auth/login, credenciales correctas/incorrectas y /api/auth/me) (solo con IACDI_URL).
+- TC-DEP-08: Acceso autenticado y rendimiento de endpoints operativos (/api/kpis, /api/proyectos, /api/lideres, /api/estados, /api/usuarios) (solo con IACDI_URL).
+- TC-DEP-09: ExecStart del servicio: uvicorn en 127.0.0.1:8000 detrás de nginx.
 - TC-DEP-10: Verificación de scripts operativos y gobernanza local (deploy_to_iacdi.sh, run.sh).
 """
 
@@ -26,9 +26,15 @@ import pytest
 from tests.conftest import create_portal_jwt
 
 REMOTE_HOST = "iacdi"
-TAILSCALE_IP = "100.82.24.75"
-PORT = 8000
-REMOTE_BASE_URL = f"http://{TAILSCALE_IP}:{PORT}"
+
+# Las pruebas HTTP contra producción solo corren si se pide explícitamente con IACDI_URL.
+# Producción escucha en 127.0.0.1:8000 detrás de nginx, por lo que la IP Tailscale
+# directa (100.82.24.75:8000) no responde desde fuera del servidor.
+REMOTE_BASE_URL = os.getenv("IACDI_URL", "").rstrip("/")
+requires_iacdi = pytest.mark.skipif(
+    not REMOTE_BASE_URL,
+    reason="Verificación HTTP de producción: definir IACDI_URL para ejecutarla",
+)
 
 
 # ==============================================================================
@@ -70,9 +76,10 @@ def run_ssh_python(python_code: str, timeout: int = 20) -> subprocess.CompletedP
 # TC-DEP-01: CONECTIVIDAD RED & TAILSCALE
 # ==============================================================================
 
+@requires_iacdi
 def test_tc_dep_01_tailscale_http_connectivity():
     """
-    TC-DEP-01: Verificar conectividad HTTP TCP directa al puerto 8000 en IP Tailscale 100.82.24.75.
+    TC-DEP-01: Verificar conectividad HTTP a la app publicada en IACDI_URL.
     - El servidor debe responder con código HTTP 200 en la ruta raíz.
     - El tiempo de respuesta debe ser inferior a 2.0 segundos.
     """
@@ -83,7 +90,7 @@ def test_tc_dep_01_tailscale_http_connectivity():
     assert resp.status_code == 200, f"Se esperaba código 200 pero se obtuvo {resp.status_code}"
     assert "App Líderes TI" in resp.text or "App LTI" in resp.text
     assert elapsed < 2.0, f"Tiempo de respuesta elevado: {elapsed:.3f}s"
-    print(f"\n[TC-DEP-01] Conectividad Tailscale OK ({resp.status_code}) en {elapsed*1000:.1f}ms")
+    print(f"\n[TC-DEP-01] Conectividad OK ({resp.status_code}) en {elapsed*1000:.1f}ms")
 
 
 # ==============================================================================
@@ -162,27 +169,27 @@ conn.close()
 
 
 # ==============================================================================
-# TC-DEP-04: SERVICIO SYSTEMD DE USUARIO
+# TC-DEP-04: SERVICIO SYSTEMD DE SISTEMA
 # ==============================================================================
 
 def test_tc_dep_04_systemd_service_status():
     """
-    TC-DEP-04: Verificar que el servicio systemd de usuario 'app-lti.service' esté activo y habilitado en iacdi.
-    - systemctl --user is-active app-lti.service -> active
-    - systemctl --user is-enabled app-lti.service -> enabled
+    TC-DEP-04: Verificar que el servicio systemd de sistema 'app-lti.service' esté activo y habilitado en iacdi.
+    - systemctl is-active app-lti.service -> active
+    - systemctl is-enabled app-lti.service -> enabled
     """
-    res_active = run_ssh_command("systemctl --user is-active app-lti.service")
+    res_active = run_ssh_command("systemctl is-active app-lti.service")
     assert res_active.returncode == 0, f"El servicio app-lti no está activo: {res_active.stdout} {res_active.stderr}"
     assert res_active.stdout.strip() == "active"
 
-    res_enabled = run_ssh_command("systemctl --user is-enabled app-lti.service")
+    res_enabled = run_ssh_command("systemctl is-enabled app-lti.service")
     assert res_enabled.returncode == 0, f"El servicio app-lti no está habilitado: {res_enabled.stdout}"
     assert res_enabled.stdout.strip() == "enabled"
 
-    res_status = run_ssh_command("systemctl --user status app-lti.service --no-pager")
+    res_status = run_ssh_command("systemctl status app-lti.service --no-pager")
     assert "Active: active (running)" in res_status.stdout
     assert "uvicorn backend.main:app" in res_status.stdout
-    print("\n[TC-DEP-04] Servicio systemd de usuario 'app-lti.service': active (running) y enabled")
+    print("\n[TC-DEP-04] Servicio systemd de sistema 'app-lti.service': active (running) y enabled")
 
 
 # ==============================================================================
@@ -204,6 +211,7 @@ def test_tc_dep_05_linger_persistence_enabled():
 # TC-DEP-06: ACCESO Y ENTREGA DE RECURSOS SPA FRONTEND
 # ==============================================================================
 
+@requires_iacdi
 def test_tc_dep_06_spa_frontend_resources_delivery():
     """
     TC-DEP-06: Verificar entrega completa y correcta de la SPA y todos sus recursos estáticos esenciales.
@@ -237,6 +245,7 @@ def test_tc_dep_06_spa_frontend_resources_delivery():
 # TC-DEP-07: AUTENTICACIÓN JWT Y ENDPOINTS AUTH
 # ==============================================================================
 
+@requires_iacdi
 def test_tc_dep_07_jwt_authentication_flows():
     """
     TC-DEP-07: Probar flujos de autenticación SSO Portal JWT en la API desplegada en iacdi.
@@ -291,6 +300,7 @@ def test_tc_dep_07_jwt_authentication_flows():
 # TC-DEP-08: ACCESO OPERATIVO Y RENDIMIENTO DE ENDPOINTS REST
 # ==============================================================================
 
+@requires_iacdi
 def test_tc_dep_08_authenticated_operational_endpoints():
     """
     TC-DEP-08: Verificar disponibilidad y tiempos de respuesta de endpoints de negocio autenticados.
@@ -327,20 +337,23 @@ def test_tc_dep_08_authenticated_operational_endpoints():
 
 
 # ==============================================================================
-# TC-DEP-09: SUPERVISIÓN DE HOT-RELOAD Y RESTART DEL SERVICIO
+# TC-DEP-09: COMANDO DE EJECUCIÓN DEL SERVICIO
 # ==============================================================================
 
-def test_tc_dep_09_uvicorn_reload_flag_configured():
+def test_tc_dep_09_uvicorn_execstart_configured():
     """
-    TC-DEP-09: Validar que el comando de ejecución en la unidad systemd remota incluya --reload.
-    - Asegura la recarga en caliente para desarrollo continuo sin interrupción del servicio.
+    TC-DEP-09: Validar el comando de ejecución de la unidad systemd de sistema en iacdi.
+    - uvicorn escucha solo en 127.0.0.1:8000 (publicado por nginx) con --proxy-headers.
+    - Sin --reload: los cambios de backend requieren `sudo systemctl restart app-lti.service`.
     """
-    res = run_ssh_command("systemctl --user show app-lti.service --property=ExecStart")
+    res = run_ssh_command("systemctl show app-lti.service --property=ExecStart")
     assert res.returncode == 0
-    assert "--reload" in res.stdout, f"El flag --reload no está configurado en ExecStart: {res.stdout}"
-    assert "--host 0.0.0.0" in res.stdout or "--host=0.0.0.0" in res.stdout
+    assert "uvicorn backend.main:app" in res.stdout, f"ExecStart inesperado: {res.stdout}"
+    assert "--host 127.0.0.1" in res.stdout or "--host=127.0.0.1" in res.stdout
     assert "--port 8000" in res.stdout or "--port=8000" in res.stdout
-    print(f"\n[TC-DEP-09] Configuración de Hot-Reload verificada: {res.stdout.strip()}")
+    assert "--proxy-headers" in res.stdout
+    assert "--reload" not in res.stdout, f"Producción no debe usar --reload: {res.stdout}"
+    print(f"\n[TC-DEP-09] ExecStart verificado: {res.stdout.strip()}")
 
 
 # ==============================================================================
