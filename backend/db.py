@@ -3,7 +3,10 @@ import datetime
 from decimal import Decimal
 from typing import List, Union, Optional
 import logging
+import os
+from pathlib import Path
 from .config import DB_CONFIG
+from . import config as app_config
 
 import re
 import hashlib
@@ -1605,6 +1608,239 @@ def create_solicitud_lti(
 crear_solicitud_proyecto = create_solicitud_lti
 
 # -----------------------------------------------------------------------------
+# BITÁCORA Y ADJUNTOS DE PROYECTOS (dbo.Proyecto_Bitacora / dbo.Proyecto_Adjuntos)
+# -----------------------------------------------------------------------------
+def init_bitacora_tables():
+    """Crea de forma idempotente las tablas de bitácora y adjuntos (solo aditivo, nunca borra ni altera)."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+            IF OBJECT_ID('dbo.Proyecto_Bitacora', 'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.Proyecto_Bitacora (
+                    ID INT IDENTITY(1,1) PRIMARY KEY,
+                    Proyecto_ID NUMERIC(18,0) NOT NULL,
+                    Tipo VARCHAR(20) NOT NULL,
+                    Texto NVARCHAR(MAX) NOT NULL,
+                    Estado_Anterior NVARCHAR(50) NULL,
+                    Estado_Nuevo NVARCHAR(50) NULL,
+                    Autor_Username VARCHAR(100) NULL,
+                    Autor_Nombre NVARCHAR(150) NULL,
+                    Creado DATETIME NOT NULL DEFAULT GETDATE()
+                );
+            END
+            """)
+            cursor.execute("""
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Proyecto_Bitacora_Proyecto_ID' AND object_id = OBJECT_ID('dbo.Proyecto_Bitacora'))
+            BEGIN
+                CREATE INDEX IX_Proyecto_Bitacora_Proyecto_ID ON dbo.Proyecto_Bitacora (Proyecto_ID);
+            END
+            """)
+            cursor.execute("""
+            IF OBJECT_ID('dbo.Proyecto_Adjuntos', 'U') IS NULL
+            BEGIN
+                CREATE TABLE dbo.Proyecto_Adjuntos (
+                    ID INT IDENTITY(1,1) PRIMARY KEY,
+                    Bitacora_ID INT NOT NULL,
+                    Proyecto_ID NUMERIC(18,0) NOT NULL,
+                    Nombre_Original NVARCHAR(255) NOT NULL,
+                    Nombre_Almacenado VARCHAR(100) NOT NULL,
+                    Content_Type VARCHAR(150) NULL,
+                    Tamano_Bytes INT NOT NULL,
+                    Autor_Username VARCHAR(100) NULL,
+                    Creado DATETIME NOT NULL DEFAULT GETDATE()
+                );
+            END
+            """)
+            cursor.execute("""
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_Proyecto_Adjuntos_Bitacora_ID' AND object_id = OBJECT_ID('dbo.Proyecto_Adjuntos'))
+            BEGIN
+                CREATE INDEX IX_Proyecto_Adjuntos_Bitacora_ID ON dbo.Proyecto_Adjuntos (Bitacora_ID);
+            END
+            """)
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
+    finally:
+        conn.close()
+
+def _iso(value):
+    return value.isoformat() if isinstance(value, (datetime.datetime, datetime.date)) else value
+
+def _insert_bitacora_row(cursor, proyecto_id, tipo, texto, estado_anterior, estado_nuevo, autor_username, autor_nombre):
+    """INSERT único de una entrada de bitácora; retorna (id, creado). No hace commit: lo decide el llamador."""
+    cursor.execute("""
+        INSERT INTO dbo.Proyecto_Bitacora (Proyecto_ID, Tipo, Texto, Estado_Anterior, Estado_Nuevo, Autor_Username, Autor_Nombre)
+        OUTPUT INSERTED.ID, INSERTED.Creado
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+    """, (proyecto_id, tipo, texto, estado_anterior, estado_nuevo, autor_username, autor_nombre))
+    row = cursor.fetchone()
+    return int(row["ID"]), row["Creado"]
+
+def _serialize_adjunto(row) -> dict:
+    return {
+        "id": int(row["ID"]),
+        "nombre": row["Nombre_Original"],
+        "content_type": row.get("Content_Type"),
+        "tamano_bytes": row["Tamano_Bytes"],
+        "creado": _iso(row["Creado"]),
+    }
+
+def create_bitacora_entry(proyecto_id: int, texto: str, autor_username: Optional[str], autor_nombre: Optional[str]) -> dict:
+    """Agrega una entrada libre (Tipo BITACORA) a la bitácora del proyecto y la retorna serializada."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            entry_id, creado = _insert_bitacora_row(
+                cursor, proyecto_id, "BITACORA", texto, None, None, autor_username, autor_nombre
+            )
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
+    finally:
+        conn.close()
+    return {
+        "id": entry_id, "tipo": "BITACORA", "texto": texto,
+        "estado_anterior": None, "estado_nuevo": None,
+        "autor_username": autor_username, "autor_nombre": autor_nombre,
+        "creado": _iso(creado), "adjuntos": [],
+    }
+
+def get_bitacora_by_proyecto(proyecto_id: int) -> list:
+    """Entradas de la bitácora del proyecto, las más recientes primero, con sus adjuntos."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT ID, Tipo, Texto, Estado_Anterior, Estado_Nuevo, Autor_Username, Autor_Nombre, Creado
+                FROM dbo.Proyecto_Bitacora WITH (NOLOCK)
+                WHERE Proyecto_ID = %s
+                ORDER BY Creado DESC, ID DESC
+            """, (proyecto_id,))
+            entradas = cursor.fetchall()
+            cursor.execute("""
+                SELECT ID, Bitacora_ID, Nombre_Original, Content_Type, Tamano_Bytes, Creado
+                FROM dbo.Proyecto_Adjuntos WITH (NOLOCK)
+                WHERE Proyecto_ID = %s
+                ORDER BY ID ASC
+            """, (proyecto_id,))
+            adjuntos = cursor.fetchall()
+    finally:
+        conn.close()
+
+    por_entrada = {}
+    for adj in adjuntos:
+        por_entrada.setdefault(int(adj["Bitacora_ID"]), []).append(_serialize_adjunto(adj))
+    return [
+        {
+            "id": int(e["ID"]),
+            "tipo": e["Tipo"],
+            "texto": e["Texto"],
+            "estado_anterior": e.get("Estado_Anterior"),
+            "estado_nuevo": e.get("Estado_Nuevo"),
+            "autor_username": e.get("Autor_Username"),
+            "autor_nombre": e.get("Autor_Nombre"),
+            "creado": _iso(e["Creado"]),
+            "adjuntos": por_entrada.get(int(e["ID"]), []),
+        }
+        for e in entradas
+    ]
+
+def get_bitacora_entry(proyecto_id: int, entry_id: int) -> Optional[dict]:
+    """Entrada de bitácora solo si pertenece al proyecto indicado; None en caso contrario."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT ID, Proyecto_ID, Tipo FROM dbo.Proyecto_Bitacora WITH (NOLOCK) WHERE ID = %s AND Proyecto_ID = %s",
+                (entry_id, proyecto_id)
+            )
+            return cursor.fetchone()
+    finally:
+        conn.close()
+
+def create_adjunto(
+    bitacora_id: int,
+    proyecto_id: int,
+    nombre_original: str,
+    nombre_almacenado: str,
+    content_type: Optional[str],
+    tamano_bytes: int,
+    autor_username: Optional[str]
+) -> dict:
+    """Registra los metadatos de un adjunto ya guardado en disco y los retorna serializados."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO dbo.Proyecto_Adjuntos (Bitacora_ID, Proyecto_ID, Nombre_Original, Nombre_Almacenado, Content_Type, Tamano_Bytes, Autor_Username)
+                OUTPUT INSERTED.ID, INSERTED.Creado
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (bitacora_id, proyecto_id, nombre_original, nombre_almacenado, content_type, tamano_bytes, autor_username))
+            row = cursor.fetchone()
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
+    finally:
+        conn.close()
+    return {
+        "id": int(row["ID"]), "nombre": nombre_original, "content_type": content_type,
+        "tamano_bytes": tamano_bytes, "creado": _iso(row["Creado"]),
+    }
+
+def get_adjunto(proyecto_id: int, adjunto_id: int) -> Optional[dict]:
+    """Adjunto solo si pertenece al proyecto indicado; None en caso contrario."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT ID, Proyecto_ID, Nombre_Original, Nombre_Almacenado, Content_Type, Tamano_Bytes
+                FROM dbo.Proyecto_Adjuntos WITH (NOLOCK)
+                WHERE ID = %s AND Proyecto_ID = %s
+            """, (adjunto_id, proyecto_id))
+            return cursor.fetchone()
+    finally:
+        conn.close()
+
+def get_adjuntos_dir() -> Path:
+    """Directorio de adjuntos configurado (se lee en cada llamada para respetar ADJUNTOS_DIR)."""
+    return Path(app_config.ADJUNTOS_DIR)
+
+def adjunto_path(nombre_almacenado) -> Optional[Path]:
+    """Ruta resuelta del archivo almacenado, o None si queda fuera del directorio de adjuntos."""
+    nombre = str(nombre_almacenado or "")
+    if not nombre:
+        return None
+    base = get_adjuntos_dir().resolve()
+    path = (base / nombre).resolve()
+    return path if base in path.parents else None
+
+def remove_adjunto_files(nombres_almacenados) -> None:
+    """Borra archivos de adjuntos de forma best-effort: registra los errores y nunca los propaga."""
+    for nombre in nombres_almacenados:
+        try:
+            path = adjunto_path(nombre)
+            if path is None:
+                logger.warning(f"Adjunto fuera del directorio permitido, no se borra: {nombre!r}")
+            elif path.exists():
+                os.remove(path)
+        except Exception as e:
+            logger.warning(f"No se pudo borrar el adjunto {nombre!r}: {e}")
+
+# -----------------------------------------------------------------------------
 # EDICIÓN Y ELIMINACIÓN DE PROYECTOS (dbo.Proyectos)
 # -----------------------------------------------------------------------------
 def update_proyecto(
@@ -1614,9 +1850,15 @@ def update_proyecto(
     estado: str = "Generado",
     detalle: str = "",
     tipo_servicio: Optional[str] = "Otros",
-    comentario: Optional[str] = None
+    comentario: Optional[str] = None,
+    bitacora: Optional[dict] = None
 ) -> dict:
-    """Actualiza los campos operativos y estado de un proyecto en dbo.Proyectos detectando asignaciones."""
+    """
+    Actualiza los campos operativos y estado de un proyecto en dbo.Proyectos detectando asignaciones.
+
+    Si se entrega `bitacora` (tipo, texto, estado_anterior, estado_nuevo, autor_username, autor_nombre), la entrada
+    se inserta en la MISMA transacción que el UPDATE: o se guardan ambos o ninguno.
+    """
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
@@ -1659,6 +1901,14 @@ def update_proyecto(
                 (comentario.strip() if comentario and str(comentario).strip() else None),
                 proyecto_id
             ))
+
+            bitacora_entry_id = None
+            if bitacora:
+                bitacora_entry_id, _ = _insert_bitacora_row(
+                    cursor, proyecto_id, bitacora["tipo"], bitacora["texto"],
+                    bitacora.get("estado_anterior"), bitacora.get("estado_nuevo"),
+                    bitacora.get("autor_username"), bitacora.get("autor_nombre")
+                )
             conn.commit()
     except Exception as e:
         try:
@@ -1677,7 +1927,8 @@ def update_proyecto(
         "was_assigned": was_assigned,
         "prev_lt": prev_lt_str,
         "new_lt": new_lt_str,
-        "solicitante": solicitante_val
+        "solicitante": solicitante_val,
+        "bitacora_entry_id": bitacora_entry_id
     }
 
 # -----------------------------------------------------------------------------
@@ -2111,7 +2362,10 @@ def mark_solicitudes_reminder_sent(project_ids: Union[int, List[int]], conn=None
             active_conn.close()
 
 def delete_proyecto(proyecto_id: int) -> dict:
-    """Elimina físicamente un proyecto de dbo.Proyectos."""
+    """
+    Elimina físicamente un proyecto de dbo.Proyectos junto con su bitácora y adjuntos (misma transacción).
+    Los archivos de los adjuntos se borran después del commit, best-effort.
+    """
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
@@ -2121,10 +2375,16 @@ def delete_proyecto(proyecto_id: int) -> dict:
             if not existing:
                 return {"success": False, "error": "not_found", "message": f"Proyecto ID {proyecto_id} no encontrado"}
 
-            # 2. Ejecutar DELETE
+            # 2. Ejecutar DELETE en cascada: adjuntos, bitácora y proyecto en una sola transacción
+            cursor.execute("SELECT Nombre_Almacenado FROM dbo.Proyecto_Adjuntos WHERE Proyecto_ID = %s", (proyecto_id,))
+            archivos = [r["Nombre_Almacenado"] for r in cursor.fetchall()]
+            cursor.execute("DELETE FROM dbo.Proyecto_Adjuntos WHERE Proyecto_ID = %s", (proyecto_id,))
+            cursor.execute("DELETE FROM dbo.Proyecto_Bitacora WHERE Proyecto_ID = %s", (proyecto_id,))
             cursor.execute("DELETE FROM dbo.Proyectos WHERE ID = %s", (proyecto_id,))
             deleted_count = cursor.rowcount
             conn.commit()
+
+            remove_adjunto_files(archivos)
 
             return {
                 "success": True,

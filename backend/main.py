@@ -1,4 +1,6 @@
 import os
+import re
+import uuid
 import base64
 import logging
 import asyncio
@@ -12,6 +14,7 @@ from pydantic import BaseModel
 logger = logging.getLogger("main")
 
 from .config import BASE_DIR, CORS_ORIGINS
+from . import config as app_config
 from .auth import (
     get_current_user,
     require_admin,
@@ -46,6 +49,15 @@ from .db import (
     check_proyecto_exists,
     create_solicitud_lti,
     update_proyecto,
+    init_bitacora_tables,
+    create_bitacora_entry,
+    get_bitacora_by_proyecto,
+    get_bitacora_entry,
+    create_adjunto,
+    get_adjunto,
+    get_adjuntos_dir,
+    adjunto_path,
+    remove_adjunto_files,
     assign_lti_from_backlog,
     delete_proyecto,
     get_diagnostico_proyecto,
@@ -164,6 +176,10 @@ async def lifespan(app: FastAPI):
         seed_default_users()
     except Exception as e:
         print(f"[ERROR] Error al inicializar tablas y usuarios: {e}")
+    try:
+        init_bitacora_tables()
+    except Exception as e:
+        logger.error(f"Error al inicializar las tablas de bitácora y adjuntos: {e}")
 
     # Iniciar worker de recordatorios en background
     _reminder_task = asyncio.create_task(reminder_scheduler_loop())
@@ -239,6 +255,9 @@ class ProyectoUpdateRequest(BaseModel):
     tipo_servicio: Optional[str] = "Otros"
     comentario: Optional[str] = None
     nota_estado: Optional[str] = None
+
+class BitacoraCreateRequest(BaseModel):
+    texto: Optional[str] = None
 
 class BacklogAsignacionRequest(BaseModel):
     numero_proyecto: str
@@ -511,12 +530,22 @@ def actualizar_proyecto(
                     else "Debe documentar la información de cierre para pasar el proyecto a 'Cerrado'"
                 )
             )
-    # nota_estado queda validada y recortada; el registro en la bitácora lo hace T2 cuando estado_anterior != estado.
+    # La nota se guarda como entrada de bitácora (REVISION / CIERRE) en la misma transacción del UPDATE
+    bitacora = None
+    if estado_anterior is not None and estado_anterior != estado and nota_estado:
+        bitacora = {
+            "tipo": "REVISION" if estado == "En revision" else "CIERRE",
+            "texto": nota_estado,
+            "estado_anterior": estado_anterior,
+            "estado_nuevo": estado,
+            "autor_username": current_user.get("username"),
+            "autor_nombre": current_user.get("nombre_completo") or current_user.get("username"),
+        }
 
     # Un proyecto 'Generado' con LTI asignado pasa automáticamente a 'En ejecucion'
     estado = resolver_estado_por_asignacion(estado, lt_asignado)
 
-    result = update_proyecto(
+    update_kwargs = dict(
         proyecto_id=proyecto_id,
         cliente=cliente,
         lt_asignado=lt_asignado,
@@ -525,6 +554,9 @@ def actualizar_proyecto(
         tipo_servicio=tipo_servicio,
         comentario=comentario
     )
+    if bitacora:
+        update_kwargs["bitacora"] = bitacora
+    result = update_proyecto(**update_kwargs)
 
     if not result.get("success"):
         if result.get("error") == "not_found":
@@ -550,8 +582,143 @@ def actualizar_proyecto(
 
     return {
         "message": "Proyecto actualizado exitosamente",
-        "data": result.get("data")
+        "data": result.get("data"),
+        "bitacora_entry_id": result.get("bitacora_entry_id")
     }
+
+# -----------------------------------------------------------------------------
+# BITÁCORA Y ADJUNTOS DE PROYECTOS
+# -----------------------------------------------------------------------------
+BITACORA_TEXTO_MAX = 20000
+ADJUNTOS_CHUNK_BYTES = 1024 * 1024
+
+def _get_proyecto_or_404(proyecto_id: int, current_user: dict) -> dict:
+    """Punto único de verificación de existencia del proyecto para los recursos de bitácora y adjuntos."""
+    proyecto = get_proyecto_by_id(proyecto_id)
+    if not proyecto:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proyecto no encontrado")
+    return proyecto
+
+@app.get("/api/proyectos/{proyecto_id}/bitacora")
+def listar_bitacora(
+    proyecto_id: int,
+    current_user: dict = Depends(require_lti_or_admin)
+):
+    _get_proyecto_or_404(proyecto_id, current_user)
+    return get_bitacora_by_proyecto(proyecto_id)
+
+@app.post("/api/proyectos/{proyecto_id}/bitacora", status_code=status.HTTP_201_CREATED)
+def crear_entrada_bitacora(
+    proyecto_id: int,
+    req: BitacoraCreateRequest,
+    current_user: dict = Depends(require_lti_or_admin)
+):
+    texto = (req.texto or "").strip()
+    if not texto:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El texto de la bitácora es obligatorio")
+    if len(texto) > BITACORA_TEXTO_MAX:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"El texto de la bitácora no puede superar {BITACORA_TEXTO_MAX} caracteres"
+        )
+    _get_proyecto_or_404(proyecto_id, current_user)
+    return create_bitacora_entry(
+        proyecto_id=proyecto_id,
+        texto=texto,
+        autor_username=current_user.get("username"),
+        autor_nombre=current_user.get("nombre_completo") or current_user.get("username")
+    )
+
+def _nombre_original_seguro(filename: Optional[str]) -> str:
+    """Solo el nombre del archivo, sin rutas ni caracteres de control."""
+    nombre = os.path.basename((filename or "").replace("\\", "/"))
+    return re.sub(r"[\x00-\x1f\x7f]", "", nombre).strip()
+
+@app.post("/api/proyectos/{proyecto_id}/bitacora/{entry_id}/adjuntos", status_code=status.HTTP_201_CREATED)
+def subir_adjunto(
+    proyecto_id: int,
+    entry_id: int,
+    archivo: UploadFile = File(...),
+    current_user: dict = Depends(require_lti_or_admin)
+):
+    _get_proyecto_or_404(proyecto_id, current_user)
+    if not get_bitacora_entry(proyecto_id, entry_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entrada de bitácora no encontrada")
+
+    nombre_completo = _nombre_original_seguro(archivo.filename)
+    extension = nombre_completo.rsplit(".", 1)[-1].lower() if "." in nombre_completo else ""
+    nombre_original = nombre_completo[:255]
+    permitidas = app_config.ADJUNTOS_EXTENSIONES_PERMITIDAS
+    if extension not in permitidas:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Tipo de archivo no permitido. Formatos aceptados: {', '.join(permitidas)}"
+        )
+
+    # Se copia en bloques y se corta apenas se supera el límite; el archivo parcial se borra
+    directorio = get_adjuntos_dir()
+    os.makedirs(directorio, exist_ok=True)
+    nombre_almacenado = f"{uuid.uuid4().hex}.{extension}"
+    destino = directorio / nombre_almacenado
+    tamano = 0
+    try:
+        with open(destino, "wb") as salida:
+            while True:
+                bloque = archivo.file.read(ADJUNTOS_CHUNK_BYTES)
+                if not bloque:
+                    break
+                tamano += len(bloque)
+                if tamano > app_config.ADJUNTOS_MAX_BYTES:
+                    break
+                salida.write(bloque)
+    except Exception:
+        remove_adjunto_files([nombre_almacenado])
+        raise
+    if tamano > app_config.ADJUNTOS_MAX_BYTES:
+        remove_adjunto_files([nombre_almacenado])
+        raise HTTPException(
+            status_code=413,
+            detail="El archivo supera el máximo de 9 MB"
+        )
+    if tamano == 0:
+        remove_adjunto_files([nombre_almacenado])
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El archivo está vacío")
+
+    try:
+        return create_adjunto(
+            bitacora_id=entry_id,
+            proyecto_id=proyecto_id,
+            nombre_original=nombre_original,
+            nombre_almacenado=nombre_almacenado,
+            content_type=(archivo.content_type or "")[:150] or None,
+            tamano_bytes=tamano,
+            autor_username=current_user.get("username")
+        )
+    except Exception as e:
+        remove_adjunto_files([nombre_almacenado])
+        logger.error(f"Error al registrar el adjunto del proyecto {proyecto_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al guardar el adjunto"
+        )
+
+@app.get("/api/proyectos/{proyecto_id}/adjuntos/{adjunto_id}")
+def descargar_adjunto(
+    proyecto_id: int,
+    adjunto_id: int,
+    current_user: dict = Depends(require_lti_or_admin)
+):
+    _get_proyecto_or_404(proyecto_id, current_user)
+    adjunto = get_adjunto(proyecto_id, adjunto_id)
+    ruta = adjunto_path(adjunto.get("Nombre_Almacenado")) if adjunto else None
+    if not ruta or not ruta.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Adjunto no encontrado")
+    return FileResponse(
+        ruta,
+        media_type="application/octet-stream",
+        filename=adjunto.get("Nombre_Original") or ruta.name,
+        headers={"X-Content-Type-Options": "nosniff"}
+    )
 
 @app.delete("/api/proyectos/{proyecto_id}")
 def eliminar_proyecto(

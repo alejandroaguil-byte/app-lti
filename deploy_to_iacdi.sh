@@ -28,10 +28,12 @@ rsync -rtvz --no-o --no-g --omit-dir-times --progress \
     --exclude '.DS_Store' \
     --exclude '.engram/' \
     --exclude 'odd/' \
+    --exclude 'data/' \
     "$LOCAL_DIR/" "$REMOTE_HOST:$REMOTE_DIR/"
 
 echo ""
 echo "[INFO] Código sincronizado exitosamente."
-echo "[INFO] Si el servicio app-lti.service está corriendo con --reload, los cambios ya están activos."
-echo "[INFO] Para verificar logs remotos: ssh $REMOTE_HOST 'journalctl --user -u app-lti -n 20 --no-pager'"
+echo "[INFO] Los cambios de backend requieren reiniciar el servicio (unidad de sistema, sin --reload):"
+echo "[INFO]   ssh $REMOTE_HOST 'sudo systemctl restart app-lti.service'"
+echo "[INFO] Para verificar logs remotos: ssh $REMOTE_HOST 'journalctl -u app-lti.service -n 20 --no-pager'"
 echo "=================================================="

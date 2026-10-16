@@ -19,6 +19,7 @@ venv/
 .venv/
 env/
 backups_iacdi/
+data/
 
 # IDE / Editors
 .vscode/

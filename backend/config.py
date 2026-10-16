@@ -61,6 +61,15 @@ LTI_ASSIGNER_USERNAMES = frozenset({
     'pablo.castillo',
 })
 
+# Adjuntos de la bitácora de proyectos: se guardan en disco, fuera del directorio web.
+# nginx limita las peticiones de /app-lti/ a 10 MB, por eso el tope por archivo es 9 MB.
+ADJUNTOS_DIR = os.getenv('ADJUNTOS_DIR') or os.path.join(BASE_DIR, 'data', 'adjuntos')
+ADJUNTOS_MAX_BYTES = 9 * 1024 * 1024
+ADJUNTOS_EXTENSIONES_PERMITIDAS = (
+    'pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'doc', 'docx', 'xls', 'xlsx',
+    'ppt', 'pptx', 'msg', 'eml', 'zip', 'txt', 'csv',
+)
+
 CORS_ORIGINS = [
     'https://200.14.222.162',
     'http://localhost:8000',
