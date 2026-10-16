@@ -1000,7 +1000,25 @@ def get_rfcs_by_proyecto(proyecto_id, numero_proyecto=None):
     finally:
         conn.close()
 
-def get_dashboard_kpis(lt_filter=None):
+def kpis_vacios() -> dict:
+    """KPIs en cero (misma estructura que get_dashboard_kpis) para usuarios sin proyectos en su alcance."""
+    return {
+        'total_proyectos': 0,
+        'proyectos_en_curso': 0,
+        'proyectos_atendidos': 0,
+        'proyectos_cerrados': 0,
+        'pendientes_asignar': 0,
+        'efectividad': 0.0,
+        'total_tickets': 0,
+        'total_rfcs': 0,
+        'salud': {'saludables': 0, 'en_riesgo': 0, 'criticos': 0, 'sin_datos': 0}
+    }
+
+def get_dashboard_kpis(lt_filter=None, restringido=False):
+    """
+    KPIs del dashboard. Con restringido=True (usuario con alcance limitado a su LTI) los pendientes de asignar
+    también se calculan dentro de ese alcance; si no, se mantiene el conteo global.
+    """
     if lt_filter in (None, '', '__ALL__'):
         lt_filter = None
     conn = get_db_connection()
@@ -1046,7 +1064,11 @@ def get_dashboard_kpis(lt_filter=None):
                 WHERE (p.LT_Asignado IS NULL OR LTRIM(RTRIM(p.LT_Asignado)) = '' OR LOWER(LTRIM(RTRIM(p.LT_Asignado))) = 'sin asignar')
                   AND (p.Tipo_Servicio IS NULL OR p.Tipo_Servicio <> 'Reunión')
             """
-            cursor.execute(sql_pendientes)
+            params_pend = []
+            if restringido and lt_filter and lt_filter != "__UNASSIGNED__":
+                sql_pendientes += " AND p.LT_Asignado = %s"
+                params_pend.append(lt_filter)
+            cursor.execute(sql_pendientes, tuple(params_pend))
             pendientes_asignar = cursor.fetchone()['total']
 
             # 5. Efectividad

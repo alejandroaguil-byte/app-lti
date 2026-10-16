@@ -19,7 +19,10 @@ from .auth import (
     get_current_user,
     require_admin,
     require_lti_or_admin,
-    require_non_pm
+    require_non_pm,
+    ve_todos_los_proyectos,
+    resolver_lt_scope,
+    proyecto_en_alcance
 )
 from .db import (
     get_user_by_username,
@@ -40,6 +43,8 @@ from .db import (
     get_tickets_by_proyecto,
     get_rfcs_by_proyecto,
     get_dashboard_kpis,
+    kpis_vacios,
+    procesar_alertas_sla,
     search_direct_tables,
     get_db_connection,
     get_solicitud_catalogos,
@@ -224,6 +229,8 @@ async def add_no_cache_headers(request, call_next):
         response.headers["Pragma"] = "no-cache"
     return response
 
+BITACORA_TEXTO_MAX = 20000
+
 # Schemas
 class TicketCreationRequest(BaseModel):
     contacto: str = "ALEJANDRO JAVIER AGUILAR MORALES"
@@ -289,7 +296,8 @@ def get_me(current_user: dict = Depends(get_current_user)):
         "lt_asignado": current_user.get("lt_asignado"),
         "rol": current_user["rol"],
         "is_super_admin": current_user.get("is_super_admin", False),
-        "portal_access": current_user.get("portal_access", "lectura")
+        "portal_access": current_user.get("portal_access", "lectura"),
+        "ve_todos_proyectos": ve_todos_los_proyectos(current_user)
     }
 
 # Business Endpoints
@@ -306,15 +314,11 @@ def get_kpis(
     lt: Optional[str] = None,
     current_user: dict = Depends(require_lti_or_admin)
 ):
-    lt_to_use = lt
-    if current_user["rol"] != "ADMIN" and not lt:
-        lt_to_use = current_user["lt_asignado"]
-    elif lt == "__ALL__":
-        lt_to_use = None
-    elif lt and (lt == "__UNASSIGNED__" or lt.strip().lower() in ("sin asignar", "__unassigned__", "sin_asignar")):
-        lt_to_use = "__UNASSIGNED__"
+    lt_to_use, sin_acceso = resolver_lt_scope(current_user, lt)
+    if sin_acceso:
+        return kpis_vacios()
 
-    return get_dashboard_kpis(lt_filter=lt_to_use)
+    return get_dashboard_kpis(lt_filter=lt_to_use, restringido=not ve_todos_los_proyectos(current_user))
 
 @app.get("/api/proyectos")
 def list_proyectos(
@@ -324,13 +328,9 @@ def list_proyectos(
     estado_sga: Optional[str] = None,
     current_user: dict = Depends(require_lti_or_admin)
 ):
-    lt_to_use = lt
-    if current_user["rol"] != "ADMIN" and not lt:
-        lt_to_use = current_user["lt_asignado"]
-    elif lt == "__ALL__":
-        lt_to_use = None
-    elif lt and (lt == "__UNASSIGNED__" or lt.strip().lower() in ("sin asignar", "__unassigned__", "sin_asignar")):
-        lt_to_use = "__UNASSIGNED__"
+    lt_to_use, sin_acceso = resolver_lt_scope(current_user, lt)
+    if sin_acceso:
+        return []
 
     proyectos = get_proyectos(
         lt_filter=lt_to_use,
@@ -340,25 +340,38 @@ def list_proyectos(
     )
     return proyectos
 
+def _get_proyecto_or_404(proyecto_id: int, current_user: dict, detail: str = "Proyecto no encontrado") -> dict:
+    """
+    Punto único de existencia y alcance de un proyecto: 404 si no existe o si el usuario no lo puede ver
+    (usuarios sin visibilidad total solo acceden a proyectos con su LT_Asignado). Ambos casos devuelven el mismo 404.
+    """
+    proyecto = get_proyecto_by_id(proyecto_id)
+    if not proyecto or not proyecto_en_alcance(current_user, proyecto):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
+    return proyecto
+
+def _verificar_alcance_proyecto(proyecto_id: int, current_user: dict) -> None:
+    """
+    Para endpoints cuya función de datos ya resuelve la existencia (diagnóstico, ficha, timeline):
+    los usuarios con visibilidad total no requieren lectura previa; el resto verifica el alcance.
+    """
+    if not ve_todos_los_proyectos(current_user):
+        _get_proyecto_or_404(proyecto_id, current_user, detail=f"Proyecto con ID {proyecto_id} no fue encontrado.")
+
 @app.get("/api/proyectos/{proyecto_id}")
 def get_proyecto(
     proyecto_id: int,
     current_user: dict = Depends(require_lti_or_admin)
 ):
-    proyecto = get_proyecto_by_id(proyecto_id)
-    if not proyecto:
-        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
-    return proyecto
+    return _get_proyecto_or_404(proyecto_id, current_user)
 
 @app.get("/api/proyectos/{proyecto_id}/solots")
 def get_solots(
     proyecto_id: int,
     current_user: dict = Depends(require_lti_or_admin)
 ):
-    proyecto = get_proyecto_by_id(proyecto_id)
-    if not proyecto:
-        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
-    
+    proyecto = _get_proyecto_or_404(proyecto_id, current_user)
+
     solots = get_solots_by_proyecto(proyecto_id, proyecto.get("Numero_Proyecto"))
     return solots
 
@@ -367,10 +380,8 @@ def get_tickets(
     proyecto_id: int,
     current_user: dict = Depends(require_lti_or_admin)
 ):
-    proyecto = get_proyecto_by_id(proyecto_id)
-    if not proyecto:
-        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
-    
+    proyecto = _get_proyecto_or_404(proyecto_id, current_user)
+
     tickets = get_tickets_by_proyecto(proyecto_id, proyecto.get("Numero_Proyecto"))
     return tickets
 
@@ -379,10 +390,8 @@ def get_rfcs(
     proyecto_id: int,
     current_user: dict = Depends(require_lti_or_admin)
 ):
-    proyecto = get_proyecto_by_id(proyecto_id)
-    if not proyecto:
-        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
-    
+    proyecto = _get_proyecto_or_404(proyecto_id, current_user)
+
     rfcs = get_rfcs_by_proyecto(proyecto_id, proyecto.get("Numero_Proyecto"))
     return rfcs
 
@@ -395,6 +404,7 @@ def obtener_diagnostico_proyecto(
     Genera en tiempo real el diagnóstico ejecutivo operacional de un proyecto (1 Clic).
     Analiza solots, tickets, RFCs y formula cuellos de botella y recomendaciones.
     """
+    _verificar_alcance_proyecto(proyecto_id, current_user)
     diagnostico = get_diagnostico_proyecto(proyecto_id)
     if not diagnostico:
         raise HTTPException(
@@ -411,6 +421,7 @@ def obtener_ficha_ejecutiva_proyecto(
     """
     Retorna el JSON estructurado consolidado para la Ficha Ejecutiva del proyecto.
     """
+    _verificar_alcance_proyecto(proyecto_id, current_user)
     username = current_user.get("username") or "sistema"
     data = get_ficha_ejecutiva_data(proyecto_id, username=username)
     if not data:
@@ -430,6 +441,7 @@ def obtener_ficha_html_proyecto(
     Retorna el documento HTML A4 corporativo Claro HALO de la Ficha Ejecutiva,
     listo para previsualizar o imprimir como PDF.
     """
+    _verificar_alcance_proyecto(proyecto_id, current_user)
     username = current_user.get("username") or "sistema"
     data = get_ficha_ejecutiva_data(proyecto_id, username=username)
     if not data:
@@ -449,6 +461,7 @@ def obtener_timeline_proyecto(
     Retorna el JSON estructurado consolidado para la Línea de Tiempo Visual del proyecto.
     Unifica cronológicamente SharePoint, Solots SGA, Tickets HPSM y RFCs.
     """
+    _verificar_alcance_proyecto(proyecto_id, current_user)
     data = get_timeline_proyecto(proyecto_id)
     if not data:
         raise HTTPException(
@@ -469,6 +482,14 @@ def get_alertas_sla_endpoint(
     Centro de Alertas Tempranas SLA & Escalamiento Rápido (Funcionalidad 5).
     Retorna métricas consolidadas, lista priorizada de alertas y minuta ejecutiva.
     """
+    if not ve_todos_los_proyectos(current_user):
+        # Alcance forzado a su LTI; sin lt_asignado no ve alertas
+        lider, sin_acceso = resolver_lt_scope(current_user, None)
+        if sin_acceso:
+            return JSONResponse(
+                status_code=status.HTTP_200_OK,
+                content=procesar_alertas_sla([], [], lider=None, severidad=severidad, tipo=tipo, limite=limite)
+            )
     try:
         data = get_alertas_tempranas_sla(
             lider=lider,
@@ -504,6 +525,16 @@ def actualizar_proyecto(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Los campos 'cliente', 'estado' y 'detalle' son obligatorios"
         )
+    if nota_estado and len(nota_estado) > BITACORA_TEXTO_MAX:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"La nota no puede superar {BITACORA_TEXTO_MAX} caracteres"
+        )
+
+    # Usuarios sin visibilidad total: solo pueden editar proyectos de su alcance (404 si no)
+    actual = None
+    if not ve_todos_los_proyectos(current_user):
+        actual = _get_proyecto_or_404(proyecto_id, current_user)
 
     estado_normalizado = normalizar_estado_proyecto(estado)
     if estado_normalizado is None:
@@ -517,9 +548,8 @@ def actualizar_proyecto(
     # 'Atendido' (legado) equivale a 'Cerrado' al decidir si hubo cambio.
     estado_anterior = None
     if estado in ("En revision", "Cerrado"):
-        actual = get_proyecto_by_id(proyecto_id)
-        if not actual:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proyecto no encontrado")
+        if actual is None:
+            actual = _get_proyecto_or_404(proyecto_id, current_user)
         estado_anterior = normalizar_estado_proyecto(actual.get("Estado")) or actual.get("Estado")
         if estado_anterior != estado and not nota_estado:
             raise HTTPException(
@@ -589,15 +619,7 @@ def actualizar_proyecto(
 # -----------------------------------------------------------------------------
 # BITÁCORA Y ADJUNTOS DE PROYECTOS
 # -----------------------------------------------------------------------------
-BITACORA_TEXTO_MAX = 20000
 ADJUNTOS_CHUNK_BYTES = 1024 * 1024
-
-def _get_proyecto_or_404(proyecto_id: int, current_user: dict) -> dict:
-    """Punto único de verificación de existencia del proyecto para los recursos de bitácora y adjuntos."""
-    proyecto = get_proyecto_by_id(proyecto_id)
-    if not proyecto:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proyecto no encontrado")
-    return proyecto
 
 @app.get("/api/proyectos/{proyecto_id}/bitacora")
 def listar_bitacora(
@@ -725,6 +747,8 @@ def eliminar_proyecto(
     proyecto_id: int,
     current_user: dict = Depends(require_admin)
 ):
+    if not ve_todos_los_proyectos(current_user):
+        _get_proyecto_or_404(proyecto_id, current_user)
     result = delete_proyecto(proyecto_id)
     if not result.get("success"):
         if result.get("error") == "not_found":

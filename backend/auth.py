@@ -2,7 +2,7 @@ import datetime
 from typing import Optional
 import jwt
 from fastapi import HTTPException, Security, status, Depends, Request
-from .config import PORTAL_JWT_SECRET, JWT_ALGORITHM, LTI_ASSIGNER_USERNAMES
+from .config import PORTAL_JWT_SECRET, JWT_ALGORITHM, LTI_ASSIGNER_USERNAMES, FULL_PROJECT_VISIBILITY_USERNAMES
 from .db import get_or_create_jit_user, get_user_by_username
 
 def decode_portal_token(token: str) -> dict:
@@ -133,6 +133,40 @@ def get_current_user(request: Request) -> dict:
         "portal_access": "operador" if has_operator else "lectura",
         "activo": 1
     }
+
+def ve_todos_los_proyectos(current_user: dict) -> bool:
+    """True solo para los usernames con visibilidad total (el username de la sesión ya viene en minúsculas)."""
+    return str(current_user.get("username") or "").strip().lower() in FULL_PROJECT_VISIBILITY_USERNAMES
+
+def lt_propio(current_user: dict) -> Optional[str]:
+    """LT asignado del usuario (recortado) o None si no tiene."""
+    lt = str(current_user.get("lt_asignado") or "").strip()
+    return lt or None
+
+def resolver_lt_scope(current_user: dict, lt_param: Optional[str]):
+    """
+    Resuelve el filtro de LTI que se aplica a listados y KPIs. Retorna (lt_filter, sin_acceso):
+    - Visibilidad total: sin parámetro ve todo (None); '__ALL__' -> None; alias de sin asignar -> '__UNASSIGNED__';
+      un LTI con nombre -> ese LTI.
+    - Resto de usuarios (cualquier rol): el parámetro se ignora y el alcance es siempre su lt_asignado;
+      sin lt_asignado no ven nada (sin_acceso=True).
+    """
+    if ve_todos_los_proyectos(current_user):
+        if lt_param == "__ALL__":
+            return None, False
+        if lt_param and (lt_param == "__UNASSIGNED__" or lt_param.strip().lower() in ("sin asignar", "__unassigned__", "sin_asignar")):
+            return "__UNASSIGNED__", False
+        return (lt_param or None), False
+    propio = lt_propio(current_user)
+    return propio, propio is None
+
+def proyecto_en_alcance(current_user: dict, proyecto: dict) -> bool:
+    """True si el usuario puede ver el proyecto: visibilidad total o LT_Asignado igual a su lt_asignado."""
+    if ve_todos_los_proyectos(current_user):
+        return True
+    propio = lt_propio(current_user)
+    lt_proyecto = str((proyecto or {}).get("LT_Asignado") or "").strip()
+    return bool(propio and lt_proyecto and propio.lower() == lt_proyecto.lower())
 
 def require_roles(allowed_roles: list[str]):
     def role_checker(current_user: dict = Depends(get_current_user)):

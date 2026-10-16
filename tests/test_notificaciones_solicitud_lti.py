@@ -314,7 +314,7 @@ class TestEndpointsNotificaciones:
                 "Detalle": "Actualizado"
             }
         }
-        token = create_mock_jwt(username="admin.test", role="ADMIN")
+        token = create_mock_jwt(username="alejandro.aguilar", role="ADMIN")
         client.cookies.set("access_token", token)
 
         payload = {
@@ -345,7 +345,7 @@ class TestEndpointsNotificaciones:
                 "Estado": "Generado"
             }
         }
-        token = create_mock_jwt(username="admin.test", role="ADMIN")
+        token = create_mock_jwt(username="alejandro.aguilar", role="ADMIN")
         client.cookies.set("access_token", token)
 
         payload = {
@@ -514,7 +514,7 @@ class TestResilienciaSmtpCompleta:
                 "Detalle": "Asignado con SMTP caído"
             }
         }
-        token = create_mock_jwt(username="admin.test", role="ADMIN")
+        token = create_mock_jwt(username="alejandro.aguilar", role="ADMIN")
         client.cookies.set("access_token", token)
 
         payload = {

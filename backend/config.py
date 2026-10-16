@@ -61,6 +61,13 @@ LTI_ASSIGNER_USERNAMES = frozenset({
     'pablo.castillo',
 })
 
+# Usernames (en minúsculas) que ven todos los proyectos. Cualquier otro usuario, sea cual sea su rol,
+# solo ve los proyectos cuyo LT_Asignado coincide con su lt_asignado. No reutilizar LTI_ASSIGNER_USERNAMES.
+FULL_PROJECT_VISIBILITY_USERNAMES = frozenset({
+    'alejandro.aguilar',
+    'pablo.castillo',
+})
+
 # Adjuntos de la bitácora de proyectos: se guardan en disco, fuera del directorio web.
 # nginx limita las peticiones de /app-lti/ a 10 MB, por eso el tope por archivo es 9 MB.
 ADJUNTOS_DIR = os.getenv('ADJUNTOS_DIR') or os.path.join(BASE_DIR, 'data', 'adjuntos')

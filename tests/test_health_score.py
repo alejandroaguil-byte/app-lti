@@ -116,7 +116,7 @@ def test_precedencia_critico_sobre_riesgo():
     assert res["color"] == "red"
 
 def test_api_kpis_contains_health_summary():
-    token = create_access_token({"sub": "admin", "rol": "ADMIN", "nombre_completo": "Admin", "lt_asignado": None})
+    token = create_access_token({"username": "alejandro.aguilar", "rol": "ADMIN"})
     headers = {"Authorization": f"Bearer {token}"}
     res = client.get("/api/kpis", headers=headers)
     assert res.status_code == 200
@@ -136,7 +136,7 @@ def test_api_kpis_contains_health_summary():
     assert total_salud == data["total_proyectos"]
 
 def test_api_proyectos_contains_health_score():
-    token = create_access_token({"sub": "admin", "rol": "ADMIN", "nombre_completo": "Admin", "lt_asignado": None})
+    token = create_access_token({"username": "alejandro.aguilar", "rol": "ADMIN"})
     headers = {"Authorization": f"Bearer {token}"}
     res = client.get("/api/proyectos", headers=headers)
     assert res.status_code == 200
@@ -153,7 +153,7 @@ def test_api_proyectos_contains_health_score():
         assert len(salud["motivos"]) > 0
 
 def test_api_proyecto_by_id_contains_health_score():
-    token = create_access_token({"sub": "admin", "rol": "ADMIN", "nombre_completo": "Admin", "lt_asignado": None})
+    token = create_access_token({"username": "alejandro.aguilar", "rol": "ADMIN"})
     headers = {"Authorization": f"Bearer {token}"}
     # Obtener el primer proyecto
     res = client.get("/api/proyectos", headers=headers)
