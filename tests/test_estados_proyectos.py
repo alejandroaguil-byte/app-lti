@@ -548,3 +548,13 @@ def test_s4_main_apply_usa_el_directorio_de_respaldo_indicado(migracion, monkeyp
     assert migracion.main(["--apply", "--backup-dir", str(tmp_path)]) == 0
     assert conn.commits == 1
     assert len(list(tmp_path.glob("proyectos_estados_*.json"))) == 1
+
+
+def test_s4_respaldo_soporta_ids_decimal_de_pymssql(migracion, tmp_path):
+    # pymssql entrega dbo.Proyectos.ID (NUMERIC(18,0)) como Decimal
+    from decimal import Decimal
+    filas = [{"ID": Decimal("2491"), "Estado": "Atendido", "LT_Asignado": "Juan Barrera"}]
+    path = migracion.write_backup(filas, tmp_path)
+    assert json.loads(path.read_text(encoding="utf-8")) == [
+        {"ID": 2491, "Estado": "Atendido", "LT_Asignado": "Juan Barrera"}
+    ]

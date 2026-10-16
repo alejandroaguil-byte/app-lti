@@ -64,7 +64,8 @@ def write_backup(rows, backup_dir: Path) -> Path:
     backup_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     path = backup_dir / f"proyectos_estados_{timestamp}.json"
-    payload = [{"ID": r["ID"], "Estado": r["Estado"], "LT_Asignado": r["LT_Asignado"]} for r in rows]
+    # pymssql entrega ID (NUMERIC(18,0)) como Decimal, que json no serializa
+    payload = [{"ID": int(r["ID"]), "Estado": r["Estado"], "LT_Asignado": r["LT_Asignado"]} for r in rows]
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return path
 
