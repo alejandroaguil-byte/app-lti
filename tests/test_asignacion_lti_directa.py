@@ -318,7 +318,7 @@ def test_s3_missing_lider_is_400(app_user, backlog, lt):
     _assert_nothing_written(backlog)
 
 
-@pytest.mark.parametrize("numero", ["", "   "])
+@pytest.mark.parametrize("numero", ["", "   ", "0", "000", " 0000 "])
 def test_s3_empty_project_number_is_400(app_user, backlog, numero):
     res = _assign({"numero_proyecto": numero, "lt_asignado": "Juan Barrera"})
     assert res.status_code == 400

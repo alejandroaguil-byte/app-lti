@@ -564,7 +564,8 @@ def asignar_lti_desde_backlog(
     numero_proyecto = (req.numero_proyecto or "").strip()
     lt_asignado = (req.lt_asignado or "").strip()
 
-    if not numero_proyecto:
+    # Un número solo con ceros equivale a vacío y matchearía filas sin N° de proyecto
+    if not numero_proyecto.lstrip('0'):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Debe indicar el N° de proyecto"
