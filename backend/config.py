@@ -54,6 +54,13 @@ PORTAL_BASE_URL = os.getenv('PORTAL_BASE_URL', 'https://200.14.222.162')
 JWT_ALGORITHM = 'HS256'
 JWT_EXPIRATION_HOURS = 24
 
+# Usernames that can always assign an LTI to projects, whatever their App or Portal role:
+# their effective role never drops below LTI.
+LTI_ASSIGNER_USERNAMES = frozenset({
+    'alejandro.aguilar',
+    'pablo.castillo',
+})
+
 CORS_ORIGINS = [
     'https://200.14.222.162',
     'http://localhost:8000',

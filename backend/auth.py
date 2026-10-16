@@ -2,7 +2,7 @@ import datetime
 from typing import Optional
 import jwt
 from fastapi import HTTPException, Security, status, Depends, Request
-from .config import PORTAL_JWT_SECRET, JWT_ALGORITHM
+from .config import PORTAL_JWT_SECRET, JWT_ALGORITHM, LTI_ASSIGNER_USERNAMES
 from .db import get_or_create_jit_user, get_user_by_username
 
 def decode_portal_token(token: str) -> dict:
@@ -116,6 +116,10 @@ def get_current_user(request: Request) -> dict:
             effective_role = "ADMIN"
         else:
             effective_role = raw_rol
+
+    # Asignadores autorizados: pueden asignar LTI sin importar su rol (piso LTI)
+    if username in LTI_ASSIGNER_USERNAMES and effective_role == "PM":
+        effective_role = "LTI"
 
     return {
         "id": user["id"],
