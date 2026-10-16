@@ -35,6 +35,19 @@ from backend.db import (
 
 client = TestClient(app)
 
+
+@pytest.fixture(autouse=True)
+def fake_jit_user(monkeypatch):
+    """La base es la de producción: el JIT simulado evita que los tokens de prueba reescriban App_Usuarios."""
+    import backend.auth as auth_module
+
+    def fake_jit(username, nombre_completo=None, default_rol="PM", email=None):
+        return {"id": 900, "username": username, "nombre_completo": nombre_completo or username,
+                "email": email, "rol": default_rol, "lt_asignado": None, "activo": 1}
+
+    monkeypatch.setattr(auth_module, "get_or_create_jit_user", fake_jit)
+
+
 def create_mock_jwt(username="test.pm", role="PM", full_name="Test PM User", email="test.pm@clarovtr.cl"):
     payload = {
         "sub": username,

@@ -169,7 +169,7 @@ def test_tc_rbac_06_lti_allowed_edit_project():
     edit_payload = {
         "cliente": f"CLIENTE EDITADO {ts}",
         "lt_asignado": "Juan Barrera",
-        "estado": "En revision",
+        "estado": "En ejecucion",
         "detalle": "Detalle actualizado por LTI",
         "tipo_servicio": "Otros",
         "comentario": "Comentario LTI"
@@ -178,7 +178,7 @@ def test_tc_rbac_06_lti_allowed_edit_project():
     assert res.status_code == 200
     data = res.json().get("data") or res.json()
     assert data["Cliente"] == f"CLIENTE EDITADO {ts}"
-    assert data["Estado"] == "En revision"
+    assert data["Estado"] == "En ejecucion"
 
     # Limpieza
     delete_proyecto(proj_id)
