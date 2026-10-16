@@ -43,6 +43,7 @@ from .db import (
     check_proyecto_exists,
     create_solicitud_lti,
     update_proyecto,
+    assign_lti_from_backlog,
     delete_proyecto,
     get_diagnostico_proyecto,
     get_ficha_ejecutiva_data,
@@ -234,6 +235,10 @@ class ProyectoUpdateRequest(BaseModel):
     detalle: str
     tipo_servicio: Optional[str] = "Otros"
     comentario: Optional[str] = None
+
+class BacklogAsignacionRequest(BaseModel):
+    numero_proyecto: str
+    lt_asignado: Optional[str] = None
 
 class UserUpdateRequest(BaseModel):
     nombre_completo: str
@@ -548,6 +553,64 @@ def eliminar_proyecto(
         "numero_proyecto": result.get("numero_proyecto"),
         "cliente": result.get("cliente")
     }
+
+@app.post("/api/backlog/asignar-lti")
+def asignar_lti_desde_backlog(
+    req: BacklogAsignacionRequest,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(require_lti_or_admin)
+):
+    """Asigna un LTI a un proyecto del backlog de operaciones (crea el proyecto si no existe)."""
+    numero_proyecto = (req.numero_proyecto or "").strip()
+    lt_asignado = (req.lt_asignado or "").strip()
+
+    if not numero_proyecto:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Debe indicar el N° de proyecto"
+        )
+    lideres = get_lideres_list()
+    if lt_asignado not in lideres:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Líder TI inválido. Los líderes permitidos son: {', '.join(lideres)}"
+        )
+
+    result = assign_lti_from_backlog(
+        numero_proyecto=numero_proyecto,
+        lt_asignado=lt_asignado,
+        actor_nombre=current_user.get("nombre_completo") or current_user.get("username")
+    )
+    if not result.get("success"):
+        if result.get("error") == "not_found_backlog":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="El proyecto no existe en el backlog de operaciones"
+            )
+        logger.error(f"Error al asignar LTI desde backlog ({numero_proyecto}): {result.get('message')}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al asignar el LTI en la base de datos"
+        )
+
+    if result.get("was_assigned"):
+        background_tasks.add_task(
+            notificar_asignacion_lti_bg,
+            proyecto_data=result.get("data"),
+            prev_lt=result.get("prev_lt"),
+            new_lt=result.get("new_lt"),
+            actor_user=current_user
+        )
+
+    created = result.get("action") == "created"
+    return JSONResponse(
+        status_code=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        content={
+            "message": "Proyecto creado y LTI asignado" if created else "LTI asignado al proyecto",
+            "action": result.get("action"),
+            "data": result.get("data")
+        }
+    )
 
 # Direct Multi-Tag Search Endpoint (Sin considerar relaciones)
 @app.get("/api/search/direct")

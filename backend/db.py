@@ -1643,6 +1643,119 @@ def update_proyecto(
     }
 
 # -----------------------------------------------------------------------------
+# ASIGNACIÓN DIRECTA DE LTI DESDE EL BACKLOG DE OPERACIONES (CT_BACKLOG_OPERACIONES2)
+# -----------------------------------------------------------------------------
+BACKLOG_ASSIGNMENT_DETALLE = "Asignado directamente desde el backlog de operaciones SGA."
+
+def _numero_proyecto_variants(numero_proyecto: str) -> tuple:
+    """N° de proyecto tal cual, sin ceros iniciales y con prefijo '000'."""
+    num_clean = str(numero_proyecto).strip()
+    num_without_zeros = num_clean.lstrip('0')
+    num_with_zeros = f"000{num_without_zeros}" if num_without_zeros else num_clean
+    return (num_clean, num_without_zeros, num_with_zeros)
+
+def get_backlog_proyecto(numero_proyecto: str) -> Optional[dict]:
+    """Primer registro de CT_BACKLOG_OPERACIONES2 del proyecto (solo lectura), o None."""
+    if not numero_proyecto or not str(numero_proyecto).strip():
+        return None
+    variants = _numero_proyecto_variants(numero_proyecto)
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT TOP 1 NRO_PROYECTO, Numero_Proyecto_Limpio, CLI_CLIENTE, PRO_ING_PROYECTO
+                FROM dbo.CT_BACKLOG_OPERACIONES2 WITH (NOLOCK)
+                WHERE LTRIM(RTRIM(NRO_PROYECTO)) IN (%s, %s, %s)
+                   OR LTRIM(RTRIM(Numero_Proyecto_Limpio)) IN (%s, %s, %s)
+                ORDER BY FECHA_INSERT DESC
+            """, variants + variants)
+            row = cursor.fetchone()
+            return serialize_row(row) if row else None
+    finally:
+        conn.close()
+
+def update_proyecto_lt(proyecto_id: int, lt_asignado: str) -> Optional[dict]:
+    """Actualiza solo LT_Asignado de un proyecto en dbo.Proyectos y retorna el registro."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "UPDATE dbo.Proyectos SET LT_Asignado = %s WHERE ID = %s",
+                (str(lt_asignado).strip()[:50], proyecto_id)
+            )
+            conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
+    finally:
+        conn.close()
+    return get_proyecto_by_id(proyecto_id)
+
+def _is_unassigned_lt(lt_value) -> bool:
+    lt_str = str(lt_value).strip() if lt_value is not None else ""
+    return not lt_str or lt_str.lower() in ('sin asignar', 'none', 'null')
+
+def assign_lti_from_backlog(numero_proyecto: str, lt_asignado: str, actor_nombre: Optional[str] = None) -> dict:
+    """
+    Asigna un LTI a un proyecto del backlog de operaciones.
+
+    - Si el proyecto ya existe en dbo.Proyectos, cambia solo LT_Asignado (action='updated').
+    - Si no existe, lo crea con los datos del backlog, Estado 'Generado' (action='created').
+    Nunca escribe en dbo.CT_BACKLOG_OPERACIONES2.
+    """
+    lt_val = str(lt_asignado).strip()
+    try:
+        backlog_row = get_backlog_proyecto(numero_proyecto)
+        if not backlog_row:
+            return {"success": False, "error": "not_found_backlog"}
+
+        existing = check_proyecto_exists(numero_proyecto)
+        action = "updated"
+        if not existing:
+            solicitante = clean_solicitante(backlog_row.get("PRO_ING_PROYECTO"))
+            if solicitante == UNMATCHED_SOLICITANTE:
+                solicitante = actor_nombre
+            created = create_solicitud_lti(
+                cliente=str(backlog_row.get("CLI_CLIENTE") or "").strip(),
+                numero_proyecto=str(numero_proyecto).strip(),
+                lt_asignado=lt_val,
+                estado="Generado",
+                fecha_solicitud=datetime.date.today().isoformat(),
+                detalle=BACKLOG_ASSIGNMENT_DETALLE,
+                solicitante=solicitante,
+                tipo_servicio="Otros"
+            )
+            if created.get("success"):
+                return {
+                    "success": True,
+                    "action": "created",
+                    "data": created.get("data"),
+                    "was_assigned": True,
+                    "prev_lt": None,
+                    "new_lt": lt_val
+                }
+            if created.get("error") != "duplicate":
+                return {"success": False, "error": "db_error", "message": created.get("error")}
+            # Otro usuario lo creó entre la verificación y la inserción: se actualiza
+            existing = created.get("existing")
+
+        prev_lt = existing.get("LT_Asignado")
+        updated = update_proyecto_lt(existing["ID"], lt_val)
+        return {
+            "success": True,
+            "action": action,
+            "data": updated,
+            "was_assigned": _is_unassigned_lt(prev_lt),
+            "prev_lt": None if _is_unassigned_lt(prev_lt) else str(prev_lt).strip(),
+            "new_lt": lt_val
+        }
+    except Exception as e:
+        return {"success": False, "error": "db_error", "message": str(e)}
+
+# -----------------------------------------------------------------------------
 # HELPERS DE CORREO Y RECORDATORIOS (MÓDULO SOLICITUD LTI)
 # -----------------------------------------------------------------------------
 CANONICAL_EMAIL_MAP = {

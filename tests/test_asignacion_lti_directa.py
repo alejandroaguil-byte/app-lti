@@ -166,3 +166,209 @@ def test_s2_regular_pm_still_cannot_edit(app_user, fake_update):
     res = client.put("/api/proyectos/123", json=_EDIT_BODY, headers={"Authorization": f"Bearer {token}"})
     assert res.status_code == 403
     assert fake_update == []
+
+
+# ---------------------------------------------------------------------------
+# S3 — POST /api/backlog/asignar-lti
+# ---------------------------------------------------------------------------
+
+import time
+
+import backend.db as db_module
+
+_BACKLOG_ROW = {
+    "NRO_PROYECTO": "QA-777",
+    "Numero_Proyecto_Limpio": "QA-777",
+    "CLI_CLIENTE": "CLIENTE QA BACKLOG",
+    "PRO_ING_PROYECTO": "Corp1- Juan Pm",
+}
+
+
+@pytest.fixture
+def backlog(monkeypatch):
+    """Mocks every data-access helper used by the backlog assignment."""
+    state = {
+        "backlog_row": dict(_BACKLOG_ROW),
+        "existing": None,
+        "create_result": None,
+        "creates": [],
+        "updates": [],
+        "notifications": [],
+    }
+
+    def fake_get_backlog(numero):
+        state["backlog_lookup"] = numero
+        return state["backlog_row"]
+
+    def fake_check(numero):
+        return state["existing"]
+
+    def fake_create(**kwargs):
+        state["creates"].append(kwargs)
+        if state["create_result"] is not None:
+            return state["create_result"]
+        return {"success": True, "data": {"ID": 901, "Numero_Proyecto": "000QA-777", **{
+            "Cliente": kwargs["cliente"], "LT_Asignado": kwargs["lt_asignado"],
+            "Solicitante": kwargs["solicitante"], "Estado": kwargs["estado"]}}}
+
+    def fake_update_lt(proyecto_id, lt_asignado):
+        state["updates"].append((proyecto_id, lt_asignado))
+        return {"ID": proyecto_id, "LT_Asignado": lt_asignado}
+
+    def fake_notify(**kwargs):
+        state["notifications"].append(kwargs)
+
+    monkeypatch.setattr(db_module, "get_backlog_proyecto", fake_get_backlog, raising=False)
+    monkeypatch.setattr(db_module, "check_proyecto_exists", fake_check)
+    monkeypatch.setattr(db_module, "create_solicitud_lti", fake_create)
+    monkeypatch.setattr(db_module, "update_proyecto_lt", fake_update_lt, raising=False)
+    monkeypatch.setattr(main_module, "notificar_asignacion_lti_bg", fake_notify)
+    return state
+
+
+def _assign(body, username="alejandro.aguilar", tool_perm="operador", admin_level=2):
+    token = create_portal_jwt(username=username, admin_level=admin_level, tool_access={"app-lti": tool_perm})
+    return client.post("/api/backlog/asignar-lti", json=body, headers={"Authorization": f"Bearer {token}"})
+
+
+def _assert_nothing_written(state):
+    assert state["creates"] == []
+    assert state["updates"] == []
+    assert state["notifications"] == []
+
+
+def test_s3_creates_project_when_missing(app_user, backlog):
+    res = _assign({"numero_proyecto": "QA-777", "lt_asignado": "Juan Barrera"})
+    assert res.status_code == 201, res.text
+    body = res.json()
+    assert body["action"] == "created"
+    assert body["message"] == "Proyecto creado y LTI asignado"
+    assert body["data"]["LT_Asignado"] == "Juan Barrera"
+    assert len(backlog["creates"]) == 1
+    created = backlog["creates"][0]
+    assert created["cliente"] == "CLIENTE QA BACKLOG"
+    assert created["numero_proyecto"] == "QA-777"
+    assert created["lt_asignado"] == "Juan Barrera"
+    assert created["estado"] == "Generado"
+    assert created["tipo_servicio"] == "Otros"
+    assert created["detalle"] == "Asignado directamente desde el backlog de operaciones SGA."
+    assert created["solicitante"] == "JUAN PM"
+    assert backlog["updates"] == []
+    assert len(backlog["notifications"]) == 1
+    assert backlog["notifications"][0]["new_lt"] == "Juan Barrera"
+    assert backlog["notifications"][0]["prev_lt"] is None
+
+
+def test_s3_created_solicitante_falls_back_to_actor(app_user, backlog):
+    app_user["alejandro.aguilar"] = _app_user("alejandro.aguilar", rol="ADMIN")
+    backlog["backlog_row"]["PRO_ING_PROYECTO"] = None
+    res = _assign({"numero_proyecto": "QA-777", "lt_asignado": "Juan Barrera"})
+    assert res.status_code == 201, res.text
+    assert backlog["creates"][0]["solicitante"] == "Alejandro Aguilar"
+
+
+def test_s3_updates_only_lt_when_project_exists_unassigned(app_user, backlog):
+    backlog["existing"] = {"ID": 55, "Numero_Proyecto": "000QA-777", "LT_Asignado": None, "Cliente": "OTRO"}
+    res = _assign({"numero_proyecto": "QA-777", "lt_asignado": "Solange Ortiz"})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["action"] == "updated"
+    assert body["message"] == "LTI asignado al proyecto"
+    assert backlog["updates"] == [(55, "Solange Ortiz")]
+    assert backlog["creates"] == []
+    assert len(backlog["notifications"]) == 1
+    assert backlog["notifications"][0]["new_lt"] == "Solange Ortiz"
+
+
+def test_s3_reassign_existing_lt_does_not_notify(app_user, backlog):
+    backlog["existing"] = {"ID": 55, "Numero_Proyecto": "000QA-777", "LT_Asignado": "Erwin Sandoval"}
+    res = _assign({"numero_proyecto": "QA-777", "lt_asignado": "Solange Ortiz"})
+    assert res.status_code == 200, res.text
+    assert backlog["updates"] == [(55, "Solange Ortiz")]
+    assert backlog["notifications"] == []
+
+
+def test_s3_duplicate_race_falls_back_to_update(app_user, backlog):
+    backlog["create_result"] = {
+        "success": False, "error": "duplicate",
+        "existing": {"ID": 77, "Numero_Proyecto": "000QA-777", "LT_Asignado": None},
+    }
+    res = _assign({"numero_proyecto": "QA-777", "lt_asignado": "Juan Barrera"})
+    assert res.status_code == 200, res.text
+    assert res.json()["action"] == "updated"
+    assert backlog["updates"] == [(77, "Juan Barrera")]
+    assert len(backlog["notifications"]) == 1
+
+
+def test_s3_invalid_lider_is_400(app_user, backlog):
+    res = _assign({"numero_proyecto": "QA-777", "lt_asignado": "Fulano De Tal"})
+    assert res.status_code == 400
+    assert res.json()["detail"] == (
+        "Líder TI inválido. Los líderes permitidos son: "
+        "Alejandro Aguilar, Erwin Sandoval, Juan Barrera, Samuel Paredes, Solange Ortiz"
+    )
+    _assert_nothing_written(backlog)
+
+
+@pytest.mark.parametrize("lt", ["", "   ", None])
+def test_s3_missing_lider_is_400(app_user, backlog, lt):
+    res = _assign({"numero_proyecto": "QA-777", "lt_asignado": lt})
+    assert res.status_code == 400
+    assert res.json()["detail"].startswith("Líder TI inválido.")
+    _assert_nothing_written(backlog)
+
+
+@pytest.mark.parametrize("numero", ["", "   "])
+def test_s3_empty_project_number_is_400(app_user, backlog, numero):
+    res = _assign({"numero_proyecto": numero, "lt_asignado": "Juan Barrera"})
+    assert res.status_code == 400
+    assert res.json()["detail"] == "Debe indicar el N° de proyecto"
+    _assert_nothing_written(backlog)
+
+
+def test_s3_project_not_in_backlog_is_404(app_user, backlog):
+    backlog["backlog_row"] = None
+    res = _assign({"numero_proyecto": "QA-404", "lt_asignado": "Juan Barrera"})
+    assert res.status_code == 404
+    assert res.json()["detail"] == "El proyecto no existe en el backlog de operaciones"
+    _assert_nothing_written(backlog)
+
+
+def test_s3_regular_pm_is_403(app_user, backlog):
+    app_user["juan.perez"] = _app_user("juan.perez", rol="PM")
+    res = _assign({"numero_proyecto": "QA-777", "lt_asignado": "Juan Barrera"},
+                  username="juan.perez", tool_perm="lectura", admin_level=0)
+    assert res.status_code == 403
+    _assert_nothing_written(backlog)
+
+
+def test_s3_assigner_with_pm_role_can_assign(app_user, backlog):
+    app_user["pablo.castillo"] = _app_user("pablo.castillo", rol="PM")
+    res = _assign({"numero_proyecto": "QA-777", "lt_asignado": "Juan Barrera"},
+                  username="pablo.castillo", tool_perm="lectura", admin_level=0)
+    assert res.status_code == 201, res.text
+
+
+# Data-access helpers against the shared database: QA numbers only (cleaned by conftest).
+
+def test_s3_get_backlog_proyecto_unknown_number_is_none():
+    assert db_module.get_backlog_proyecto(f"QA-NO-EXISTE-{int(time.time())}") is None
+
+
+def test_s3_update_proyecto_lt_changes_only_lt():
+    numero = f"QA-LTI-{int(time.time())}"
+    created = db_module.create_solicitud_lti(
+        cliente="CLIENTE QA LTI", numero_proyecto=numero, lt_asignado=None,
+        fecha_solicitud="2026-10-16", detalle="Detalle QA LTI", solicitante="PM QA",
+    )
+    assert created["success"], created
+    before = db_module.check_proyecto_exists(numero)
+
+    updated = db_module.update_proyecto_lt(before["ID"], "Juan Barrera")
+
+    # Stored dbo.Proyectos columns (get_proyecto_by_id derives Solicitante from the backlog)
+    after = db_module.check_proyecto_exists(numero)
+    assert updated["LT_Asignado"] == "Juan Barrera"
+    assert after["LT_Asignado"] == "Juan Barrera"
+    for col in ("ID", "Cliente", "Numero_Proyecto", "Estado", "Detalle", "Comentario", "Tipo_Servicio", "Creado", "Solicitante"):
+        assert after[col] == before[col], col
