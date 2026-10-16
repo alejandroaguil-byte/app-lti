@@ -2,6 +2,7 @@
 
 **Fecha de Lanzamiento:** 16 de Octubre de 2026  
 **Rama Base:** `main`  
+**Tag:** `v1.10.0` (código desplegado: `2f32ffb`; el tag agrega solo esta documentación)  
 **Versión anterior:** `v1.9.0`
 
 ---
@@ -44,3 +45,8 @@ Los proyectos pasan a un ciclo de vida de 4 estados con documentación obligator
 1. `./deploy_to_iacdi.sh` (excluye `data/`, donde viven los adjuntos de producción).
 2. `sudo systemctl restart app-lti.service` en `iacdi` (cambia el backend). Al iniciar se crean `dbo.Proyecto_Bitacora` y `dbo.Proyecto_Adjuntos` si no existen.
 3. Migración de estados: `python scripts/migrar_estados_proyectos.py` (dry-run) y luego `--apply` (respaldo JSON en `backups_iacdi/` antes de escribir): `Atendido` → `Cerrado`; `Generado` con LTI asignado → `En ejecucion`.
+
+## Resultado del Despliegue (16-10-2026)
+- Servicio reiniciado 18:27; `/api/health` 200; tablas `Proyecto_Bitacora` y `Proyecto_Adjuntos` creadas.
+- Migración aplicada: 332 filas (`Atendido`→`Cerrado` 212, `Generado`→`En ejecucion` 120). Respaldo: `backups_iacdi/proyectos_estados_20261016_182739.json` (345 filas, en el equipo de desarrollo).
+- Estados resultantes: Cerrado 212, En ejecución 120, En revisión 2, Generado 11 (sin LTI).
