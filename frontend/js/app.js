@@ -1551,6 +1551,12 @@ const App = {
     if (projectsTbody) {
       projectsTbody.addEventListener('click', (e) => {
         if (e.target.closest('.col-action-cell')) return;
+        // Only a plain primary click opens the detail: selecting text to copy it (mouse drag),
+        // other buttons or modifier keys keep the row in place
+        if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+        const selection = window.getSelection ? window.getSelection() : null;
+        if (selection && !selection.isCollapsed && selection.toString().trim() !== ''
+            && projectsTbody.contains(selection.anchorNode)) return;
         const row = e.target.closest('tr.project-row');
         if (row) this.drillDownById(Number(row.dataset.projectId));
       });
@@ -2887,7 +2893,7 @@ const App = {
           ${isHealthActive ? `<td class="col-health-cell">${this.renderHealthBadge(p.salud)}</td>` : ''}
           <td style="white-space: nowrap;"><small style="color: var(--text-secondary); font-weight: 600;">${this.formatDateDMY(p.Creado)}</small></td>
           <td class="col-project-detalle" title="${this.escapeHtml(p.Detalle || '')}">
-            ${this.escapeHtml(p.Detalle || 'Sin detalle')}
+            <div class="col-project-detalle-text">${this.escapeHtml(p.Detalle || 'Sin detalle')}</div>
           </td>
           <td class="col-action-cell">
             <button type="button" class="btn-row-menu" onclick="App.openRowActionsMenu(${p.ID}, this)" title="Más acciones" aria-label="Más acciones" aria-haspopup="true" aria-expanded="false">
