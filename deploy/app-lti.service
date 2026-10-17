@@ -17,13 +17,17 @@ ExecStart=/home/iacdi/Desarrollos/app-lti/venv/bin/uvicorn backend.main:app --ho
 Restart=on-failure
 RestartSec=3
 
-# Hardening. La app no escribe archivos propios; Chromium (Playwright, para la
-# automatización de tickets) usa /tmp (privado) y corre con --no-sandbox, por
-# eso NO se usan MemoryDenyWriteExecute (rompe el JIT de V8) ni RestrictNamespaces.
+# Hardening. La app solo escribe los adjuntos de la bitácora de proyectos en
+# data/ (ADJUNTOS_DIR, por defecto data/adjuntos): es la única ruta con
+# escritura (ReadWritePaths) y debe existir antes de arrancar el servicio.
+# Chromium (Playwright, para la automatización de tickets) usa /tmp (privado) y
+# corre con --no-sandbox, por eso NO se usan MemoryDenyWriteExecute (rompe el
+# JIT de V8) ni RestrictNamespaces.
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
+ReadWritePaths=/home/iacdi/Desarrollos/app-lti/data
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true

@@ -29,7 +29,7 @@ Archivos en esta carpeta:
 
 | Archivo | Qué hace |
 |---|---|
-| `app-lti.service` | Servicio: usuario `iacdi` (igual que las demás apps), **solo `127.0.0.1:8000`** (nginx es la única entrada), **sin `--reload`**, se reinicia si se cae, arranca con el servidor y tiene hardening (sistema de archivos de solo lectura, `/tmp` privado, etc.). |
+| `app-lti.service` | Servicio: usuario `iacdi` (igual que las demás apps), **solo `127.0.0.1:8000`** (nginx es la única entrada), **sin `--reload`**, se reinicia si se cae, arranca con el servidor y tiene hardening (sistema de archivos de solo lectura salvo `data/`, donde se guardan los adjuntos de proyectos, `/tmp` privado, etc.). |
 | `install-app-lti.sh` | Instalador (ver detalle abajo). |
 | `rollback-app-lti.sh` | Vuelve exactamente a como está hoy (proceso de `bobbasystem` en `0.0.0.0:8000` con `--reload`). |
 

@@ -686,11 +686,11 @@ def subir_adjunto(
 
     # Se copia en bloques y se corta apenas se supera el límite; el archivo parcial se borra
     directorio = get_adjuntos_dir()
-    os.makedirs(directorio, exist_ok=True)
     nombre_almacenado = f"{uuid.uuid4().hex}.{extension}"
     destino = directorio / nombre_almacenado
     tamano = 0
     try:
+        os.makedirs(directorio, exist_ok=True)
         with open(destino, "wb") as salida:
             while True:
                 bloque = archivo.file.read(ADJUNTOS_CHUNK_BYTES)
@@ -700,6 +700,13 @@ def subir_adjunto(
                 if tamano > app_config.ADJUNTOS_MAX_BYTES:
                     break
                 salida.write(bloque)
+    except OSError as e:
+        remove_adjunto_files([nombre_almacenado])
+        logger.error(f"No se pudo escribir en el directorio de adjuntos {directorio} (proyecto {proyecto_id}): {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No se pudo guardar el archivo en el servidor"
+        )
     except Exception:
         remove_adjunto_files([nombre_almacenado])
         raise

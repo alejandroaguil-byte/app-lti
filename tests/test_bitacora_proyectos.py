@@ -676,6 +676,26 @@ def test_s7_si_falla_el_insert_se_borra_el_archivo(upload_env, adjuntos_dir):
     assert _archivos(adjuntos_dir) == []
 
 
+def test_s7_directorio_de_adjuntos_sin_permiso_de_escritura_es_500_claro_y_se_registra(upload_env, monkeypatch, caplog):
+    # Production sandbox (ProtectHome=read-only) used to raise an unlogged PermissionError here
+    def sin_permiso(*args, **kwargs):
+        raise PermissionError(13, "Read-only file system")
+
+    monkeypatch.setattr(main_module.os, "makedirs", sin_permiso)
+    with caplog.at_level("ERROR"):
+        res = _upload("acta.pdf", b"datos")
+    assert res.status_code == 500
+    assert res.json() == {"detail": "No se pudo guardar el archivo en el servidor"}
+    assert upload_env["inserts"] == []
+    assert any("directorio de adjuntos" in r.getMessage() for r in caplog.records)
+
+
+def test_s7_unidad_systemd_permite_escribir_en_el_directorio_de_adjuntos():
+    unidad = (Path(__file__).resolve().parents[1] / "deploy" / "app-lti.service").read_text(encoding="utf-8")
+    assert "ProtectHome=read-only" in unidad
+    assert "ReadWritePaths=/home/iacdi/Desarrollos/app-lti/data" in unidad.splitlines()
+
+
 def test_s7_nombre_original_se_reduce_a_basename(upload_env):
     res = _upload("..\\..\\etc/secreto/informe final.pdf", b"datos")
     assert res.status_code == 201, res.text
