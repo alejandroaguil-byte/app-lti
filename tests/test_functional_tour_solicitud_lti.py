@@ -20,6 +20,8 @@ import pytest
 from playwright.sync_api import Page, expect
 from tests.conftest import create_portal_jwt
 
+pytestmark = pytest.mark.real_tours
+
 BASE_URL = os.getenv("BASE_URL", "http://127.0.0.1:8000")
 
 PM_USER = "pm.e2e.user"

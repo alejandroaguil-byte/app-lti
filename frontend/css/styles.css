@@ -4715,7 +4715,7 @@ button, input, select, textarea, optgroup {
 
 
 /* ==========================================================================
-   SOLICITUD LTI: TOUR GUIADO (primer ingreso de PM y botón "Ver tour")
+   TOURS GUIADOS POR MÓDULO (primera visita de cada usuario y botón "Ver tour")
    ========================================================================== */
 .tour-root {
   position: fixed;

@@ -25,7 +25,7 @@ import xml.etree.ElementTree as ET
 import pytest
 import requests
 from playwright.sync_api import Page, expect
-from tests.conftest import create_portal_jwt, open_user_menu, close_user_menu
+from tests.conftest import suppress_tours, create_portal_jwt, open_user_menu, close_user_menu
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FAVICON_PATH = os.path.join(BASE_DIR, "frontend", "favicon.svg")
@@ -62,6 +62,7 @@ def halo_page():
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             context = browser.new_context(viewport={"width": 1280, "height": 900})
+            suppress_tours(context)
             page = context.new_page()
             yield page
             context.close()

@@ -1951,10 +1951,13 @@ const App = {
       resetSolBtn.addEventListener('click', () => this.resetSolicitudForm());
     }
 
-    const tourSolBtn = document.getElementById('btn-solicitud-tour');
-    if (tourSolBtn) {
-      tourSolBtn.addEventListener('click', () => this.startSolicitudTour());
-    }
+    // Botones "Ver tour" de cada módulo
+    Object.keys(this.tourConfigs).forEach((moduleName) => {
+      const tourBtn = document.getElementById(this.tourConfigs[moduleName].buttonId);
+      if (tourBtn) {
+        tourBtn.addEventListener('click', () => this.startTour(moduleName));
+      }
+    });
 
     // Solicitud LTI: Duplicate view button
     const viewDupBtn = document.getElementById('btn-view-duplicate-project');
@@ -2300,6 +2303,10 @@ const App = {
       moduleName = 'projects';
     }
 
+    // Solo un tour a la vez: cambiar de módulo cierra el que esté abierto
+    if (this.activeTour && this.activeTour.moduleName !== moduleName) {
+      this.endTour();
+    }
     this.currentModule = moduleName;
 
     const navProjectsBtn = document.getElementById('nav-btn-projects');
@@ -2356,10 +2363,11 @@ const App = {
         const day = String(today.getDate()).padStart(2, '0');
         fechaInput.value = `${year}-${month}-${day}`;
       }
-      this.maybeAutoStartSolicitudTour();
     } else if (moduleName === 'usuarios') {
       this.loadUsuarios();
     }
+
+    this.maybeAutoStartTour(moduleName);
   },
 
   // --------------------------------------------------------------------------
@@ -4765,130 +4773,312 @@ const App = {
   },
 
   // --------------------------------------------------------------------------
-  // SOLICITUD LTI: TOUR GUIADO (autoarranque en el primer ingreso de un PM)
+  // TOURS GUIADOS POR MÓDULO (primera visita de cada usuario y botón "Ver tour")
   // --------------------------------------------------------------------------
-  solicitudTourSteps: [
-    {
-      title: '¡Bienvenido a Solicitud LTI!',
-      text: 'Desde aquí solicitas la asignación de un Líder Técnico (LTI) para tu proyecto. En pocos pasos te mostramos cómo completar el formulario.'
+  // idPrefix: prefijo de los ids del DOM (<idPrefix>-tour, <idPrefix>-tour-next, ...)
+  // storageKey: parte del nombre en localStorage (halo_tour_<storageKey>_seen:<usuario>)
+  // autoStartRoles: roles con autoarranque (null = cualquier rol)
+  tourConfigs: {
+    'solicitud-lti': {
+      idPrefix: 'solicitud',
+      storageKey: 'solicitud_lti',
+      buttonId: 'btn-solicitud-tour',
+      autoStartRoles: ['PM'],
+      steps: [
+        {
+          title: '¡Bienvenido a Solicitud LTI!',
+          text: 'Desde aquí solicitas la asignación de un Líder Técnico (LTI) para tu proyecto. En pocos pasos te mostramos cómo completar el formulario.'
+        },
+        {
+          target: '#solicitud-nro-proyecto',
+          highlight: '.form-group',
+          title: 'N° de Proyecto',
+          text: 'Escribe al menos 2 caracteres del número de proyecto y elige una opción de la lista del Backlog SGA. Al seleccionarlo, el Cliente y el Detalle se completan solos.'
+        },
+        {
+          target: '#solicitud-cliente',
+          highlight: '.form-group',
+          title: 'Cliente',
+          text: 'Se completa automáticamente desde el Backlog SGA. Si tu proyecto no aparece en la búsqueda, puedes ingresar el N° de proyecto y el cliente de forma manual.'
+        },
+        {
+          target: '#solicitud-fecha',
+          highlight: '.form-group',
+          title: 'Fecha de Solicitud',
+          text: 'Viene con la fecha de hoy. Cámbiala solo si la solicitud se recibió en otra fecha.'
+        },
+        {
+          target: '#solicitud-estado',
+          highlight: '.form-group',
+          title: 'Estado fijo: Generado',
+          text: 'Toda solicitud nueva queda en estado Generado. Este campo no se puede modificar.'
+        },
+        {
+          target: '#solicitud-detalle',
+          highlight: '.form-group',
+          title: 'Detalle del Requerimiento',
+          text: 'Si el proyecto tiene Solots Liray, se precargan aquí con su producto, servicio y descripción. Puedes editar el texto y agregar todo el contexto técnico que el LTI necesite.'
+        },
+        {
+          target: '#btn-submit-solicitud',
+          highlight: '.solicitud-form-actions',
+          title: 'Envía tu solicitud',
+          text: 'Presiona Solicitar para registrarla. Si el proyecto ya existe, verás un aviso para complementar su detalle en lugar de duplicarlo. Con Limpiar Formulario empiezas de cero.'
+        },
+        {
+          title: '¿Qué pasa después?',
+          text: 'Tu solicitud queda pendiente de asignación y el equipo coordinador PCDI recibe un aviso. Cuando se asigne un LTI, te llegará un correo con copia al líder asignado. Puedes repetir este recorrido cuando quieras con el botón Ver tour.'
+        }
+      ]
     },
-    {
-      target: '#solicitud-nro-proyecto',
-      highlight: '.form-group',
-      title: 'N° de Proyecto',
-      text: 'Escribe al menos 2 caracteres del número de proyecto y elige una opción de la lista del Backlog SGA. Al seleccionarlo, el Cliente y el Detalle se completan solos.'
+    'projects': {
+      idPrefix: 'projects',
+      storageKey: 'projects',
+      buttonId: 'btn-projects-tour',
+      autoStartRoles: null,
+      steps: [
+        {
+          title: '¡Bienvenido a Proyectos!',
+          text: 'Este es el seguimiento de tus proyectos: indicadores, filtros y el listado completo. En pocos pasos te mostramos cómo sacarle provecho.'
+        },
+        {
+          target: '#module-projects-container .kpi-grid',
+          title: 'Indicadores del portafolio',
+          text: 'Las tarjetas resumen los proyectos del Líder TI seleccionado: asignados, en curso, en revisión, cerrados, pendientes de asignar y efectividad. Pasa el cursor sobre una tarjeta para ver cómo se calcula.'
+        },
+        {
+          target: '#kpi-card-en-revision',
+          title: 'En revisión y Cerrados',
+          text: 'En revisión cuenta los proyectos cuyo trabajo ya terminó el Líder TI y se están validando; Cerrados incluye los proyectos finalizados. Junto a Pendientes de asignar, que además filtra el listado al hacer clic, te dicen en qué etapa está cada proyecto.'
+        },
+        {
+          target: '#filter-search',
+          highlight: '.filter-bar',
+          title: 'Filtros y búsqueda',
+          text: 'Busca por cliente, N° de proyecto o detalle, y combina el filtro de Estado Sharepoint con el de Líder TI. El listado y los indicadores se actualizan al instante.'
+        },
+        {
+          target: '#projects-table',
+          highlight: '.card-table-wrapper',
+          title: 'Listado de proyectos',
+          text: 'Aquí ves cada proyecto con su cliente, líder, estado y fecha de solicitud. Haz clic en una fila para abrir su detalle, o usa el menú ⋯ de la fila para editar y otras acciones.'
+        },
+        {
+          target: '#export-btn',
+          title: 'Exporta tu vista',
+          text: 'Exportar CSV descarga los proyectos tal como están filtrados en pantalla, listos para abrir en Excel. El contador de al lado indica cuántos proyectos hay en la vista.'
+        },
+        {
+          title: 'Detalle de cada proyecto',
+          text: 'Al abrir un proyecto encuentras su resumen, la bitácora, el historial y las pestañas de Solots, Tickets SD y RFCs. Puedes repetir este recorrido cuando quieras con el botón Ver tour.'
+        }
+      ]
     },
-    {
-      target: '#solicitud-cliente',
-      highlight: '.form-group',
-      title: 'Cliente',
-      text: 'Se completa automáticamente desde el Backlog SGA. Si tu proyecto no aparece en la búsqueda, puedes ingresar el N° de proyecto y el cliente de forma manual.'
+    'direct-search': {
+      idPrefix: 'direct-search',
+      storageKey: 'direct-search',
+      buttonId: 'btn-direct-search-tour',
+      autoStartRoles: null,
+      steps: [
+        {
+          title: '¡Bienvenido a Búsqueda!',
+          text: 'Consulta directamente las tablas completas de Proyectos, Solots, Tickets SD y RFCs combinando uno o varios valores. Te mostramos cómo hacerlo.'
+        },
+        {
+          target: '#direct-search-input-field',
+          highlight: '#tag-input-box',
+          title: 'Agrega tags',
+          text: 'Escribe un valor y presiona Enter para fijarlo como tag. Puedes encadenar varios (por ejemplo un nombre y un estado) y se buscan de forma simultánea. Quita un tag desde su cruz o con la tecla Retroceso.'
+        },
+        {
+          target: '#direct-search-table-select',
+          highlight: 'div',
+          title: 'Elige la fuente',
+          text: 'Busca en todas las fuentes a la vez o limita la consulta a una sola tabla: Proyectos, Solots (Backlog SGA), Tickets SD o RFCs.'
+        },
+        {
+          target: '#direct-search-submit-btn',
+          title: 'Buscar en BD',
+          text: 'Presiona Buscar en BD para consultar con los tags actuales. Con Limpiar quitas todos los tags para empezar una búsqueda nueva.'
+        },
+        {
+          target: '#quick-tags-box',
+          title: 'Sugerencias rápidas',
+          text: 'Haz clic en una sugerencia para agregarla como tag sin escribirla. Es útil para estados y líderes consultados con frecuencia.'
+        },
+        {
+          target: '#direct-search-results-area',
+          title: 'Resultados por pestañas',
+          text: 'Los resultados se separan en pestañas con su cantidad de registros. Cada tabla tiene su propio desplazamiento con el encabezado fijo, y puedes arrastrarla hacia los lados con el mouse para ver todas las columnas. Puedes repetir este recorrido con el botón Ver tour.'
+        }
+      ]
     },
-    {
-      target: '#solicitud-fecha',
-      highlight: '.form-group',
-      title: 'Fecha de Solicitud',
-      text: 'Viene con la fecha de hoy. Cámbiala solo si la solicitud se recibió en otra fecha.'
+    'tickets': {
+      idPrefix: 'tickets',
+      storageKey: 'tickets',
+      buttonId: 'btn-tickets-tour',
+      autoStartRoles: null,
+      steps: [
+        {
+          title: '¡Bienvenido al Generador de tickets!',
+          text: 'Crea interacciones y peticiones en Service Manager de forma automática y sigue su avance en tiempo real. Te mostramos cómo completar los parámetros.'
+        },
+        {
+          target: '#ticket-contacto',
+          highlight: '.form-group',
+          title: 'Contacto',
+          text: 'Elige el usuario solicitante registrado en Service Manager. Es la persona que figurará como contacto de la interacción.'
+        },
+        {
+          target: '#ticket-titulo',
+          highlight: '.form-group',
+          title: 'Título y descripción',
+          text: 'El título es el resumen del requerimiento y la descripción detalla el alcance, la justificación y los antecedentes técnicos. Ambos son obligatorios.'
+        },
+        {
+          target: '#ticket-area',
+          highlight: '.form-row-2col',
+          title: 'Clasificación',
+          text: 'Define el Área y la Subárea. Más abajo, el Detalle y el Grupo de Asignación determinan quién recibirá el requerimiento.'
+        },
+        {
+          target: '#ticket-impacto',
+          highlight: '.form-row-2col',
+          title: 'Impacto y urgencia',
+          text: 'Indica cuánto afecta el requerimiento y qué tan rápido debe atenderse. Ayudan a priorizar la atención del ticket.'
+        },
+        {
+          target: '#btn-execute-ticket',
+          highlight: '.ticket-form-actions',
+          title: 'Ejecuta la automatización',
+          text: 'Presiona Ejecutar para crear la interacción en Service Manager. Con Limpiar registro vacías la consola de eventos.'
+        },
+        {
+          target: '#ticket-logs-console',
+          highlight: '.ticket-console-card',
+          title: 'Registro de ejecución',
+          text: 'Aquí ves el avance paso a paso. Al terminar se muestran los números de interacción y petición, que puedes copiar o enviar por correo. Puedes repetir este recorrido con el botón Ver tour.'
+        }
+      ]
     },
-    {
-      target: '#solicitud-estado',
-      highlight: '.form-group',
-      title: 'Estado fijo: Generado',
-      text: 'Toda solicitud nueva queda en estado Generado. Este campo no se puede modificar.'
-    },
-    {
-      target: '#solicitud-detalle',
-      highlight: '.form-group',
-      title: 'Detalle del Requerimiento',
-      text: 'Si el proyecto tiene Solots Liray, se precargan aquí con su producto, servicio y descripción. Puedes editar el texto y agregar todo el contexto técnico que el LTI necesite.'
-    },
-    {
-      target: '#btn-submit-solicitud',
-      highlight: '.solicitud-form-actions',
-      title: 'Envía tu solicitud',
-      text: 'Presiona Solicitar para registrarla. Si el proyecto ya existe, verás un aviso para complementar su detalle en lugar de duplicarlo. Con Limpiar Formulario empiezas de cero.'
-    },
-    {
-      title: '¿Qué pasa después?',
-      text: 'Tu solicitud queda pendiente de asignación y el equipo coordinador PCDI recibe un aviso. Cuando se asigne un LTI, te llegará un correo con copia al líder asignado. Puedes repetir este recorrido cuando quieras con el botón Ver tour.'
+    'usuarios': {
+      idPrefix: 'usuarios',
+      storageKey: 'usuarios',
+      buttonId: 'btn-usuarios-tour',
+      autoStartRoles: null,
+      steps: [
+        {
+          title: '¡Bienvenido al Mantenedor de Usuarios!',
+          text: 'Administra los roles locales (PM, LTI y ADMIN) y la asignación de Líder TI. Las cuentas y contraseñas se gestionan en el Portal de Acceso.'
+        },
+        {
+          target: '#usuarios-search-input',
+          highlight: '.filter-group-item',
+          title: 'Buscar usuarios',
+          text: 'Escribe parte del nombre, del username o del líder asignado y la tabla se filtra mientras escribes.'
+        },
+        {
+          target: '#usuarios-filter-rol',
+          highlight: '.usuarios-filter-grid',
+          title: 'Filtros por rol y estado',
+          text: 'Acota la lista por rol o por estado (activo o bloqueado). El botón Limpiar restablece todos los filtros.'
+        },
+        {
+          target: '#usuarios-table',
+          highlight: '.table-card',
+          title: 'Listado de usuarios',
+          text: 'Cada fila muestra el usuario, su rol, el Líder TI asignado, su estado y la fecha de creación. El total de usuarios aparece sobre la tabla.'
+        },
+        {
+          target: '#usuarios-table thead th:last-child',
+          title: 'Acciones por usuario',
+          text: 'En cada fila puedes editar el usuario, activarlo o bloquearlo y eliminarlo de App LTI. Algunas acciones se deshabilitan sobre tu propia cuenta y la del administrador raíz. Puedes repetir este recorrido con el botón Ver tour.'
+        }
+      ]
     }
-  ],
-  solicitudTour: null,
+  },
+  activeTour: null,
 
-  getSolicitudTourStorageKey() {
+  getTourStorageKey(config) {
     const user = Auth.getUser();
     const username = String(user?.username || '').toLowerCase();
-    return `halo_tour_solicitud_lti_seen:${username}`;
+    return `halo_tour_${config.storageKey}_seen:${username}`;
   },
 
-  hasSeenSolicitudTour() {
+  hasSeenTour(config) {
     try {
-      return localStorage.getItem(this.getSolicitudTourStorageKey()) === 'true';
+      return localStorage.getItem(this.getTourStorageKey(config)) === 'true';
     } catch (e) {
       return false;
     }
   },
 
-  markSolicitudTourSeen() {
+  markTourSeen(config) {
     try {
-      localStorage.setItem(this.getSolicitudTourStorageKey(), 'true');
+      localStorage.setItem(this.getTourStorageKey(config), 'true');
     } catch (e) {
       // Sin localStorage disponible el tour simplemente podrá volver a mostrarse
     }
   },
 
-  maybeAutoStartSolicitudTour() {
+  maybeAutoStartTour(moduleName) {
+    const config = this.tourConfigs[moduleName];
+    if (!config) return;
     const user = Auth.getUser();
     const rol = (user && user.rol) ? user.rol.toUpperCase() : ((user?.adminLevel >= 2 || user?.is_super_admin) ? 'ADMIN' : 'PM');
-    if (rol !== 'PM' || this.solicitudTour || this.hasSeenSolicitudTour()) return;
+    if (config.autoStartRoles && !config.autoStartRoles.includes(rol)) return;
+    if (this.activeTour || this.hasSeenTour(config)) return;
 
-    // Espera breve para que el formulario termine de renderizarse antes de medirlo
+    // Espera breve para que el módulo termine de renderizarse antes de medirlo
     setTimeout(() => {
-      if (this.currentModule === 'solicitud-lti' && !this.solicitudTour && !this.hasSeenSolicitudTour()) {
-        this.startSolicitudTour();
+      if (this.currentModule === moduleName && !this.activeTour && !this.hasSeenTour(config)) {
+        this.startTour(moduleName);
       }
     }, 450);
   },
 
-  startSolicitudTour() {
-    if (this.solicitudTour) this.endSolicitudTour();
+  startTour(moduleName) {
+    const config = this.tourConfigs[moduleName];
+    if (!config) return;
+    if (this.activeTour) this.endTour();
     this.hideAutocompleteDropdown();
 
+    const prefix = `${config.idPrefix}-tour`;
     const root = document.createElement('div');
-    root.id = 'solicitud-tour';
+    root.id = prefix;
     root.className = 'tour-root';
     root.setAttribute('role', 'dialog');
     root.setAttribute('aria-modal', 'true');
-    root.setAttribute('aria-labelledby', 'solicitud-tour-title');
-    root.setAttribute('aria-describedby', 'solicitud-tour-text');
+    root.setAttribute('aria-labelledby', `${prefix}-title`);
+    root.setAttribute('aria-describedby', `${prefix}-text`);
     root.innerHTML = `
       <div class="tour-blocker"></div>
-      <div id="solicitud-tour-spotlight" class="tour-spotlight" hidden></div>
-      <div id="solicitud-tour-card" class="tour-card">
+      <div id="${prefix}-spotlight" class="tour-spotlight" hidden></div>
+      <div id="${prefix}-card" class="tour-card">
         <div class="tour-card-header">
           <div class="tour-card-brand">
             <div>
-              <span id="solicitud-tour-progress" class="tour-progress"></span>
-              <h3 id="solicitud-tour-title" class="tour-title"></h3>
+              <span id="${prefix}-progress" class="tour-progress"></span>
+              <h3 id="${prefix}-title" class="tour-title"></h3>
             </div>
           </div>
-          <button type="button" id="solicitud-tour-close" class="modal-close-btn" aria-label="Cerrar tour">&times;</button>
+          <button type="button" id="${prefix}-close" class="modal-close-btn" aria-label="Cerrar tour">&times;</button>
         </div>
-        <p id="solicitud-tour-text" class="tour-text"></p>
-        <div id="solicitud-tour-dots" class="tour-dots" aria-hidden="true"></div>
+        <p id="${prefix}-text" class="tour-text"></p>
+        <div id="${prefix}-dots" class="tour-dots" aria-hidden="true"></div>
         <div class="tour-footer">
-          <button type="button" id="solicitud-tour-skip" class="tour-skip-btn">Omitir tour</button>
+          <button type="button" id="${prefix}-skip" class="tour-skip-btn">Omitir tour</button>
           <div class="tour-nav">
-            <button type="button" id="solicitud-tour-prev" class="btn btn-secondary btn-sm">Anterior</button>
-            <button type="button" id="solicitud-tour-next" class="btn btn-primary btn-sm">Siguiente</button>
+            <button type="button" id="${prefix}-prev" class="btn btn-secondary btn-sm">Anterior</button>
+            <button type="button" id="${prefix}-next" class="btn btn-primary btn-sm">Siguiente</button>
           </div>
         </div>
       </div>
     `;
     document.body.appendChild(root);
 
-    const dots = root.querySelector('#solicitud-tour-dots');
-    this.solicitudTourSteps.forEach(() => {
+    const dots = root.querySelector(`#${prefix}-dots`);
+    config.steps.forEach(() => {
       const dot = document.createElement('span');
       dot.className = 'tour-dot';
       dots.appendChild(dot);
@@ -4899,23 +5089,23 @@ const App = {
       if (frame) return;
       frame = requestAnimationFrame(() => {
         frame = null;
-        this.positionSolicitudTour();
+        this.positionTour();
       });
     };
 
     const onKeydown = (e) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        this.endSolicitudTour();
+        this.endTour();
       } else if (e.key === 'ArrowRight') {
         e.preventDefault();
-        this.nextSolicitudTourStep();
+        this.nextTourStep();
       } else if (e.key === 'ArrowLeft') {
         e.preventDefault();
-        this.prevSolicitudTourStep();
+        this.prevTourStep();
       } else if (e.key === 'Tab') {
         // Mantener el foco dentro de la tarjeta del tour
-        const focusables = Array.from(root.querySelectorAll('#solicitud-tour-card button:not(:disabled)'));
+        const focusables = Array.from(root.querySelectorAll(`#${prefix}-card button:not(:disabled)`));
         if (focusables.length === 0) return;
         const first = focusables[0];
         const last = focusables[focusables.length - 1];
@@ -4932,15 +5122,18 @@ const App = {
       }
     };
 
-    root.querySelector('#solicitud-tour-next').addEventListener('click', () => this.nextSolicitudTourStep());
-    root.querySelector('#solicitud-tour-prev').addEventListener('click', () => this.prevSolicitudTourStep());
-    root.querySelector('#solicitud-tour-skip').addEventListener('click', () => this.endSolicitudTour());
-    root.querySelector('#solicitud-tour-close').addEventListener('click', () => this.endSolicitudTour());
+    root.querySelector(`#${prefix}-next`).addEventListener('click', () => this.nextTourStep());
+    root.querySelector(`#${prefix}-prev`).addEventListener('click', () => this.prevTourStep());
+    root.querySelector(`#${prefix}-skip`).addEventListener('click', () => this.endTour());
+    root.querySelector(`#${prefix}-close`).addEventListener('click', () => this.endTour());
     document.addEventListener('keydown', onKeydown, true);
     window.addEventListener('resize', onReposition);
     window.addEventListener('scroll', onReposition, true);
 
-    this.solicitudTour = {
+    this.activeTour = {
+      moduleName,
+      config,
+      prefix,
       root,
       index: 0,
       previousFocus: document.activeElement,
@@ -4951,69 +5144,69 @@ const App = {
         window.removeEventListener('scroll', onReposition, true);
       }
     };
-    this.renderSolicitudTourStep(0);
+    this.renderTourStep(0);
   },
 
-  nextSolicitudTourStep() {
-    if (!this.solicitudTour) return;
-    const nextIndex = this.solicitudTour.index + 1;
-    if (nextIndex >= this.solicitudTourSteps.length) {
-      this.endSolicitudTour();
+  nextTourStep() {
+    if (!this.activeTour) return;
+    const nextIndex = this.activeTour.index + 1;
+    if (nextIndex >= this.activeTour.config.steps.length) {
+      this.endTour();
     } else {
-      this.renderSolicitudTourStep(nextIndex);
+      this.renderTourStep(nextIndex);
     }
   },
 
-  prevSolicitudTourStep() {
-    if (!this.solicitudTour || this.solicitudTour.index === 0) return;
-    this.renderSolicitudTourStep(this.solicitudTour.index - 1);
+  prevTourStep() {
+    if (!this.activeTour || this.activeTour.index === 0) return;
+    this.renderTourStep(this.activeTour.index - 1);
   },
 
-  getSolicitudTourHighlight(step) {
+  getTourHighlight(step) {
     if (!step || !step.target) return null;
     const target = document.querySelector(step.target);
     if (!target || target.getClientRects().length === 0) return null;
     return (step.highlight && target.closest(step.highlight)) || target;
   },
 
-  renderSolicitudTourStep(index) {
-    const tour = this.solicitudTour;
+  renderTourStep(index) {
+    const tour = this.activeTour;
     if (!tour) return;
-    const step = this.solicitudTourSteps[index];
-    const total = this.solicitudTourSteps.length;
+    const { config, prefix, root } = tour;
+    const step = config.steps[index];
+    const total = config.steps.length;
     const isLast = index === total - 1;
     tour.index = index;
 
-    const root = tour.root;
-    root.querySelector('#solicitud-tour-progress').textContent = `Paso ${index + 1} de ${total}`;
-    root.querySelector('#solicitud-tour-title').textContent = step.title;
-    root.querySelector('#solicitud-tour-text').textContent = step.text;
+    root.querySelector(`#${prefix}-progress`).textContent = `Paso ${index + 1} de ${total}`;
+    root.querySelector(`#${prefix}-title`).textContent = step.title;
+    root.querySelector(`#${prefix}-text`).textContent = step.text;
     root.querySelectorAll('.tour-dot').forEach((dot, i) => {
       dot.classList.toggle('active', i === index);
       dot.classList.toggle('done', i < index);
     });
 
-    const prevBtn = root.querySelector('#solicitud-tour-prev');
-    const nextBtn = root.querySelector('#solicitud-tour-next');
+    const prevBtn = root.querySelector(`#${prefix}-prev`);
+    const nextBtn = root.querySelector(`#${prefix}-next`);
     prevBtn.disabled = index === 0;
     nextBtn.textContent = isLast ? 'Finalizar' : 'Siguiente';
 
-    const highlight = this.getSolicitudTourHighlight(step);
+    const highlight = this.getTourHighlight(step);
     root.classList.toggle('tour-centered', !highlight);
     if (highlight) {
       highlight.scrollIntoView({ block: 'center', inline: 'nearest' });
     }
-    this.positionSolicitudTour();
+    this.positionTour();
     nextBtn.focus({ preventScroll: true });
   },
 
-  positionSolicitudTour() {
-    const tour = this.solicitudTour;
+  positionTour() {
+    const tour = this.activeTour;
     if (!tour) return;
-    const root = tour.root;
-    const card = root.querySelector('#solicitud-tour-card');
-    const spotlight = root.querySelector('#solicitud-tour-spotlight');
-    const highlight = this.getSolicitudTourHighlight(this.solicitudTourSteps[tour.index]);
+    const { config, prefix, root } = tour;
+    const card = root.querySelector(`#${prefix}-card`);
+    const spotlight = root.querySelector(`#${prefix}-spotlight`);
+    const highlight = this.getTourHighlight(config.steps[tour.index]);
 
     const margin = 16;
     const pad = 8;
@@ -5060,15 +5253,15 @@ const App = {
     card.style.setProperty('--tour-arrow-x', `${arrowX}px`);
   },
 
-  endSolicitudTour() {
-    const tour = this.solicitudTour;
+  endTour() {
+    const tour = this.activeTour;
     if (!tour) return;
-    this.solicitudTour = null;
+    this.activeTour = null;
     tour.cleanup();
     tour.root.remove();
-    this.markSolicitudTourSeen();
+    this.markTourSeen(tour.config);
 
-    const fallback = document.getElementById('btn-solicitud-tour');
+    const fallback = document.getElementById(tour.config.buttonId);
     const previous = tour.previousFocus;
     const focusTarget = (previous && previous !== document.body && document.contains(previous)) ? previous : fallback;
     if (focusTarget && typeof focusTarget.focus === 'function') {

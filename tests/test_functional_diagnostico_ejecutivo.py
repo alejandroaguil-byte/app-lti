@@ -6,6 +6,7 @@ Especificación: SPECS_DIAGNOSTICO_EJECUTIVO.md
 import pytest
 from playwright.sync_api import Page, expect
 from tests.conftest import (
+    suppress_tours,
     create_portal_jwt,
     open_user_menu,
     close_user_menu,
@@ -30,6 +31,7 @@ def halo_page():
                 viewport={"width": 1280, "height": 900},
                 permissions=["clipboard-read", "clipboard-write"]
             )
+            suppress_tours(context)
             page = context.new_page()
             yield page
             context.close()

@@ -128,12 +128,40 @@ def clean_test_data(test_session_start_project_id):
     yield
     _cleanup()
 
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "real_tours: keep the guided module tours enabled (the default `page` fixture marks them as seen)",
+    )
+
+
+# Makes every guided-tour "seen" flag (halo_tour_*) read as true so the first-visit tours never
+# cover the page in tests that are not about tours. Lives only in the test harness.
+SUPPRESS_TOURS_INIT_SCRIPT = """
+(() => {
+  const originalGetItem = Storage.prototype.getItem;
+  Storage.prototype.getItem = function (key) {
+    if (typeof key === 'string' && key.indexOf('halo_tour_') === 0) return 'true';
+    return originalGetItem.call(this, key);
+  };
+})();
+"""
+
+
+def suppress_tours(context):
+    """Applies the tour-suppression init script to a browser context created outside the `page` fixture."""
+    context.add_init_script(SUPPRESS_TOURS_INIT_SCRIPT)
+
+
 @pytest.fixture(scope="function")
-def page():
-    """Playwright page fixture with isolated context."""
+def page(request):
+    """Playwright page fixture with isolated context (guided tours suppressed unless marked real_tours)."""
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         context = browser.new_context(viewport={"width": 1280, "height": 900})
+        if request.node.get_closest_marker("real_tours") is None:
+            suppress_tours(context)
         page = context.new_page()
         yield page
         context.close()

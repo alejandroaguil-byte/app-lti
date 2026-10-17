@@ -8,7 +8,7 @@
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   
   <!-- Pila Tipográfica Nativa del Portal HALO (sin dependencias externas) -->
-  <link rel="stylesheet" href="css/styles.css?v=9.6">
+  <link rel="stylesheet" href="css/styles.css?v=9.7">
 </head>
 <body>
 
@@ -363,6 +363,9 @@
             </div>
 
             <div style="display: flex; align-items: center; gap: 0.6rem;">
+              <button type="button" id="btn-projects-tour" class="btn btn-secondary btn-sm" title="Ver nuevamente el recorrido guiado de Proyectos">
+                Ver tour
+              </button>
               <button id="export-btn" class="btn btn-secondary btn-sm" title="Descargar vista en Excel/CSV">
                 Exportar CSV
               </button>
@@ -682,9 +685,14 @@
            ==================================================================== -->
       <div id="module-direct-search-container" class="module-container" style="display: none;">
         <div class="drilldown-header" style="margin-bottom: 1.5rem;">
-          <h2 style="font-size: 1.35rem; font-weight: 700; margin-bottom: 0.35rem;">
-            Búsqueda
-          </h2>
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 0.35rem;">
+            <h2 style="font-size: 1.35rem; font-weight: 700; margin: 0;">
+              Búsqueda
+            </h2>
+            <button type="button" id="btn-direct-search-tour" class="btn btn-secondary btn-sm" title="Ver nuevamente el recorrido guiado de Búsqueda">
+              Ver tour
+            </button>
+          </div>
           <p style="color: var(--text-secondary); font-size: 0.88rem;">
             Escribe un parámetro y presiona <strong>Enter</strong> para fijarlo como tag en amarillo. Puedes encadenar múltiples tags (ej: <code>Alejandro Aguilar</code> + <code>Generado</code>) para consultar simultáneamente en cualquier tabla.
           </p>
@@ -872,6 +880,9 @@
                   Crea interacciones y tickets en Service Manager de forma automática y sigue su avance en tiempo real.
                 </p>
               </div>
+              <button type="button" id="btn-tickets-tour" class="btn btn-secondary btn-sm" title="Ver nuevamente el recorrido guiado del generador de tickets">
+                Ver tour
+              </button>
             </div>
           </div>
 
@@ -1244,6 +1255,9 @@
                 <p class="usuarios-subtitle">Gestión de roles locales (PM, LTI, ADMIN) y asignación de Líder TI. Cuentas y contraseñas centralizadas en el Portal de Acceso.</p>
               </div>
             </div>
+            <button type="button" id="btn-usuarios-tour" class="btn btn-secondary btn-sm" title="Ver nuevamente el recorrido guiado del mantenedor de usuarios">
+              Ver tour
+            </button>
           </div>
 
           <!-- Barra de Filtros y Búsqueda -->
@@ -2210,6 +2224,6 @@
   <!-- Scripts -->
   <script src="js/auth.js?v=6.0"></script>
   <script src="js/icons.js?v=9.4"></script>
-  <script src="js/app.js?v=9.7"></script>
+  <script src="js/app.js?v=9.8"></script>
 </body>
 </html>
