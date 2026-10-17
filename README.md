@@ -308,6 +308,7 @@ El token JWT del Portal define la capacidad de escritura de la sesión:
 - **Desde Proyectos:** menú "⋯" → **Editar** → "LT Asignado" (`PUT /api/proyectos/{id}`). Cubre las solicitudes que crean los PM.
 - **Desde Búsqueda → Solots (`CT_BACKLOG_OPERACIONES2`):** botón **Asignar LTI** en cada fila (`POST /api/backlog/asignar-lti`, solo `alejandro.aguilar` y `pablo.castillo`). Si el proyecto ya existe en `dbo.Proyectos` solo cambia `LT_Asignado`; si no existe, se crea con el cliente y el PM del backlog y estado `En ejecucion`. La tabla del backlog nunca se modifica.
 - En ambos casos, si el proyecto no tenía LTI se envía el correo de asignación.
+- **Vinculación con Solots, Tickets y RFCs:** un registro pertenece al proyecto si su `ID_Proyecto` coincide o si su `Numero_Proyecto_Limpio` coincide con el `Numero_Proyecto` del proyecto, tal cual o sin el prefijo SGA `000` (`0001609373` ↔ `1609373`). Aplica al detalle, listado, KPIs, alertas SLA, diagnóstico, ficha y línea de tiempo; ningún proceso completa ya `ID_Proyecto`.
 
 ### 5. Centralización de Gestión de Identidades
 - **Alta de cuentas y contraseñas:** Centralizadas al 100% en el Portal de Acceso. App LTI no almacena `password_hash` ni expone formularios de creación de cuentas o reseteo de claves.

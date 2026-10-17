@@ -592,14 +592,45 @@ def get_estados_list() -> dict:
         "estados_sga": estados_sga
     }
 
-def get_proyectos(lt_filter=None, search=None, estado_sp=None, estado_sga=None):
-    if lt_filter in (None, '', '__ALL__'):
-        lt_filter = None
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cursor:
-            sql = """
-                WITH SolotStats AS (
+# -----------------------------------------------------------------------------
+# VINCULACIÓN PROYECTO ↔ SOLOTS / TICKETS / RFCs POR N° DE PROYECTO
+# -----------------------------------------------------------------------------
+# dbo.Proyectos.Numero_Proyecto puede venir con el prefijo SGA '000' ('0001609373'),
+# mientras que Numero_Proyecto_Limpio en el backlog, tickets y RFCs nunca lo trae ('1609373').
+# ID_Proyecto ya no lo completa ningún proceso de carga, por lo que toda vinculación
+# considera ID_Proyecto O el N° de proyecto con y sin prefijo.
+_SQL_P_NUMERO_TRIM = "LTRIM(RTRIM(p.Numero_Proyecto))"
+_SQL_P_NUMERO_SIN_PREFIJO = (
+    "CASE WHEN LTRIM(RTRIM(p.Numero_Proyecto)) LIKE '000%' "
+    "THEN SUBSTRING(LTRIM(RTRIM(p.Numero_Proyecto)), 4, 50) "
+    "ELSE LTRIM(RTRIM(p.Numero_Proyecto)) END"
+)
+# Uso: "<alias>.Numero_Proyecto_Limpio " + _SQL_P_NUMERO_LIMPIO_IN (requiere alias p = dbo.Proyectos)
+_SQL_P_NUMERO_LIMPIO_IN = f"IN ({_SQL_P_NUMERO_TRIM}, {_SQL_P_NUMERO_SIN_PREFIJO})"
+
+# CTEs SolotStats / TicketStats / RFCStats por proyecto (columna ID_Proyecto = p.ID).
+# Cada registro se cuenta una sola vez por proyecto aunque coincida por ID y por número.
+_SQL_STATS_CTES = f"""
+                ProyectoNumeros AS (
+                    SELECT p.ID AS ID_Proyecto, k.numero
+                    FROM dbo.Proyectos p WITH (NOLOCK)
+                    CROSS APPLY (
+                        SELECT {_SQL_P_NUMERO_TRIM} AS numero
+                        UNION
+                        SELECT {_SQL_P_NUMERO_SIN_PREFIJO}
+                    ) k
+                    WHERE k.numero IS NOT NULL AND k.numero <> ''
+                ),
+                SolotVinculos AS (
+                    SELECT b.ID_Proyecto, b.id, b.ESTADO_OTP, b.FECHA_COMPROMETIDA
+                    FROM dbo.CT_BACKLOG_OPERACIONES2 b WITH (NOLOCK)
+                    WHERE b.ID_Proyecto IS NOT NULL
+                    UNION
+                    SELECT pn.ID_Proyecto, b.id, b.ESTADO_OTP, b.FECHA_COMPROMETIDA
+                    FROM ProyectoNumeros pn
+                    INNER JOIN dbo.CT_BACKLOG_OPERACIONES2 b WITH (NOLOCK) ON b.Numero_Proyecto_Limpio = pn.numero
+                ),
+                SolotStats AS (
                     SELECT 
                         ID_Proyecto,
                         COUNT(1) AS total_solots,
@@ -614,9 +645,17 @@ def get_proyectos(lt_filter=None, search=None, estado_sp=None, estado_sga=None):
                                  AND FECHA_COMPROMETIDA <= DATEADD(day, 5, CAST(GETDATE() AS DATE)) THEN 1 
                             ELSE 0 
                         END) AS solots_por_vencer
-                    FROM dbo.CT_BACKLOG_OPERACIONES2 WITH (NOLOCK)
-                    WHERE ID_Proyecto IS NOT NULL
+                    FROM SolotVinculos
                     GROUP BY ID_Proyecto
+                ),
+                TicketVinculos AS (
+                    SELECT sd.ID_Proyecto, sd.CC_INCIDENT_ID, sd.STATUS, sd.SUBMIT_DATE
+                    FROM dbo.registrosRF_SD_SM sd WITH (NOLOCK)
+                    WHERE sd.ID_Proyecto IS NOT NULL
+                    UNION
+                    SELECT pn.ID_Proyecto, sd.CC_INCIDENT_ID, sd.STATUS, sd.SUBMIT_DATE
+                    FROM ProyectoNumeros pn
+                    INNER JOIN dbo.registrosRF_SD_SM sd WITH (NOLOCK) ON sd.Numero_Proyecto_Limpio = pn.numero
                 ),
                 TicketStats AS (
                     SELECT 
@@ -635,18 +674,39 @@ def get_proyectos(lt_filter=None, search=None, estado_sp=None, estado_sga=None):
                                  AND TRY_CAST(SUBMIT_DATE AS DATETIME2) < DATEADD(day, -7, GETDATE()) THEN 1 
                             ELSE 0 
                         END) AS tickets_atencion
-                    FROM dbo.registrosRF_SD_SM WITH (NOLOCK)
-                    WHERE ID_Proyecto IS NOT NULL
+                    FROM TicketVinculos
                     GROUP BY ID_Proyecto
+                ),
+                RFCVinculos AS (
+                    SELECT rfc.ID_Proyecto, rfc.NUMBER
+                    FROM dbo.registrosSM_RFC rfc WITH (NOLOCK)
+                    WHERE rfc.ID_Proyecto IS NOT NULL
+                    UNION
+                    SELECT pn.ID_Proyecto, rfc.NUMBER
+                    FROM ProyectoNumeros pn
+                    INNER JOIN dbo.registrosSM_RFC rfc WITH (NOLOCK) ON rfc.Numero_Proyecto_Limpio = pn.numero
                 ),
                 RFCStats AS (
                     SELECT 
                         ID_Proyecto,
                         COUNT(1) AS total_rfcs
-                    FROM dbo.registrosSM_RFC WITH (NOLOCK)
-                    WHERE ID_Proyecto IS NOT NULL
+                    FROM RFCVinculos
                     GROUP BY ID_Proyecto
-                ),
+                )"""
+
+def _numero_proyecto_limpio_keys(numero_proyecto) -> tuple:
+    """N° de proyecto tal cual y sin el prefijo SGA '000', para comparar con Numero_Proyecto_Limpio."""
+    num = str(numero_proyecto or "").strip()
+    return (num, num[3:] if num.startswith("000") else num)
+
+def get_proyectos(lt_filter=None, search=None, estado_sp=None, estado_sga=None):
+    if lt_filter in (None, '', '__ALL__'):
+        lt_filter = None
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            sql = """
+                WITH """ + _SQL_STATS_CTES + """,
                 SolotIngById AS (
                     SELECT 
                         ID_Proyecto, 
@@ -754,7 +814,10 @@ def get_proyectos(lt_filter=None, search=None, estado_sp=None, estado_sga=None):
                     params.append(estado_sp_norm)
 
             if estado_sga:
-                sql += " AND EXISTS (SELECT 1 FROM dbo.CT_BACKLOG_OPERACIONES2 b WITH (NOLOCK) WHERE (b.ID_Proyecto = p.ID OR b.Numero_Proyecto_Limpio = p.Numero_Proyecto) AND b.ESTADO_OTP = %s)"
+                sql += (
+                    " AND EXISTS (SELECT 1 FROM dbo.CT_BACKLOG_OPERACIONES2 b WITH (NOLOCK) WHERE (b.ID_Proyecto = p.ID OR b.Numero_Proyecto_Limpio "
+                    + _SQL_P_NUMERO_LIMPIO_IN + ") AND b.ESTADO_OTP = %s)"
+                )
                 params.append(estado_sga)
 
             if search:
@@ -790,7 +853,7 @@ def get_proyecto_by_id(proyecto_id):
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            sql = """
+            sql = f"""
                 SELECT 
                     p.ID,
                     p.Cliente,
@@ -805,21 +868,21 @@ def get_proyecto_by_id(proyecto_id):
                     (
                         SELECT MIN(b.FECHA_INSERT) 
                         FROM dbo.CT_BACKLOG_OPERACIONES2 b WITH (NOLOCK)
-                        WHERE (b.ID_Proyecto = p.ID OR b.Numero_Proyecto_Limpio = p.Numero_Proyecto) AND b.FECHA_INSERT IS NOT NULL
+                        WHERE (b.ID_Proyecto = p.ID OR b.Numero_Proyecto_Limpio {_SQL_P_NUMERO_LIMPIO_IN}) AND b.FECHA_INSERT IS NOT NULL
                     ) AS fecha_creacion_sga,
                     (
                         SELECT MIN(b.FECHA_COMPROMETIDA) 
                         FROM dbo.CT_BACKLOG_OPERACIONES2 b WITH (NOLOCK)
-                        WHERE (b.ID_Proyecto = p.ID OR b.Numero_Proyecto_Limpio = p.Numero_Proyecto) AND b.FECHA_COMPROMETIDA IS NOT NULL
+                        WHERE (b.ID_Proyecto = p.ID OR b.Numero_Proyecto_Limpio {_SQL_P_NUMERO_LIMPIO_IN}) AND b.FECHA_COMPROMETIDA IS NOT NULL
                     ) AS fecha_compromiso_sga,
                     (
                         SELECT MAX(b.FECHA_REALIZACION) 
                         FROM dbo.CT_BACKLOG_OPERACIONES2 b WITH (NOLOCK)
-                        WHERE (b.ID_Proyecto = p.ID OR b.Numero_Proyecto_Limpio = p.Numero_Proyecto) AND b.FECHA_REALIZACION IS NOT NULL
+                        WHERE (b.ID_Proyecto = p.ID OR b.Numero_Proyecto_Limpio {_SQL_P_NUMERO_LIMPIO_IN}) AND b.FECHA_REALIZACION IS NOT NULL
                     ) AS fecha_cierre_sga,
-                    (SELECT COUNT(1) FROM dbo.CT_BACKLOG_OPERACIONES2 b WITH (NOLOCK) WHERE b.ID_Proyecto = p.ID OR b.Numero_Proyecto_Limpio = p.Numero_Proyecto) AS total_solots,
-                    (SELECT COUNT(1) FROM dbo.registrosRF_SD_SM sd WITH (NOLOCK) WHERE sd.ID_Proyecto = p.ID OR sd.Numero_Proyecto_Limpio = p.Numero_Proyecto) AS total_tickets,
-                    (SELECT COUNT(1) FROM dbo.registrosSM_RFC rfc WITH (NOLOCK) WHERE rfc.ID_Proyecto = p.ID OR rfc.Numero_Proyecto_Limpio = p.Numero_Proyecto) AS total_rfcs,
+                    (SELECT COUNT(1) FROM dbo.CT_BACKLOG_OPERACIONES2 b WITH (NOLOCK) WHERE b.ID_Proyecto = p.ID OR b.Numero_Proyecto_Limpio {_SQL_P_NUMERO_LIMPIO_IN}) AS total_solots,
+                    (SELECT COUNT(1) FROM dbo.registrosRF_SD_SM sd WITH (NOLOCK) WHERE sd.ID_Proyecto = p.ID OR sd.Numero_Proyecto_Limpio {_SQL_P_NUMERO_LIMPIO_IN}) AS total_tickets,
+                    (SELECT COUNT(1) FROM dbo.registrosSM_RFC rfc WITH (NOLOCK) WHERE rfc.ID_Proyecto = p.ID OR rfc.Numero_Proyecto_Limpio {_SQL_P_NUMERO_LIMPIO_IN}) AS total_rfcs,
                     (
                         SELECT SUM(CASE 
                             WHEN b.ESTADO_OTP NOT IN ('Cerrada', '5- Ejecutada', '5- Ejecutada Tareas Pendientes', 'Abortado', 'En Aborcion', 'Eliminada', 'Aprobado') 
@@ -827,7 +890,7 @@ def get_proyecto_by_id(proyecto_id):
                             ELSE 0 
                         END)
                         FROM dbo.CT_BACKLOG_OPERACIONES2 b WITH (NOLOCK)
-                        WHERE (b.ID_Proyecto = p.ID OR b.Numero_Proyecto_Limpio = p.Numero_Proyecto)
+                        WHERE (b.ID_Proyecto = p.ID OR b.Numero_Proyecto_Limpio {_SQL_P_NUMERO_LIMPIO_IN})
                           AND b.FECHA_COMPROMETIDA IS NOT NULL
                     ) AS solots_vencidas,
                     (
@@ -838,7 +901,7 @@ def get_proyecto_by_id(proyecto_id):
                             ELSE 0 
                         END)
                         FROM dbo.CT_BACKLOG_OPERACIONES2 b WITH (NOLOCK)
-                        WHERE (b.ID_Proyecto = p.ID OR b.Numero_Proyecto_Limpio = p.Numero_Proyecto)
+                        WHERE (b.ID_Proyecto = p.ID OR b.Numero_Proyecto_Limpio {_SQL_P_NUMERO_LIMPIO_IN})
                           AND b.FECHA_COMPROMETIDA IS NOT NULL
                     ) AS solots_por_vencer,
                     (
@@ -848,7 +911,7 @@ def get_proyecto_by_id(proyecto_id):
                             ELSE 0 
                         END)
                         FROM dbo.registrosRF_SD_SM sd WITH (NOLOCK)
-                        WHERE (sd.ID_Proyecto = p.ID OR sd.Numero_Proyecto_Limpio = p.Numero_Proyecto)
+                        WHERE (sd.ID_Proyecto = p.ID OR sd.Numero_Proyecto_Limpio {_SQL_P_NUMERO_LIMPIO_IN})
                           AND sd.SUBMIT_DATE IS NOT NULL
                     ) AS tickets_criticos,
                     (
@@ -859,7 +922,7 @@ def get_proyecto_by_id(proyecto_id):
                             ELSE 0 
                         END)
                         FROM dbo.registrosRF_SD_SM sd WITH (NOLOCK)
-                        WHERE (sd.ID_Proyecto = p.ID OR sd.Numero_Proyecto_Limpio = p.Numero_Proyecto)
+                        WHERE (sd.ID_Proyecto = p.ID OR sd.Numero_Proyecto_Limpio {_SQL_P_NUMERO_LIMPIO_IN})
                           AND sd.SUBMIT_DATE IS NOT NULL
                     ) AS tickets_atencion,
                     (
@@ -923,9 +986,9 @@ def get_solots_by_proyecto(proyecto_id, numero_proyecto=None):
                 WHERE b.ID_Proyecto = %s
             """
             params = [proyecto_id]
-            if numero_proyecto:
-                sql += " OR b.Numero_Proyecto_Limpio = %s"
-                params.append(numero_proyecto)
+            if numero_proyecto and str(numero_proyecto).strip():
+                sql += " OR b.Numero_Proyecto_Limpio IN (%s, %s)"
+                params.extend(_numero_proyecto_limpio_keys(numero_proyecto))
 
             sql += " ORDER BY b.FECHA_INSERT DESC, b.ID_OTP DESC"
             cursor.execute(sql, tuple(params))
@@ -957,9 +1020,9 @@ def get_tickets_by_proyecto(proyecto_id, numero_proyecto=None):
                 WHERE sd.ID_Proyecto = %s
             """
             params = [proyecto_id]
-            if numero_proyecto:
-                sql += " OR sd.Numero_Proyecto_Limpio = %s"
-                params.append(numero_proyecto)
+            if numero_proyecto and str(numero_proyecto).strip():
+                sql += " OR sd.Numero_Proyecto_Limpio IN (%s, %s)"
+                params.extend(_numero_proyecto_limpio_keys(numero_proyecto))
 
             sql += " ORDER BY sd.SUBMIT_DATE DESC, sd.CC_INCIDENT_ID DESC"
             cursor.execute(sql, tuple(params))
@@ -989,9 +1052,9 @@ def get_rfcs_by_proyecto(proyecto_id, numero_proyecto=None):
                 WHERE rfc.ID_Proyecto = %s
             """
             params = [proyecto_id]
-            if numero_proyecto:
-                sql += " OR rfc.Numero_Proyecto_Limpio = %s"
-                params.append(numero_proyecto)
+            if numero_proyecto and str(numero_proyecto).strip():
+                sql += " OR rfc.Numero_Proyecto_Limpio IN (%s, %s)"
+                params.extend(_numero_proyecto_limpio_keys(numero_proyecto))
 
             sql += " ORDER BY rfc.ORIG_DATE_ENTERED DESC, rfc.NUMBER DESC"
             cursor.execute(sql, tuple(params))
@@ -1075,11 +1138,13 @@ def get_dashboard_kpis(lt_filter=None, restringido=False):
             efectividad = round((proyectos_atendidos / total_proyectos * 100), 1) if total_proyectos > 0 else 0.0
 
             # 6. Total Tickets
-            sql_tickets = """
+            sql_tickets = f"""
                 SELECT COUNT(1) as total 
                 FROM dbo.registrosRF_SD_SM sd WITH (NOLOCK)
-                INNER JOIN dbo.Proyectos p WITH (NOLOCK) ON sd.ID_Proyecto = p.ID
-                WHERE (p.Tipo_Servicio IS NULL OR p.Tipo_Servicio <> 'Reunión')
+                WHERE EXISTS (
+                    SELECT 1 FROM dbo.Proyectos p WITH (NOLOCK)
+                    WHERE (sd.ID_Proyecto = p.ID OR sd.Numero_Proyecto_Limpio {_SQL_P_NUMERO_LIMPIO_IN})
+                      AND (p.Tipo_Servicio IS NULL OR p.Tipo_Servicio <> 'Reunión')
             """
             params_t = []
             if lt_filter == "__UNASSIGNED__":
@@ -1087,15 +1152,18 @@ def get_dashboard_kpis(lt_filter=None, restringido=False):
             elif lt_filter:
                 sql_tickets += " AND p.LT_Asignado = %s"
                 params_t.append(lt_filter)
+            sql_tickets += ")"
             cursor.execute(sql_tickets, tuple(params_t))
             total_tickets = cursor.fetchone()['total']
 
             # 7. Total RFCs
-            sql_rfcs = """
+            sql_rfcs = f"""
                 SELECT COUNT(1) as total 
                 FROM dbo.registrosSM_RFC rfc WITH (NOLOCK)
-                INNER JOIN dbo.Proyectos p WITH (NOLOCK) ON rfc.ID_Proyecto = p.ID
-                WHERE (p.Tipo_Servicio IS NULL OR p.Tipo_Servicio <> 'Reunión')
+                WHERE EXISTS (
+                    SELECT 1 FROM dbo.Proyectos p WITH (NOLOCK)
+                    WHERE (rfc.ID_Proyecto = p.ID OR rfc.Numero_Proyecto_Limpio {_SQL_P_NUMERO_LIMPIO_IN})
+                      AND (p.Tipo_Servicio IS NULL OR p.Tipo_Servicio <> 'Reunión')
             """
             params_r = []
             if lt_filter == "__UNASSIGNED__":
@@ -1103,39 +1171,13 @@ def get_dashboard_kpis(lt_filter=None, restringido=False):
             elif lt_filter:
                 sql_rfcs += " AND p.LT_Asignado = %s"
                 params_r.append(lt_filter)
+            sql_rfcs += ")"
             cursor.execute(sql_rfcs, tuple(params_r))
             total_rfcs = cursor.fetchone()['total']
 
             # 8. KPIs de Salud Operacional
             sql_salud_kpis = """
-                WITH SolotStats AS (
-                    SELECT 
-                        ID_Proyecto, 
-                        COUNT(1) AS total_solots,
-                        SUM(CASE WHEN ESTADO_OTP NOT IN ('Cerrada', '5- Ejecutada', '5- Ejecutada Tareas Pendientes', 'Abortado', 'En Aborcion', 'Eliminada', 'Aprobado') 
-                                 AND FECHA_COMPROMETIDA IS NOT NULL AND FECHA_COMPROMETIDA < CAST(GETDATE() AS DATE) THEN 1 ELSE 0 END) AS solots_vencidas,
-                        SUM(CASE WHEN ESTADO_OTP NOT IN ('Cerrada', '5- Ejecutada', '5- Ejecutada Tareas Pendientes', 'Abortado', 'En Aborcion', 'Eliminada', 'Aprobado') 
-                                 AND FECHA_COMPROMETIDA IS NOT NULL AND FECHA_COMPROMETIDA >= CAST(GETDATE() AS DATE) 
-                                 AND FECHA_COMPROMETIDA <= DATEADD(day, 5, CAST(GETDATE() AS DATE)) THEN 1 ELSE 0 END) AS solots_por_vencer
-                    FROM dbo.CT_BACKLOG_OPERACIONES2 WITH (NOLOCK) 
-                    WHERE ID_Proyecto IS NOT NULL 
-                    GROUP BY ID_Proyecto
-                ),
-                TicketStats AS (
-                    SELECT 
-                        ID_Proyecto, 
-                        COUNT(1) AS total_tickets,
-                        SUM(CASE WHEN STATUS NOT IN ('Cerrado', 'Resuelto') 
-                                 AND SUBMIT_DATE IS NOT NULL
-                                 AND TRY_CAST(SUBMIT_DATE AS DATETIME2) < DATEADD(day, -14, GETDATE()) THEN 1 ELSE 0 END) AS tickets_criticos,
-                        SUM(CASE WHEN STATUS NOT IN ('Cerrado', 'Resuelto') 
-                                 AND SUBMIT_DATE IS NOT NULL
-                                 AND TRY_CAST(SUBMIT_DATE AS DATETIME2) >= DATEADD(day, -14, GETDATE())
-                                 AND TRY_CAST(SUBMIT_DATE AS DATETIME2) < DATEADD(day, -7, GETDATE()) THEN 1 ELSE 0 END) AS tickets_atencion
-                    FROM dbo.registrosRF_SD_SM WITH (NOLOCK) 
-                    WHERE ID_Proyecto IS NOT NULL 
-                    GROUP BY ID_Proyecto
-                )
+                WITH """ + _SQL_STATS_CTES + """
                 SELECT 
                     SUM(CASE 
                         WHEN ISNULL(ss.total_solots, 0) = 0 AND ISNULL(ts.total_tickets, 0) = 0 THEN 1 
@@ -4603,7 +4645,7 @@ def get_alertas_tempranas_sla(lider: str = None, severidad: str = "todas", tipo:
     try:
         with conn.cursor() as cur:
             # 1. Consulta optimizada de Tickets HPSM en registrosRF_SD_SM
-            sql_tickets = """
+            sql_tickets = f"""
                 SELECT 
                     sd.CC_INCIDENT_ID,
                     sd.RF_ID,
@@ -4623,7 +4665,7 @@ def get_alertas_tempranas_sla(lider: str = None, severidad: str = "todas", tipo:
                 OUTER APPLY (
                     SELECT TOP 1 p.ID, p.Numero_Proyecto, p.Cliente, p.LT_Asignado, p.Estado, p.Tipo_Servicio
                     FROM dbo.Proyectos p WITH (NOLOCK)
-                    WHERE (sd.ID_Proyecto = p.ID OR (sd.Numero_Proyecto_Limpio IS NOT NULL AND sd.Numero_Proyecto_Limpio = p.Numero_Proyecto))
+                    WHERE (sd.ID_Proyecto = p.ID OR (sd.Numero_Proyecto_Limpio IS NOT NULL AND sd.Numero_Proyecto_Limpio {_SQL_P_NUMERO_LIMPIO_IN}))
                       AND (p.Tipo_Servicio IS NULL OR p.Tipo_Servicio <> 'Reunión')
                     ORDER BY CASE WHEN p.Estado NOT IN ('Cerrado', 'Atendido') THEN 0 ELSE 1 END, p.ID DESC
                 ) p
@@ -4641,7 +4683,7 @@ def get_alertas_tempranas_sla(lider: str = None, severidad: str = "todas", tipo:
             raw_tickets = cur.fetchall()
 
             # 2. Consulta optimizada de Solots SGA en CT_BACKLOG_OPERACIONES2
-            sql_solots = """
+            sql_solots = f"""
                 SELECT 
                     b.ID_OTP,
                     b.DESCR_OTP,
@@ -4661,7 +4703,7 @@ def get_alertas_tempranas_sla(lider: str = None, severidad: str = "todas", tipo:
                 OUTER APPLY (
                     SELECT TOP 1 p.ID, p.Numero_Proyecto, p.Cliente, p.LT_Asignado, p.Estado, p.Tipo_Servicio
                     FROM dbo.Proyectos p WITH (NOLOCK)
-                    WHERE (b.ID_Proyecto = p.ID OR (b.Numero_Proyecto_Limpio IS NOT NULL AND b.Numero_Proyecto_Limpio = p.Numero_Proyecto))
+                    WHERE (b.ID_Proyecto = p.ID OR (b.Numero_Proyecto_Limpio IS NOT NULL AND b.Numero_Proyecto_Limpio {_SQL_P_NUMERO_LIMPIO_IN}))
                       AND (p.Tipo_Servicio IS NULL OR p.Tipo_Servicio <> 'Reunión')
                     ORDER BY CASE WHEN p.Estado NOT IN ('Cerrado', 'Atendido') THEN 0 ELSE 1 END, p.ID DESC
                 ) p
