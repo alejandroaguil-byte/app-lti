@@ -1190,6 +1190,31 @@ button, input, select, textarea, optgroup {
   overflow-x: auto;
 }
 
+/* Búsqueda: cada tabla de resultados tiene su propio scroll (alto ajustado a la ventana
+   por fitDirectSearchTables) para que la barra horizontal quede siempre visible. */
+.table-responsive.direct-search-scroll {
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  overscroll-behavior-x: contain;
+  cursor: grab;
+}
+
+.table-responsive.direct-search-scroll.is-dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.direct-search-scroll .data-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.direct-search-scroll .data-table td button,
+.direct-search-scroll .data-table td a {
+  cursor: pointer;
+}
+
 .data-table {
   width: 100%;
   border-collapse: collapse;

@@ -1713,6 +1713,10 @@ const App = {
       });
     });
 
+    // Direct search tables: viewport-height scroll area and drag-to-scroll
+    document.querySelectorAll('.direct-search-scroll').forEach(el => this.enableDragScroll(el));
+    window.addEventListener('resize', () => this.fitDirectSearchTables());
+
     // Direct search Tag Input Events
     const tagInputField = document.getElementById('direct-search-input-field');
     if (tagInputField) {
@@ -3267,6 +3271,62 @@ const App = {
     document.querySelectorAll('.direct-tab-pane').forEach(pane => {
       pane.style.display = pane.id === `direct-tab-pane-${tabName}` ? 'block' : 'none';
     });
+    this.fitDirectSearchTables();
+  },
+
+  // Limits each visible results table to the remaining viewport height so its
+  // horizontal scrollbar is always on screen (the header row stays sticky).
+  fitDirectSearchTables() {
+    document.querySelectorAll('.direct-search-scroll').forEach(el => {
+      if (el.offsetParent === null) return;
+      const top = el.getBoundingClientRect().top + window.scrollY;
+      const available = window.innerHeight - top - 16;
+      el.style.maxHeight = `${Math.max(320, Math.round(available))}px`;
+    });
+  },
+
+  // Click and drag horizontally over a table to scroll it sideways.
+  // Buttons, links and form fields keep their normal behaviour.
+  enableDragScroll(el) {
+    const DRAG_THRESHOLD = 5;
+    let drag = null;
+
+    el.addEventListener('pointerdown', (e) => {
+      if (e.pointerType !== 'mouse' || e.button !== 0) return;
+      if (e.target.closest('button, a, input, select, textarea, label, [contenteditable="true"]')) return;
+      if (el.scrollWidth <= el.clientWidth) return;
+      drag = { startX: e.clientX, startScroll: el.scrollLeft, moved: false, pointerId: e.pointerId };
+    });
+
+    el.addEventListener('pointermove', (e) => {
+      if (!drag || e.pointerId !== drag.pointerId) return;
+      const dx = e.clientX - drag.startX;
+      if (!drag.moved) {
+        if (Math.abs(dx) < DRAG_THRESHOLD) return;
+        drag.moved = true;
+        el.classList.add('is-dragging');
+        try { el.setPointerCapture(e.pointerId); } catch (err) { /* pointer already released */ }
+        const selection = window.getSelection && window.getSelection();
+        if (selection) selection.removeAllRanges();
+      }
+      el.scrollLeft = drag.startScroll - dx;
+      e.preventDefault();
+    });
+
+    const endDrag = (e) => {
+      if (!drag || (e && e.pointerId !== drag.pointerId)) return;
+      const moved = drag.moved;
+      drag = null;
+      el.classList.remove('is-dragging');
+      if (moved) {
+        // A drag must not count as a click on the row underneath
+        const swallowClick = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
+        el.addEventListener('click', swallowClick, { capture: true, once: true });
+        setTimeout(() => el.removeEventListener('click', swallowClick, { capture: true }), 0);
+      }
+    };
+    el.addEventListener('pointerup', endDrag);
+    el.addEventListener('pointercancel', endDrag);
   },
 
   async executeDirectSearch() {
@@ -3321,6 +3381,7 @@ const App = {
 
       // Render Table 4: RFCs
       this.renderDirectRFCs(data.rfcs || []);
+      this.fitDirectSearchTables();
 
       // Auto-switch to tab with results if current is empty
       if (data.counts[this.activeDirectSearchTab] === 0) {
