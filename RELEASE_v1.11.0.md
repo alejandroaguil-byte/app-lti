@@ -2,6 +2,7 @@
 
 **Fecha de Lanzamiento:** 17 de Octubre de 2026  
 **Rama Base:** `main`  
+**Tag:** `v1.11.0` (código desplegado: `3652543`; el tag agrega solo documentación)  
 **Versión anterior:** `v1.10.0`
 
 ---

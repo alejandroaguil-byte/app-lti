@@ -2,7 +2,7 @@
 
 **Fecha de Lanzamiento:** 16 de Octubre de 2026  
 **Rama Base:** `main`  
-**Tag:** `v1.9.0` (commit `b6952ab`)  
+**Tag:** `v1.9.0` (código desplegado: `b6952ab`; el tag agrega solo esta documentación)  
 **Versión anterior:** `v1.8.0`
 
 ---
