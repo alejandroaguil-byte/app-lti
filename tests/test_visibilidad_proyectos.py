@@ -272,8 +272,17 @@ def alertas_env(monkeypatch):
 def test_s5_alertas_usuarios_completos_mantienen_el_parametro_lider(alertas_env, username):
     client.get("/api/alertas/sla", params={"lider": "Erwin Sandoval"}, headers=_h(username))
     assert alertas_env[0]["lider"] == "Erwin Sandoval"
-    client.get("/api/alertas/sla", headers=_h(username))
-    assert alertas_env[1]["lider"] is None
+
+
+def test_s5_alertas_visibilidad_total_sin_lti_propio_ve_todas(alertas_env):
+    client.get("/api/alertas/sla", headers=_h("pablo.castillo"))
+    assert alertas_env[0]["lider"] is None
+
+
+def test_s5_alertas_visibilidad_total_con_lti_propio_ve_sus_proyectos_por_defecto(alertas_env):
+    # fixes-proyectos-alertas S5: sin parámetro, el alcance es su propio LTI (antes: todos los proyectos)
+    client.get("/api/alertas/sla", headers=_h("alejandro.aguilar"))
+    assert alertas_env[0]["lider"] == "Alejandro Aguilar"
 
 
 @pytest.mark.parametrize("username,lt", RESTRINGIDOS_CON_LT)

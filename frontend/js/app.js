@@ -1344,7 +1344,7 @@ const App = {
         const emptyTitle = emptyState.querySelector('.empty-title');
         if (emptyTitle) emptyTitle.textContent = filter === 'todas' ? 'Sin proyectos con atrasos' : 'Sin proyectos en esta categoría';
         const emptyDesc = emptyState.querySelector('.empty-desc');
-        if (emptyDesc) emptyDesc.textContent = filter === 'todas' ? 'Ningún proyecto tiene Solots ni tickets fuera de SLA en este momento.' : 'Prueba con otro filtro.';
+        if (emptyDesc) emptyDesc.textContent = filter === 'todas' ? 'Ningún proyecto tiene Solots ni tickets fuera de SLA, ni lleva más de 7 días sin movimiento.' : 'Prueba con otro filtro.';
       }
       itemsList.style.display = 'none';
       return;
@@ -1364,11 +1364,12 @@ const App = {
         g.solots ? `${g.solots} ${g.solots === 1 ? 'Solot' : 'Solots'}` : '',
         g.tickets ? `${g.tickets} ${g.tickets === 1 ? 'ticket' : 'tickets'}` : '',
         g.max_dias_fuera_sla ? `atraso máx. ${g.max_dias_fuera_sla} días` : '',
+        g.sin_movimiento ? `sin movimiento hace ${g.dias_sin_movimiento} días` : '',
       ].filter(Boolean).join(' · ');
       const shown = (g.alertas || []).slice(0, 3);
       const remaining = (g.total_alertas || 0) - shown.length;
       const itemsHtml = shown.map(a => `
-        <li>
+        <li${a.codigo === 'PROYECTO_SIN_MOVIMIENTO' ? ' class="alert-project-item-stale" data-alert-code="PROYECTO_SIN_MOVIMIENTO"' : ''}>
           <span class="alert-project-item-title">${this.escapeHtml(a.titulo || '')}</span>
           <span class="alert-project-item-detail">${this.escapeHtml(a.detalle_sla || '')}</span>
         </li>`).join('');

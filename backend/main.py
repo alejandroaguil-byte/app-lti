@@ -22,6 +22,7 @@ from .auth import (
     require_non_pm,
     ve_todos_los_proyectos,
     resolver_lt_scope,
+    lt_propio,
     proyecto_en_alcance
 )
 from .db import (
@@ -489,7 +490,12 @@ def get_alertas_sla_endpoint(
     Centro de Alertas Tempranas SLA & Escalamiento Rápido (Funcionalidad 5).
     Retorna métricas consolidadas, lista priorizada de alertas y minuta ejecutiva.
     """
-    if not ve_todos_los_proyectos(current_user):
+    if ve_todos_los_proyectos(current_user):
+        # Visibilidad total: sin parámetro, un usuario con LTI propio ve solo las alertas de sus proyectos
+        # (un `lider` explícito se respeta; 'todos' pide el alcance completo); sin LTI propio ve todas.
+        if not (lider and lider.strip()):
+            lider = lt_propio(current_user)
+    else:
         # Alcance forzado a su LTI; sin lt_asignado no ve alertas
         lider, sin_acceso = resolver_lt_scope(current_user, None)
         if sin_acceso:
