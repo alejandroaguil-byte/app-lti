@@ -179,6 +179,7 @@ def proyecto(monkeypatch):
     (" 0001615172 ", "1615172"),
     ("1609373", "1609373"),
     ("ABC-12", "ABC-12"),
+    ("abc-12", "ABC-12"),
     ("000", "000"),
     (None, ""),
     ("   ", ""),
@@ -258,6 +259,31 @@ def test_s4_post_duplicado_en_el_grupo_responde_409(make_conn, proyecto, numero_
         assert res.status_code == 409, res.text
         assert res.json() == {"detail": MSG_DUPLICADO}
     assert conn.writes("INSERT") == [] and conn.commits == 0
+
+
+def test_s4_post_duplicado_sin_distinguir_mayusculas_responde_409(make_conn, proyecto):
+    # The database collation is case-insensitive (SQL_Latin1_General_CP1_CI_AS)
+    conn = make_conn(edges=[edge(1, 123, "ABC-12", "0001609373")])
+    res = client.post("/api/proyectos/123/asociaciones", json={"numero": "abc-12"}, headers=_h())
+    assert res.status_code == 409, res.text
+    assert res.json() == {"detail": MSG_DUPLICADO}
+    assert conn.writes("INSERT") == [] and conn.commits == 0
+
+
+def test_s4_post_concurrente_que_choca_con_el_indice_unico_responde_409(make_conn, proyecto):
+    conn = make_conn()
+    respond = conn.respond
+
+    def respond_con_choque(sql, params):
+        if sql.startswith("INSERT INTO dbo.Proyecto_Asociaciones"):
+            raise db_module.pymssql.IntegrityError(2601, b"Cannot insert duplicate key row")
+        return respond(sql, params)
+
+    conn.respond = respond_con_choque
+    res = client.post("/api/proyectos/123/asociaciones", json={"numero": "1615172"}, headers=_h())
+    assert res.status_code == 409, res.text
+    assert res.json() == {"detail": MSG_DUPLICADO}
+    assert conn.commits == 0 and conn.rollbacks == 1 and conn.closed
 
 
 def test_s4_post_crea_con_numero_normalizado_y_responde_201(make_conn, proyecto):

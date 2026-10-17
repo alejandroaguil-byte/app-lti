@@ -1791,8 +1791,11 @@ def _init_asociaciones_table(cursor):
     """)
 
 def normalizar_numero_asociado(numero) -> str:
-    """N° de proyecto sin espacios y sin el prefijo SGA '000' ('0001609373' -> '1609373')."""
-    num = str(numero or "").strip()
+    """
+    N° de proyecto sin espacios, sin el prefijo SGA '000' ('0001609373' -> '1609373') y en mayúsculas:
+    la collation de la BD no distingue mayúsculas, así que 'abc-1' y 'ABC-1' son el mismo N°.
+    """
+    num = str(numero or "").strip().upper()
     return num[3:] if num.startswith("000") and len(num) > 3 else num
 
 def _cargar_grupo_asociado(cursor, proyecto_id, numero_proyecto) -> dict:
@@ -1943,11 +1946,16 @@ def create_asociacion(proyecto_id, numero_proyecto, numero_asociado, autor_usern
             grupo = _cargar_grupo_asociado(cursor, proyecto_id, numero_proyecto)
             if numero_asociado == grupo["numero_propio"] or numero_asociado in grupo["numeros"]:
                 return {"status": "duplicate"}
-            cursor.execute("""
-                INSERT INTO dbo.Proyecto_Asociaciones (Proyecto_ID, Numero_Asociado, Autor_Username)
-                OUTPUT INSERTED.ID, INSERTED.Creado
-                VALUES (%s, %s, %s)
-            """, (proyecto_id, numero_asociado, autor_username))
+            try:
+                cursor.execute("""
+                    INSERT INTO dbo.Proyecto_Asociaciones (Proyecto_ID, Numero_Asociado, Autor_Username)
+                    OUTPUT INSERTED.ID, INSERTED.Creado
+                    VALUES (%s, %s, %s)
+                """, (proyecto_id, numero_asociado, autor_username))
+            except pymssql.IntegrityError:
+                # A concurrent request inserted the same edge first (unique index)
+                conn.rollback()
+                return {"status": "duplicate"}
             row = cursor.fetchone()
         conn.commit()
         return {
