@@ -2,6 +2,7 @@
 
 **Fecha de Lanzamiento:** 17 de Octubre de 2026  
 **Rama Base:** `main`  
+**Tag:** `v1.11.1` (código desplegado: `e4fc417`; el tag agrega solo documentación)  
 **Versión anterior:** `v1.11.0`
 
 ---
@@ -49,3 +50,9 @@ Esta versión corrige cuatro problemas del módulo Proyectos:
    sudo systemctl restart app-lti.service
    ```
 3. No requiere migración de datos.
+
+## Resultado del Despliegue (17-10-2026)
+- Servicio reiniciado a las 11:15:54 con el unit actualizado, sin reinicios por error, y `/api/health` responde 200.
+- El unit instalado coincide con `deploy/app-lti.service`. Dentro del servicio, `data/` está montado con escritura y `data/adjuntos` existe con dueño `iacdi`.
+- La alerta "Proyecto sin movimiento" se retiró antes de este despliegue, a pedido del usuario. Su código queda en el historial, en el commit `fa14003`.
+- Alertas con los datos reales: `Alejandro Aguilar` ve 167 de 909 en total.
