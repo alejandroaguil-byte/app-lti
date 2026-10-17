@@ -2707,11 +2707,15 @@ const App = {
 
       const valProyectos = document.getElementById('kpi-val-proyectos');
       const valEnCurso = document.getElementById('kpi-val-en-curso');
+      const valEnRevision = document.getElementById('kpi-val-en-revision');
+      const valCerrados = document.getElementById('kpi-val-cerrados');
       const valPendientes = document.getElementById('kpi-val-pendientes-asignar');
       const valEfectividad = document.getElementById('kpi-val-efectividad');
 
       if (valProyectos) valProyectos.textContent = kpis.total_proyectos || 0;
       if (valEnCurso) valEnCurso.textContent = kpis.proyectos_en_curso || 0;
+      if (valEnRevision) valEnRevision.textContent = kpis.proyectos_en_revision || 0;
+      if (valCerrados) valCerrados.textContent = kpis.proyectos_cerrados || 0;
       if (valPendientes) valPendientes.textContent = kpis.pendientes_asignar || 0;
       if (valEfectividad) valEfectividad.textContent = `${kpis.efectividad !== undefined ? kpis.efectividad : 0}%`;
 

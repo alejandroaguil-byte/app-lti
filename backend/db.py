@@ -1068,6 +1068,7 @@ def kpis_vacios() -> dict:
     return {
         'total_proyectos': 0,
         'proyectos_en_curso': 0,
+        'proyectos_en_revision': 0,
         'proyectos_atendidos': 0,
         'proyectos_cerrados': 0,
         'pendientes_asignar': 0,
@@ -1108,6 +1109,17 @@ def get_dashboard_kpis(lt_filter=None, restringido=False):
                 params_ec.append(lt_filter)
             cursor.execute(sql_en_curso, tuple(params_ec))
             proyectos_en_curso = cursor.fetchone()['total']
+
+            # 2b. Proyectos En Revisión (Estado = 'En revision')
+            sql_en_revision = "SELECT COUNT(1) as total FROM dbo.Proyectos p WITH (NOLOCK) WHERE p.Estado = 'En revision' AND (p.Tipo_Servicio IS NULL OR p.Tipo_Servicio <> 'Reunión')"
+            params_er = []
+            if lt_filter == "__UNASSIGNED__":
+                sql_en_revision += " AND (p.LT_Asignado IS NULL OR LTRIM(RTRIM(p.LT_Asignado)) = '' OR LOWER(LTRIM(RTRIM(p.LT_Asignado))) = 'sin asignar')"
+            elif lt_filter:
+                sql_en_revision += " AND p.LT_Asignado = %s"
+                params_er.append(lt_filter)
+            cursor.execute(sql_en_revision, tuple(params_er))
+            proyectos_en_revision = cursor.fetchone()['total']
 
             # 3. Proyectos Cerrados (Estado = 'Cerrado'; 'Atendido' es el estado legado)
             sql_atendidos = "SELECT COUNT(1) as total FROM dbo.Proyectos p WITH (NOLOCK) WHERE p.Estado IN ('Cerrado', 'Atendido') AND (p.Tipo_Servicio IS NULL OR p.Tipo_Servicio <> 'Reunión')"
@@ -1217,6 +1229,7 @@ def get_dashboard_kpis(lt_filter=None, restringido=False):
             return {
                 'total_proyectos': total_proyectos,
                 'proyectos_en_curso': proyectos_en_curso,
+                'proyectos_en_revision': proyectos_en_revision,
                 'proyectos_atendidos': proyectos_atendidos,
                 'proyectos_cerrados': proyectos_atendidos,
                 'pendientes_asignar': pendientes_asignar,
