@@ -30,7 +30,7 @@ ADMIN_USER = "alejandro.aguilar"
 LTI_USER = "erwin.sandoval"
 LTI_NAME = "Erwin Sandoval"
 
-KPI_TITLES = ["PROYECTOS ASIGNADOS", "PROYECTOS EN CURSO", "PENDIENTES DE ASIGNAR", "EFECTIVIDAD"]
+KPI_TITLES = ["PROYECTOS ASIGNADOS", "PROYECTOS EN CURSO", "EN REVISIÓN", "CERRADOS", "PENDIENTES DE ASIGNAR", "EFECTIVIDAD"]
 SEGMENTS = [
     ("#health-card-all", "Todos"),
     ("#health-card-healthy", "Saludables"),
@@ -71,7 +71,7 @@ def table_count(page: Page) -> int:
 # ---------------------------------------------------------------------------
 # S14 - Tablero
 # ---------------------------------------------------------------------------
-def test_dash_01_only_four_kpis(page: Page):
+def test_dash_01_kpi_cards(page: Page):
     login_as(page, ADMIN_USER, "ADMIN")
     titles = [t.strip().upper() for t in page.locator(".kpi-grid .kpi-card .kpi-title").all_inner_texts()]
     assert titles == KPI_TITLES
