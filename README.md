@@ -165,6 +165,12 @@ Diseñada con la identidad visual corporativa de Claro Chile (cabecera instituci
     - **Visibilidad**: cada usuario ve solo los proyectos de su LTI; `alejandro.aguilar` y `pablo.castillo` ven todos (ver sección RBAC).
     - **Tarjetas KPI explicadas**: cada tarjeta muestra una burbuja con su significado al pasar el mouse o con el foco del teclado.
 
+15. **Tours por Módulo, Búsqueda Navegable y Proyectos Asociados (v1.11.0)**:
+    - **Tour guiado en cada módulo**: Proyectos, Búsqueda, Tickets SM y Usuarios muestran su recorrido la primera vez que cada usuario entra al módulo; el botón **Ver tour** lo repite. El estado "visto" se guarda por usuario y por módulo en el navegador (`halo_tour_<módulo>_seen:<usuario>`). Solicitudes LTI mantiene su comportamiento (automático solo para PM).
+    - **Resultados de Búsqueda**: cada tabla tiene su propio scroll ajustado al alto de la ventana y encabezado fijo, así la barra horizontal queda siempre visible; además se puede hacer clic y arrastrar sobre la tabla para moverla hacia los lados.
+    - **Tarjetas En revisión y Cerrados** en el tablero de Proyectos (`proyectos_en_revision` y `proyectos_cerrados` en `GET /api/kpis`).
+    - **Proyectos asociados**: en el Resumen del detalle, un LTI asocia N° de proyecto (por ejemplo un proyecto hijo, aunque no exista en `dbo.Proyectos`). El grupo es simétrico y transitivo, y las pestañas Solots, Tickets y RFCs del detalle suman los registros de todo el grupo con la columna *Proyecto origen*. Listado, KPIs, alertas, diagnóstico, ficha y línea de tiempo no cambian. Endpoints `GET/POST /api/proyectos/{id}/asociaciones` (body `{"numero": "..."}`) y `DELETE /api/proyectos/{id}/asociaciones/{asociacion}`; tabla `dbo.Proyecto_Asociaciones` (se crea sola al iniciar). Detalle en [RELEASE_v1.11.0.md](RELEASE_v1.11.0.md).
+
 ---
 
 ## 🛠️ Stack Tecnológico
