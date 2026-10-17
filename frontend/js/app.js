@@ -53,6 +53,12 @@ const App = {
   estadosSharepoint: [],
   currentBitacora: [],
   _bitacoraRequestId: 0,
+  currentAsociaciones: null,
+  _asociacionesRequestId: 0,
+  _asociadosAutocompleteRequestId: 0,
+  asociadosResults: [],
+  asociadosSelectedIdx: -1,
+  asociadoPendingRemoveId: null,
   _editEstadoOriginal: null,
   activeTab: 'summary',
   activeDirectSearchTab: 'proyectos',
@@ -2126,6 +2132,9 @@ const App = {
       });
     }
 
+    // Proyectos asociados: asociar por N° con autocompletado, quitar con confirmación
+    this.bindAsociadosEvents();
+
     const editProjectModal = document.getElementById('edit-project-modal');
     if (editProjectModal) {
       editProjectModal.addEventListener('click', (e) => {
@@ -2537,6 +2546,7 @@ const App = {
     this.applyTimelineState(false);
     this.currentBitacora = [];
     this.renderBitacoraList();
+    this.resetAsociaciones();
     const bitacoraBadge = document.getElementById('tab-count-bitacora');
     if (bitacoraBadge) bitacoraBadge.textContent = '0';
     this.switchTab('summary');
@@ -2927,6 +2937,7 @@ const App = {
     this.renderSummaryTab(this.currentProject);
     this.renderProjectTimeline(this.currentProject);
     this.loadBitacora(projectId);
+    this.loadAsociaciones(projectId);
     this.loadTimeline(projectId);
     this.loadSolots(projectId);
     this.loadTickets(projectId);
@@ -3117,12 +3128,14 @@ const App = {
   async loadSolots(projectId) {
     const tbody = document.getElementById('solots-table-body');
     const badge = document.getElementById('tab-count-solots');
+    this.toggleOrigenColumn('solots-table-body', null);
     tbody.innerHTML = `<tr><td colspan="11" style="text-align: center; padding: 1.5rem;">Cargando Solots...</td></tr>`;
 
     try {
       const res = await Auth.fetchWithAuth(`/api/proyectos/${projectId}/solots`);
       const solots = await res.json();
       if (badge) badge.textContent = solots.length;
+      const origen = this.toggleOrigenColumn('solots-table-body', solots);
 
       if (!solots || solots.length === 0) {
         tbody.innerHTML = `<tr><td colspan="11" class="empty-state"><p>No existen Solots asociadas a este proyecto en CT_BACKLOG_OPERACIONES2.</p></td></tr>`;
@@ -3144,6 +3157,7 @@ const App = {
           <td>${this.escapeHtml(s.PRODUCTO || '-')}</td>
           <td>${this.escapeHtml(s.SERVICIO || '-')}</td>
           <td>${this.escapeHtml(s.NRO_SERVICIO || '-')}</td>
+          ${this.renderOrigenCell(s, origen)}
         </tr>
       `).join('');
     } catch (e) {
@@ -3154,12 +3168,14 @@ const App = {
   async loadTickets(projectId) {
     const tbody = document.getElementById('tickets-table-body');
     const badge = document.getElementById('tab-count-tickets');
+    this.toggleOrigenColumn('tickets-table-body', null);
     tbody.innerHTML = `<tr><td colspan="11" style="text-align: center; padding: 1.5rem;">Cargando Tickets...</td></tr>`;
 
     try {
       const res = await Auth.fetchWithAuth(`/api/proyectos/${projectId}/tickets`);
       const tickets = await res.json();
       if (badge) badge.textContent = tickets.length;
+      const origen = this.toggleOrigenColumn('tickets-table-body', tickets);
 
       if (!tickets || tickets.length === 0) {
         tbody.innerHTML = `<tr><td colspan="11" class="empty-state"><p>No existen tickets asociados en registrosRF_SD_SM.</p></td></tr>`;
@@ -3181,6 +3197,7 @@ const App = {
           <td>${this.escapeHtml(t.ASSIGNED_GROUP || '-')}</td>
           <td>${this.escapeHtml(t.ASSIGNED_TO || '-')}</td>
           <td><span style="font-family: var(--font-mono);">${this.escapeHtml(t.RF_ID || '-')}</span></td>
+          ${this.renderOrigenCell(t, origen)}
         </tr>
       `).join('');
     } catch (e) {
@@ -3191,12 +3208,14 @@ const App = {
   async loadRFCs(projectId) {
     const tbody = document.getElementById('rfcs-table-body');
     const badge = document.getElementById('tab-count-rfcs');
+    this.toggleOrigenColumn('rfcs-table-body', null);
     tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 1.5rem;">Cargando RFCs...</td></tr>`;
 
     try {
       const res = await Auth.fetchWithAuth(`/api/proyectos/${projectId}/rfcs`);
       const rfcs = await res.json();
       if (badge) badge.textContent = rfcs.length;
+      const origen = this.toggleOrigenColumn('rfcs-table-body', rfcs);
 
       if (!rfcs || rfcs.length === 0) {
         tbody.innerHTML = `<tr><td colspan="9" class="empty-state"><p>No existen RFCs asociadas en registrosSM_RFC.</p></td></tr>`;
@@ -3218,11 +3237,279 @@ const App = {
           <td>${this.escapeHtml(r.CC_SERVICIO_PADRE || '-')}</td>
           <td>${this.escapeHtml(r.ASSIGN_DEPT || '-')}</td>
           <td>${this.escapeHtml(r.ASSIGNED_TO || '-')}</td>
+          ${this.renderOrigenCell(r, origen)}
         </tr>
       `).join('');
     } catch (e) {
       tbody.innerHTML = `<tr><td colspan="9" style="color: var(--status-danger-text); text-align: center;">Error: ${e.message}</td></tr>`;
     }
+  },
+
+  // La columna "Proyecto origen" solo aparece cuando la API etiqueta los registros (el proyecto tiene asociaciones)
+  toggleOrigenColumn(tbodyId, rows) {
+    const visible = Array.isArray(rows) && rows.some(r => r && r.Proyecto_Origen !== undefined);
+    const th = document.getElementById(tbodyId)?.closest('table')?.querySelector('th.col-origen');
+    if (th) th.hidden = !visible;
+    return visible;
+  },
+
+  renderOrigenCell(row, visible) {
+    if (!visible) return '';
+    return `<td class="col-origen"><strong class="id-mono">${this.escapeHtml(row.Proyecto_Origen || '-')}</strong></td>`;
+  },
+
+  // --------------------------------------------------------------------------
+  // PROYECTOS ASOCIADOS (grupo por N° de proyecto; solo afecta las pestañas del detalle)
+  // --------------------------------------------------------------------------
+  resetAsociaciones() {
+    this._asociacionesRequestId++;
+    this.currentAsociaciones = null;
+    this.asociadoPendingRemoveId = null;
+    const input = document.getElementById('asociados-input');
+    if (input) input.value = '';
+    this.hideAsociadosDropdown();
+    this.showFieldError('asociados-error', '');
+    this.renderAsociaciones();
+  },
+
+  bindAsociadosEvents() {
+    const input = document.getElementById('asociados-input');
+    if (input) {
+      const debounced = this.debounce((val) => this.handleAsociadoInput(val), 250);
+      input.addEventListener('input', () => {
+        this.showFieldError('asociados-error', '');
+        debounced(input.value);
+      });
+      input.addEventListener('keydown', (e) => this.handleAsociadoKeydown(e));
+    }
+    const btn = document.getElementById('btn-asociados-agregar');
+    if (btn) btn.addEventListener('click', () => this.submitAsociacion());
+
+    const dropdown = document.getElementById('asociados-autocomplete-dropdown');
+    if (dropdown) {
+      dropdown.addEventListener('click', (e) => {
+        const item = e.target.closest('.autocomplete-item');
+        if (item) this.selectAsociadoItem(Number(item.dataset.index));
+      });
+    }
+
+    const list = document.getElementById('asociados-list');
+    if (list) {
+      list.addEventListener('click', (e) => {
+        const btnRemove = e.target.closest('[data-asociado-action]');
+        if (!btnRemove) return;
+        const id = Number(btnRemove.dataset.asociacionId);
+        const action = btnRemove.dataset.asociadoAction;
+        if (action === 'ask') {
+          this.asociadoPendingRemoveId = id;
+          this.renderAsociaciones();
+        } else if (action === 'cancel') {
+          this.asociadoPendingRemoveId = null;
+          this.renderAsociaciones();
+        } else if (action === 'confirm') {
+          this.removeAsociacion(id);
+        }
+      });
+    }
+
+    document.addEventListener('click', (e) => {
+      const container = document.querySelector('.asociados-autocomplete');
+      if (container && !container.contains(e.target)) this.hideAsociadosDropdown();
+    });
+  },
+
+  async loadAsociaciones(projectId) {
+    const requestId = ++this._asociacionesRequestId;
+    let data = null;
+    try {
+      const res = await Auth.fetchWithAuth(`/api/proyectos/${projectId}/asociaciones`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      data = await res.json();
+    } catch (e) {
+      console.warn('No se pudieron cargar los proyectos asociados:', e);
+    }
+    if (requestId !== this._asociacionesRequestId || !this.currentProject || this.currentProject.ID != projectId) return;
+    this.currentAsociaciones = data;
+    this.renderAsociaciones(data === null);
+  },
+
+  renderAsociaciones(loadFailed = false) {
+    const list = document.getElementById('asociados-list');
+    if (!list) return;
+    if (loadFailed) {
+      list.innerHTML = '<div class="asociados-empty">No se pudieron cargar los proyectos asociados. Intenta nuevamente.</div>';
+      return;
+    }
+    const data = this.currentAsociaciones;
+    const grupo = (data && data.grupo) || [];
+    if (grupo.length === 0) {
+      list.innerHTML = '<div class="asociados-empty">Este proyecto no tiene proyectos asociados.</div>';
+      return;
+    }
+    const directas = new Map(((data && data.asociaciones) || []).map(a => [a.numero, a]));
+    list.innerHTML = grupo.map(g => {
+      const directa = directas.get(g.numero);
+      const cliente = g.proyecto_id ? (g.cliente || 'Sin cliente') : 'No figura en Proyectos';
+      let acciones = '';
+      if (directa) {
+        acciones = this.asociadoPendingRemoveId === directa.id
+          ? `<span class="asociado-item-meta">¿Quitar esta asociación?</span>
+             <button type="button" class="btn btn-danger-outline btn-sm" data-asociado-action="confirm" data-asociacion-id="${directa.id}">Confirmar</button>
+             <button type="button" class="btn btn-secondary btn-sm" data-asociado-action="cancel" data-asociacion-id="${directa.id}">Cancelar</button>`
+          : `<button type="button" class="btn btn-danger-outline btn-sm" data-asociado-action="ask" data-asociacion-id="${directa.id}" aria-label="Quitar la asociación con ${this.escapeHtml(g.numero)}">Quitar</button>`;
+      } else {
+        acciones = '<span class="asociado-item-meta">Asociado a través del grupo</span>';
+      }
+      return `
+        <div class="asociado-item" data-numero="${this.escapeHtml(g.numero)}">
+          <span class="asociado-item-numero">${this.escapeHtml(g.numero)}</span>
+          <span class="asociado-item-cliente">${this.escapeHtml(cliente)}</span>
+          <span class="asociado-item-actions">${acciones}</span>
+        </div>
+      `;
+    }).join('');
+  },
+
+  // Refresca el bloque y las pestañas Solots/Tickets/RFCs (con sus contadores) tras asociar o quitar
+  async refreshAfterAsociacionChange(projectId) {
+    await Promise.all([
+      this.loadAsociaciones(projectId),
+      this.loadSolots(projectId),
+      this.loadTickets(projectId),
+      this.loadRFCs(projectId)
+    ]);
+  },
+
+  async submitAsociacion() {
+    if (!this.currentProject || this._asociadoSubmitting) return;
+    const projectId = this.currentProject.ID;
+    const input = document.getElementById('asociados-input');
+    const btn = document.getElementById('btn-asociados-agregar');
+    const numero = (input?.value || '').trim();
+    this.showFieldError('asociados-error', '');
+    this.hideAsociadosDropdown();
+    this._asociadoSubmitting = true;
+    if (btn) btn.disabled = true;
+
+    try {
+      const res = await Auth.fetchWithAuth(`/api/proyectos/${projectId}/asociaciones`, {
+        method: 'POST',
+        body: JSON.stringify({ numero })
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body.detail || body.message || 'No se pudo asociar el proyecto');
+      }
+      if (input) input.value = '';
+      await this.refreshAfterAsociacionChange(projectId);
+      this.showToast('Proyecto asociado', 'success');
+    } catch (err) {
+      this.showFieldError('asociados-error', err.message);
+    } finally {
+      this._asociadoSubmitting = false;
+      if (btn) btn.disabled = false;
+    }
+  },
+
+  async removeAsociacion(asociacionId) {
+    if (!this.currentProject) return;
+    const projectId = this.currentProject.ID;
+    this.showFieldError('asociados-error', '');
+    try {
+      const res = await Auth.fetchWithAuth(`/api/proyectos/${projectId}/asociaciones/${asociacionId}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail || body.message || 'No se pudo quitar la asociación');
+      }
+      this.asociadoPendingRemoveId = null;
+      await this.refreshAfterAsociacionChange(projectId);
+      this.showToast('Asociación eliminada', 'success');
+    } catch (err) {
+      this.asociadoPendingRemoveId = null;
+      this.renderAsociaciones();
+      this.showFieldError('asociados-error', err.message);
+    }
+  },
+
+  async handleAsociadoInput(query) {
+    const q = (query || '').trim();
+    const requestId = ++this._asociadosAutocompleteRequestId;
+    if (q.length < 2) {
+      this.hideAsociadosDropdown();
+      return;
+    }
+    try {
+      const res = await Auth.fetchWithAuth(`/api/solicitudes/autocomplete-proyectos?q=${encodeURIComponent(q)}`);
+      const results = await res.json();
+      if (requestId !== this._asociadosAutocompleteRequestId) return;
+      this.asociadosResults = Array.isArray(results) ? results : [];
+      this.asociadosSelectedIdx = -1;
+      this.renderAsociadosDropdown();
+    } catch (e) {
+      console.warn('Error en autocompletado de proyectos asociados:', e);
+      this.hideAsociadosDropdown();
+    }
+  },
+
+  renderAsociadosDropdown() {
+    const dropdown = document.getElementById('asociados-autocomplete-dropdown');
+    if (!dropdown) return;
+    if (this.asociadosResults.length === 0) {
+      dropdown.innerHTML = '<div class="autocomplete-empty">No se encontraron proyectos en SGA Backlog. Puedes asociar el N° ingresado de todas formas.</div>';
+    } else {
+      dropdown.innerHTML = this.asociadosResults.map((item, idx) => `
+        <div class="autocomplete-item${idx === this.asociadosSelectedIdx ? ' selected' : ''}" data-index="${idx}">
+          <div class="autocomplete-item-header">
+            <span class="autocomplete-item-proj">${this.escapeHtml(item.nro_proyecto || item.numero_proyecto_limpio || '')}</span>
+            <span class="autocomplete-item-client">${this.escapeHtml(item.cliente || 'Cliente sin nombre')}</span>
+          </div>
+        </div>
+      `).join('');
+    }
+    dropdown.style.display = 'block';
+  },
+
+  selectAsociadoItem(index) {
+    const item = this.asociadosResults[index];
+    const input = document.getElementById('asociados-input');
+    if (item && input) {
+      input.value = item.nro_proyecto || item.numero_proyecto_limpio || '';
+      this.showFieldError('asociados-error', '');
+    }
+    this.hideAsociadosDropdown();
+    if (input) input.focus();
+  },
+
+  handleAsociadoKeydown(e) {
+    const dropdown = document.getElementById('asociados-autocomplete-dropdown');
+    const open = dropdown && dropdown.style.display !== 'none' && this.asociadosResults.length > 0;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (!open) return;
+      e.preventDefault();
+      const total = this.asociadosResults.length;
+      const step = e.key === 'ArrowDown' ? 1 : -1;
+      this.asociadosSelectedIdx = (this.asociadosSelectedIdx + step + total) % total;
+      this.renderAsociadosDropdown();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (open && this.asociadosSelectedIdx >= 0) {
+        this.selectAsociadoItem(this.asociadosSelectedIdx);
+      } else {
+        this.submitAsociacion();
+      }
+    } else if (e.key === 'Escape') {
+      this.hideAsociadosDropdown();
+    }
+  },
+
+  hideAsociadosDropdown() {
+    this._asociadosAutocompleteRequestId++;
+    const dropdown = document.getElementById('asociados-autocomplete-dropdown');
+    if (dropdown) {
+      dropdown.style.display = 'none';
+      dropdown.innerHTML = '';
+    }
+    this.asociadosSelectedIdx = -1;
   },
 
   // --------------------------------------------------------------------------

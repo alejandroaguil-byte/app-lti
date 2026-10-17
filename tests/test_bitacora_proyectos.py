@@ -175,7 +175,8 @@ def test_s6_init_bitacora_tables_crea_tablas_solo_si_no_existen(monkeypatch):
     texto = "\n".join(conn.sqls())
     assert "IF OBJECT_ID('dbo.Proyecto_Bitacora', 'U') IS NULL" in texto
     assert "IF OBJECT_ID('dbo.Proyecto_Adjuntos', 'U') IS NULL" in texto
-    assert texto.count("Proyecto_ID NUMERIC(18,0) NOT NULL") == 2
+    # Bitácora, adjuntos and project associations (S4 of tours-busqueda-asociacion-kpis)
+    assert texto.count("Proyecto_ID NUMERIC(18,0) NOT NULL") == 3
     for fragmento in (
         "ID INT IDENTITY(1,1) PRIMARY KEY",
         "Tipo VARCHAR(20) NOT NULL",
@@ -798,6 +799,7 @@ def test_delete_proyecto_borra_adjuntos_y_bitacora_en_la_misma_transaccion(monke
     assert [s for s, _ in deletes] == [
         "DELETE FROM dbo.Proyecto_Adjuntos WHERE Proyecto_ID = %s",
         "DELETE FROM dbo.Proyecto_Bitacora WHERE Proyecto_ID = %s",
+        "DELETE FROM dbo.Proyecto_Asociaciones WHERE Proyecto_ID = %s",
         "DELETE FROM dbo.Proyectos WHERE ID = %s",
     ]
     assert all(p == (123,) for _, p in deletes)

@@ -960,11 +960,12 @@ def get_proyecto_by_id(proyecto_id):
     finally:
         conn.close()
 
-def get_solots_by_proyecto(proyecto_id, numero_proyecto=None):
+def get_solots_by_proyecto(proyecto_id, numero_proyecto=None, con_asociados=False):
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            sql = """
+            grupo = _grupo_para_detalle(cursor, proyecto_id, numero_proyecto) if con_asociados else None
+            sql = f"""
                 SELECT 
                     b.ID_CLI,
                     b.NRO_PROYECTO,
@@ -981,7 +982,7 @@ def get_solots_by_proyecto(proyecto_id, numero_proyecto=None):
                     b.TIPO_OTP,
                     b.STATUS_SOLOT,
                     b.ASIGNADO_OTP,
-                    b.GRUPO_ASIGNADO_OTP
+                    b.GRUPO_ASIGNADO_OTP{_sql_columnas_origen('b', grupo)}
                 FROM dbo.CT_BACKLOG_OPERACIONES2 b WITH (NOLOCK)
                 WHERE b.ID_Proyecto = %s
             """
@@ -989,19 +990,24 @@ def get_solots_by_proyecto(proyecto_id, numero_proyecto=None):
             if numero_proyecto and str(numero_proyecto).strip():
                 sql += " OR b.Numero_Proyecto_Limpio IN (%s, %s)"
                 params.extend(_numero_proyecto_limpio_keys(numero_proyecto))
+            if grupo:
+                sql += _sql_clausulas_grupo('b', grupo, params)
 
             sql += " ORDER BY b.FECHA_INSERT DESC, b.ID_OTP DESC"
             cursor.execute(sql, tuple(params))
             rows = cursor.fetchall()
+            if grupo:
+                _etiquetar_origen(rows, grupo)
             return serialize_rows(rows)
     finally:
         conn.close()
 
-def get_tickets_by_proyecto(proyecto_id, numero_proyecto=None):
+def get_tickets_by_proyecto(proyecto_id, numero_proyecto=None, con_asociados=False):
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            sql = """
+            grupo = _grupo_para_detalle(cursor, proyecto_id, numero_proyecto) if con_asociados else None
+            sql = f"""
                 SELECT 
                     sd.CC_INCIDENT_ID,
                     sd.REQUESTOR_NAME,
@@ -1015,7 +1021,7 @@ def get_tickets_by_proyecto(proyecto_id, numero_proyecto=None):
                     sd.ASSIGNED_TO,
                     sd.RF_ID,
                     sd.CURRENT_PHASE,
-                    sd.SUBCATEGORY
+                    sd.SUBCATEGORY{_sql_columnas_origen('sd', grupo)}
                 FROM dbo.registrosRF_SD_SM sd WITH (NOLOCK)
                 WHERE sd.ID_Proyecto = %s
             """
@@ -1023,19 +1029,24 @@ def get_tickets_by_proyecto(proyecto_id, numero_proyecto=None):
             if numero_proyecto and str(numero_proyecto).strip():
                 sql += " OR sd.Numero_Proyecto_Limpio IN (%s, %s)"
                 params.extend(_numero_proyecto_limpio_keys(numero_proyecto))
+            if grupo:
+                sql += _sql_clausulas_grupo('sd', grupo, params)
 
             sql += " ORDER BY sd.SUBMIT_DATE DESC, sd.CC_INCIDENT_ID DESC"
             cursor.execute(sql, tuple(params))
             rows = cursor.fetchall()
+            if grupo:
+                _etiquetar_origen(rows, grupo)
             return serialize_rows(rows)
     finally:
         conn.close()
 
-def get_rfcs_by_proyecto(proyecto_id, numero_proyecto=None):
+def get_rfcs_by_proyecto(proyecto_id, numero_proyecto=None, con_asociados=False):
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            sql = """
+            grupo = _grupo_para_detalle(cursor, proyecto_id, numero_proyecto) if con_asociados else None
+            sql = f"""
                 SELECT 
                     rfc.NUMBER,
                     rfc.BRIEF_DESCRIPTION,
@@ -1047,7 +1058,7 @@ def get_rfcs_by_proyecto(proyecto_id, numero_proyecto=None):
                     rfc.ASSIGN_DEPT,
                     rfc.ASSIGNED_TO,
                     rfc.COORDINATOR,
-                    rfc.ORIG_DATE_ENTERED
+                    rfc.ORIG_DATE_ENTERED{_sql_columnas_origen('rfc', grupo)}
                 FROM dbo.registrosSM_RFC rfc WITH (NOLOCK)
                 WHERE rfc.ID_Proyecto = %s
             """
@@ -1055,10 +1066,14 @@ def get_rfcs_by_proyecto(proyecto_id, numero_proyecto=None):
             if numero_proyecto and str(numero_proyecto).strip():
                 sql += " OR rfc.Numero_Proyecto_Limpio IN (%s, %s)"
                 params.extend(_numero_proyecto_limpio_keys(numero_proyecto))
+            if grupo:
+                sql += _sql_clausulas_grupo('rfc', grupo, params)
 
             sql += " ORDER BY rfc.ORIG_DATE_ENTERED DESC, rfc.NUMBER DESC"
             cursor.execute(sql, tuple(params))
             rows = cursor.fetchall()
+            if grupo:
+                _etiquetar_origen(rows, grupo)
             return serialize_rows(rows)
     finally:
         conn.close()
@@ -1688,7 +1703,7 @@ crear_solicitud_proyecto = create_solicitud_lti
 # BITÁCORA Y ADJUNTOS DE PROYECTOS (dbo.Proyecto_Bitacora / dbo.Proyecto_Adjuntos)
 # -----------------------------------------------------------------------------
 def init_bitacora_tables():
-    """Crea de forma idempotente las tablas de bitácora y adjuntos (solo aditivo, nunca borra ni altera)."""
+    """Crea de forma idempotente las tablas de bitácora, adjuntos y asociaciones de proyectos (solo aditivo, nunca borra ni altera)."""
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
@@ -1736,7 +1751,243 @@ def init_bitacora_tables():
                 CREATE INDEX IX_Proyecto_Adjuntos_Bitacora_ID ON dbo.Proyecto_Adjuntos (Bitacora_ID);
             END
             """)
+            _init_asociaciones_table(cursor)
         conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
+    finally:
+        conn.close()
+
+# -----------------------------------------------------------------------------
+# ASOCIACIÓN DE PROYECTOS POR N° DE PROYECTO (dbo.Proyecto_Asociaciones)
+# -----------------------------------------------------------------------------
+# Una asociación es una arista entre un proyecto (Proyecto_ID) y un N° de proyecto normalizado
+# (sin espacios ni prefijo SGA '000'; puede ser un hijo que no exista en dbo.Proyectos).
+# El grupo de un proyecto es la componente conexa de esas aristas (simétrica y transitiva).
+# Solo las pestañas Solots/Tickets/RFCs del detalle suman los registros del grupo.
+def _init_asociaciones_table(cursor):
+    """DDL aditivo e idempotente de dbo.Proyecto_Asociaciones; corre en la transacción de init_bitacora_tables."""
+    cursor.execute("""
+    IF OBJECT_ID('dbo.Proyecto_Asociaciones', 'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.Proyecto_Asociaciones (
+            ID INT IDENTITY(1,1) PRIMARY KEY,
+            Proyecto_ID NUMERIC(18,0) NOT NULL,
+            Numero_Asociado VARCHAR(50) NOT NULL,
+            Autor_Username VARCHAR(100) NULL,
+            Creado DATETIME NOT NULL DEFAULT GETDATE()
+        );
+    END
+    """)
+    cursor.execute("""
+    IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'UX_Proyecto_Asociaciones_Proyecto_Numero' AND object_id = OBJECT_ID('dbo.Proyecto_Asociaciones'))
+    BEGIN
+        CREATE UNIQUE INDEX UX_Proyecto_Asociaciones_Proyecto_Numero ON dbo.Proyecto_Asociaciones (Proyecto_ID, Numero_Asociado);
+    END
+    """)
+
+def normalizar_numero_asociado(numero) -> str:
+    """N° de proyecto sin espacios y sin el prefijo SGA '000' ('0001609373' -> '1609373')."""
+    num = str(numero or "").strip()
+    return num[3:] if num.startswith("000") and len(num) > 3 else num
+
+def _cargar_grupo_asociado(cursor, proyecto_id, numero_proyecto) -> dict:
+    """
+    Grupo asociado de un proyecto: componente conexa de las aristas de dbo.Proyecto_Asociaciones.
+    Los nodos son N° de proyecto normalizados (un proyecto sin N° es el nodo '#<ID>').
+    """
+    propio = normalizar_numero_asociado(numero_proyecto)
+    cursor.execute("""
+        SELECT a.ID, a.Proyecto_ID, a.Numero_Asociado, a.Autor_Username, a.Creado, p.Numero_Proyecto AS Numero_Origen
+        FROM dbo.Proyecto_Asociaciones a
+        LEFT JOIN dbo.Proyectos p WITH (NOLOCK) ON p.ID = a.Proyecto_ID
+        ORDER BY a.Creado, a.ID
+    """)
+    aristas = []
+    for r in cursor.fetchall() or []:
+        pid = int(r["Proyecto_ID"])
+        origen = normalizar_numero_asociado(r.get("Numero_Origen")) or f"#{pid}"
+        aristas.append((r, pid, origen, normalizar_numero_asociado(r.get("Numero_Asociado"))))
+
+    inicio = propio or f"#{int(proyecto_id)}"
+    adyacentes = {}
+    for _, _, origen, destino in aristas:
+        adyacentes.setdefault(origen, set()).add(destino)
+        adyacentes.setdefault(destino, set()).add(origen)
+    nodos, pendientes = {inicio}, [inicio]
+    while pendientes:
+        for vecino in adyacentes.get(pendientes.pop(), ()):
+            if vecino not in nodos:
+                nodos.add(vecino)
+                pendientes.append(vecino)
+
+    numeros = sorted(n for n in nodos if not n.startswith("#") and n != propio)
+    proyecto_ids = {int(n[1:]) for n in nodos if n.startswith("#")} - {int(proyecto_id)}
+    proyectos = {}
+    if numeros:
+        marcadores = ", ".join(["%s"] * len(numeros))
+        cursor.execute(f"""
+            SELECT ID, Numero_Proyecto, Cliente
+            FROM dbo.Proyectos WITH (NOLOCK)
+            WHERE CASE WHEN LTRIM(RTRIM(Numero_Proyecto)) LIKE '000%' THEN SUBSTRING(LTRIM(RTRIM(Numero_Proyecto)), 4, 50)
+                       ELSE LTRIM(RTRIM(Numero_Proyecto)) END IN ({marcadores})
+            ORDER BY ID
+        """, tuple(numeros))
+        for r in cursor.fetchall() or []:
+            pid = int(r["ID"])
+            if pid == int(proyecto_id):
+                continue
+            proyecto_ids.add(pid)
+            proyectos.setdefault(normalizar_numero_asociado(r.get("Numero_Proyecto")), []).append(
+                {"id": pid, "cliente": r.get("Cliente")}
+            )
+
+    # Aristas que este proyecto puede quitar: las que parten de él o llegan a su N°
+    directas = []
+    for r, pid, origen, destino in aristas:
+        if pid == int(proyecto_id):
+            otro = destino
+        elif propio and destino == propio:
+            otro = f"ID {origen[1:]}" if origen.startswith("#") else origen
+        else:
+            continue
+        directas.append({
+            "id": int(r["ID"]),
+            "numero": otro,
+            "autor_username": r.get("Autor_Username"),
+            "creado": _iso(r.get("Creado")),
+        })
+
+    id_numero = {pid: numero for numero, lista in proyectos.items() for pid in (p["id"] for p in lista)}
+    id_numero[int(proyecto_id)] = propio
+    return {
+        "numero_propio": propio,
+        "numeros": numeros,
+        "proyectos": proyectos,
+        "proyecto_ids": sorted(proyecto_ids),
+        "id_numero": id_numero,
+        "directas": directas,
+    }
+
+def _grupo_para_detalle(cursor, proyecto_id, numero_proyecto):
+    """Grupo para las pestañas del detalle; None si el proyecto no tiene asociaciones (o la tabla no responde)."""
+    try:
+        grupo = _cargar_grupo_asociado(cursor, proyecto_id, numero_proyecto)
+    except Exception as e:
+        logger.error(f"No se pudo calcular el grupo asociado del proyecto {proyecto_id}: {e}")
+        return None
+    return grupo if (grupo["numeros"] or grupo["proyecto_ids"]) else None
+
+def _sql_columnas_origen(alias, grupo) -> str:
+    """Columnas auxiliares para etiquetar Proyecto_Origen (solo cuando hay grupo)."""
+    if not grupo:
+        return ""
+    return f", {alias}.Numero_Proyecto_Limpio AS _Numero_Limpio, {alias}.ID_Proyecto AS _ID_Proyecto"
+
+def _sql_clausulas_grupo(alias, grupo, params) -> str:
+    """OR adicionales con los N° y los ID de proyecto del grupo; agrega sus valores a params."""
+    sql = ""
+    if grupo["proyecto_ids"]:
+        sql += f" OR {alias}.ID_Proyecto IN ({', '.join(['%s'] * len(grupo['proyecto_ids']))})"
+        params.extend(grupo["proyecto_ids"])
+    if grupo["numeros"]:
+        sql += f" OR {alias}.Numero_Proyecto_Limpio IN ({', '.join(['%s'] * len(grupo['numeros']))})"
+        params.extend(grupo["numeros"])
+    return sql
+
+def _etiquetar_origen(rows, grupo):
+    """Agrega Proyecto_Origen (N° del proyecto del grupo al que pertenece cada registro) y retira las columnas auxiliares."""
+    numeros = set(grupo["numeros"]) | {grupo["numero_propio"]}
+    for row in rows:
+        limpio = str(row.pop("_Numero_Limpio", None) or "").strip()
+        id_proyecto = row.pop("_ID_Proyecto", None)
+        if limpio and limpio in numeros:
+            origen = limpio
+        else:
+            origen = grupo["id_numero"].get(int(id_proyecto)) if id_proyecto is not None else None
+        row["Proyecto_Origen"] = origen or grupo["numero_propio"] or None
+
+def get_asociaciones_proyecto(proyecto_id, numero_proyecto) -> dict:
+    """Grupo del proyecto (otros N° con su proyecto, si existe en dbo.Proyectos) y las asociaciones directas removibles."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            grupo = _cargar_grupo_asociado(cursor, proyecto_id, numero_proyecto)
+        return {
+            "numero_propio": grupo["numero_propio"],
+            "grupo": [
+                {
+                    "numero": numero,
+                    "proyecto_id": (grupo["proyectos"].get(numero) or [{}])[0].get("id"),
+                    "cliente": (grupo["proyectos"].get(numero) or [{}])[0].get("cliente"),
+                }
+                for numero in grupo["numeros"]
+            ],
+            "asociaciones": grupo["directas"],
+        }
+    finally:
+        conn.close()
+
+def create_asociacion(proyecto_id, numero_proyecto, numero_asociado, autor_username) -> dict:
+    """
+    Asocia un N° de proyecto ya normalizado. Retorna {"status": "duplicate"} (sin escribir) si ya está en el grupo,
+    o {"status": "created", "data": {...}}.
+    """
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            grupo = _cargar_grupo_asociado(cursor, proyecto_id, numero_proyecto)
+            if numero_asociado == grupo["numero_propio"] or numero_asociado in grupo["numeros"]:
+                return {"status": "duplicate"}
+            cursor.execute("""
+                INSERT INTO dbo.Proyecto_Asociaciones (Proyecto_ID, Numero_Asociado, Autor_Username)
+                OUTPUT INSERTED.ID, INSERTED.Creado
+                VALUES (%s, %s, %s)
+            """, (proyecto_id, numero_asociado, autor_username))
+            row = cursor.fetchone()
+        conn.commit()
+        return {
+            "status": "created",
+            "data": {
+                "id": int(row["ID"]),
+                "numero": numero_asociado,
+                "autor_username": autor_username,
+                "creado": _iso(row["Creado"]),
+            },
+        }
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
+    finally:
+        conn.close()
+
+def delete_asociacion(proyecto_id, numero_proyecto, asociacion_id) -> bool:
+    """Borra una arista que involucra al proyecto (su Proyecto_ID o su N°); False si no existe o no lo involucra."""
+    propio = normalizar_numero_asociado(numero_proyecto)
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT ID, Proyecto_ID, Numero_Asociado FROM dbo.Proyecto_Asociaciones WHERE ID = %s",
+                (asociacion_id,)
+            )
+            row = cursor.fetchone()
+            involucra = bool(row) and (
+                int(row["Proyecto_ID"]) == int(proyecto_id)
+                or (bool(propio) and normalizar_numero_asociado(row.get("Numero_Asociado")) == propio)
+            )
+            if not involucra:
+                return False
+            cursor.execute("DELETE FROM dbo.Proyecto_Asociaciones WHERE ID = %s", (asociacion_id,))
+        conn.commit()
+        return True
     except Exception:
         try:
             conn.rollback()
@@ -2440,7 +2691,7 @@ def mark_solicitudes_reminder_sent(project_ids: Union[int, List[int]], conn=None
 
 def delete_proyecto(proyecto_id: int) -> dict:
     """
-    Elimina físicamente un proyecto de dbo.Proyectos junto con su bitácora y adjuntos (misma transacción).
+    Elimina físicamente un proyecto de dbo.Proyectos junto con su bitácora, adjuntos y asociaciones (misma transacción).
     Los archivos de los adjuntos se borran después del commit, best-effort.
     """
     conn = get_db_connection()
@@ -2457,6 +2708,7 @@ def delete_proyecto(proyecto_id: int) -> dict:
             archivos = [r["Nombre_Almacenado"] for r in cursor.fetchall()]
             cursor.execute("DELETE FROM dbo.Proyecto_Adjuntos WHERE Proyecto_ID = %s", (proyecto_id,))
             cursor.execute("DELETE FROM dbo.Proyecto_Bitacora WHERE Proyecto_ID = %s", (proyecto_id,))
+            cursor.execute("DELETE FROM dbo.Proyecto_Asociaciones WHERE Proyecto_ID = %s", (proyecto_id,))
             cursor.execute("DELETE FROM dbo.Proyectos WHERE ID = %s", (proyecto_id,))
             deleted_count = cursor.rowcount
             conn.commit()

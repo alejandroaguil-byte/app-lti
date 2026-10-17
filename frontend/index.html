@@ -8,7 +8,7 @@
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   
   <!-- Pila Tipográfica Nativa del Portal HALO (sin dependencias externas) -->
-  <link rel="stylesheet" href="css/styles.css?v=9.7">
+  <link rel="stylesheet" href="css/styles.css?v=9.8">
 </head>
 <body>
 
@@ -510,6 +510,27 @@
               </div>
             </div>
             <div id="summary-content"></div>
+
+            <!-- Proyectos asociados (grupo por N° de proyecto; suma Solots/Tickets/RFCs en las pestañas) -->
+            <div class="asociados-card" id="asociados-block">
+              <div class="asociados-header">
+                <h3 class="asociados-title">Proyectos asociados</h3>
+                <span class="form-help-text">Las pestañas Solots, Tickets SD y RFCs de este proyecto suman los registros de los N° asociados.</span>
+              </div>
+              <div id="asociados-list" class="asociados-list"></div>
+              <div class="asociados-form">
+                <div class="form-group asociados-autocomplete">
+                  <label class="form-label" for="asociados-input">Asociar N° de proyecto</label>
+                  <div class="input-plain">
+                    <input type="text" id="asociados-input" class="form-input" placeholder="Ej: 0001614653 o 1614653" autocomplete="off" aria-describedby="asociados-help" aria-controls="asociados-autocomplete-dropdown">
+                  </div>
+                  <div id="asociados-autocomplete-dropdown" class="autocomplete-dropdown" style="display: none;"></div>
+                  <span class="form-help-text" id="asociados-help">Escribe para buscar en SGA Backlog. También puedes ingresar un N° que no esté en Proyectos.</span>
+                </div>
+                <button type="button" id="btn-asociados-agregar" class="btn btn-primary">Asociar</button>
+              </div>
+              <div id="asociados-error" class="form-error-text" role="alert" style="display: none;"></div>
+            </div>
           </div>
 
           <!-- Tab: Bitácora (historia del proyecto y trabajo del LTI) -->
@@ -620,6 +641,7 @@
                       <th>Producto</th>
                       <th>Servicio</th>
                       <th>N° Servicio</th>
+                      <th class="col-origen" hidden>Proyecto origen</th>
                     </tr>
                   </thead>
                   <tbody id="solots-table-body"></tbody>
@@ -646,6 +668,7 @@
                       <th>Grupo de Asignacion</th>
                       <th>Asignado</th>
                       <th>RF</th>
+                      <th class="col-origen" hidden>Proyecto origen</th>
                     </tr>
                   </thead>
                   <tbody id="tickets-table-body"></tbody>
@@ -670,6 +693,7 @@
                       <th>Servicio Padre</th>
                       <th>Grupo de Asignación</th>
                       <th>Asignado</th>
+                      <th class="col-origen" hidden>Proyecto origen</th>
                     </tr>
                   </thead>
                   <tbody id="rfcs-table-body"></tbody>
@@ -2224,6 +2248,6 @@
   <!-- Scripts -->
   <script src="js/auth.js?v=6.0"></script>
   <script src="js/icons.js?v=9.4"></script>
-  <script src="js/app.js?v=9.8"></script>
+  <script src="js/app.js?v=9.9"></script>
 </body>
 </html>

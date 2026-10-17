@@ -5667,3 +5667,89 @@ button, input, select, textarea, optgroup {
   border: 1px dashed var(--border-color);
   border-radius: var(--radius-md);
 }
+
+/* Proyectos asociados (detalle del proyecto) */
+.asociados-card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 1rem 1.25rem;
+  margin-top: 1rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.asociados-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin-bottom: 0.75rem;
+}
+
+.asociados-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.asociados-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 0.9rem;
+}
+
+.asociado-item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  background-color: var(--bg-surface-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+
+.asociado-item-numero {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.asociado-item-cliente,
+.asociado-item-meta {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.asociado-item-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.asociados-empty {
+  font-size: 0.83rem;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.asociados-form {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.asociados-autocomplete {
+  position: relative;
+  flex: 1 1 320px;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.data-table th.col-origen[hidden],
+.data-table td.col-origen[hidden] {
+  display: none;
+}

@@ -55,6 +55,10 @@ from .db import (
     create_solicitud_lti,
     update_proyecto,
     init_bitacora_tables,
+    normalizar_numero_asociado,
+    get_asociaciones_proyecto,
+    create_asociacion,
+    delete_asociacion,
     create_bitacora_entry,
     get_bitacora_by_proyecto,
     get_bitacora_entry,
@@ -266,6 +270,9 @@ class ProyectoUpdateRequest(BaseModel):
 class BitacoraCreateRequest(BaseModel):
     texto: Optional[str] = None
 
+class AsociacionCreateRequest(BaseModel):
+    numero: Optional[str] = None
+
 class BacklogAsignacionRequest(BaseModel):
     numero_proyecto: str
     lt_asignado: Optional[str] = None
@@ -372,7 +379,7 @@ def get_solots(
 ):
     proyecto = _get_proyecto_or_404(proyecto_id, current_user)
 
-    solots = get_solots_by_proyecto(proyecto_id, proyecto.get("Numero_Proyecto"))
+    solots = get_solots_by_proyecto(proyecto_id, proyecto.get("Numero_Proyecto"), con_asociados=True)
     return solots
 
 @app.get("/api/proyectos/{proyecto_id}/tickets")
@@ -382,7 +389,7 @@ def get_tickets(
 ):
     proyecto = _get_proyecto_or_404(proyecto_id, current_user)
 
-    tickets = get_tickets_by_proyecto(proyecto_id, proyecto.get("Numero_Proyecto"))
+    tickets = get_tickets_by_proyecto(proyecto_id, proyecto.get("Numero_Proyecto"), con_asociados=True)
     return tickets
 
 @app.get("/api/proyectos/{proyecto_id}/rfcs")
@@ -392,7 +399,7 @@ def get_rfcs(
 ):
     proyecto = _get_proyecto_or_404(proyecto_id, current_user)
 
-    rfcs = get_rfcs_by_proyecto(proyecto_id, proyecto.get("Numero_Proyecto"))
+    rfcs = get_rfcs_by_proyecto(proyecto_id, proyecto.get("Numero_Proyecto"), con_asociados=True)
     return rfcs
 
 @app.get("/api/proyectos/{proyecto_id}/diagnostico")
@@ -741,6 +748,54 @@ def descargar_adjunto(
         filename=adjunto.get("Nombre_Original") or ruta.name,
         headers={"X-Content-Type-Options": "nosniff"}
     )
+
+# -----------------------------------------------------------------------------
+# ASOCIACIÓN DE PROYECTOS POR N° DE PROYECTO
+# -----------------------------------------------------------------------------
+ASOCIACION_NUMERO_RE = re.compile(r"[A-Za-z0-9-]{1,30}")
+
+@app.get("/api/proyectos/{proyecto_id}/asociaciones")
+def listar_asociaciones(
+    proyecto_id: int,
+    current_user: dict = Depends(require_lti_or_admin)
+):
+    proyecto = _get_proyecto_or_404(proyecto_id, current_user)
+    return get_asociaciones_proyecto(proyecto_id, proyecto.get("Numero_Proyecto"))
+
+@app.post("/api/proyectos/{proyecto_id}/asociaciones", status_code=status.HTTP_201_CREATED)
+def crear_asociacion(
+    proyecto_id: int,
+    req: AsociacionCreateRequest,
+    current_user: dict = Depends(require_lti_or_admin)
+):
+    proyecto = _get_proyecto_or_404(proyecto_id, current_user)
+    bruto = (req.numero or "").strip()
+    if not bruto:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El N° de proyecto es obligatorio")
+    if not ASOCIACION_NUMERO_RE.fullmatch(bruto):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El N° de proyecto solo puede contener letras, números y guiones (máx. 30 caracteres)"
+        )
+    numero = normalizar_numero_asociado(bruto)
+    numero_propio = proyecto.get("Numero_Proyecto")
+    if numero == normalizar_numero_asociado(numero_propio):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No puedes asociar un proyecto consigo mismo")
+    result = create_asociacion(proyecto_id, numero_propio, numero, current_user.get("username"))
+    if result["status"] == "duplicate":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="El N° de proyecto ya está asociado a este grupo")
+    return result["data"]
+
+@app.delete("/api/proyectos/{proyecto_id}/asociaciones/{asociacion_id}")
+def eliminar_asociacion(
+    proyecto_id: int,
+    asociacion_id: int,
+    current_user: dict = Depends(require_lti_or_admin)
+):
+    proyecto = _get_proyecto_or_404(proyecto_id, current_user)
+    if not delete_asociacion(proyecto_id, proyecto.get("Numero_Proyecto"), asociacion_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asociación no encontrada")
+    return {"message": "Asociación eliminada", "id": asociacion_id}
 
 @app.delete("/api/proyectos/{proyecto_id}")
 def eliminar_proyecto(
