@@ -4566,7 +4566,6 @@ Fecha de Emisión: {fecha_str}
 - Solots SGA Vencidas: {resumen.get('solots_vencidas', 0)}
 - Solots Próximas a Vencer (<=48h): {resumen.get('solots_proximas_vencer', 0)}
 - Solots Sin Fecha de Compromiso (>10d): {resumen.get('solots_sin_compromiso', 0)}
-- Proyectos sin movimiento (>7 días): {resumen.get('proyectos_sin_movimiento', 0)}
 
 3. PRINCIPALES DESVIACIONES CRÍTICAS (TOP 10)
 {top_txt}
@@ -4585,109 +4584,10 @@ Generado automáticamente por Claro HALO - App Líderes TI
     }
 
 
-# Alerta "proyecto sin movimiento": solo proyectos en ejecución o revisión, más de 7 días calendario
-# desde el último movimiento (misma convención de días calendario que las alertas de tickets).
-ALERTA_SIN_MOVIMIENTO_CODIGO = "PROYECTO_SIN_MOVIMIENTO"
-ALERTA_SIN_MOVIMIENTO_DIAS = 7
-_ESTADOS_ALERTA_SIN_MOVIMIENTO = ("En ejecucion", "En revision")
-
-# Movimiento de un proyecto = la fecha más reciente entre (se ignoran fechas futuras):
-#   - Bitácora: dbo.Proyecto_Bitacora.Creado (cada entrada es un cambio de estado o nota).
-#   - Solot (dbo.CT_BACKLOG_OPERACIONES2): FECHA_INSERT (ingreso), FECHA_CAMBIO_ESTADO_OTP (última actualización
-#     de estado), FECHA_REALIZACION (ejecución) y FECHACIERRE (cierre).
-#   - Ticket (dbo.registrosRF_SD_SM, fechas nvarchar): SUBMIT_DATE (apertura) y CLOSE_DATE (cierre); la tabla
-#     no tiene columna de actualización.
-#   - RFC (dbo.registrosSM_RFC, fechas nvarchar): ORIG_DATE_ENTERED (ingreso) y CLOSE_TIME (cierre).
-#   - Proyectos.Creado: aplica cuando no hay nada más (y nunca se considera inactivo un proyecto recién creado).
-# Los registros se vinculan igual que en el detalle: ID_Proyecto = p.ID O N° de proyecto con/sin prefijo '000'.
-def _sql_proyectos_sin_movimiento(con_lider: bool) -> str:
-    """Una sola consulta agregada: último movimiento de cada proyecto candidato (sin N+1)."""
-    filtro_lider = (
-        "AND p.LT_Asignado IS NOT NULL AND LOWER(LTRIM(RTRIM(p.LT_Asignado))) = LOWER(LTRIM(RTRIM(%s)))"
-        if con_lider else ""
-    )
-    estados = ", ".join(f"'{e}'" for e in _ESTADOS_ALERTA_SIN_MOVIMIENTO)
-    return f"""
-        WITH Candidatos AS (
-            SELECT p.ID, p.Numero_Proyecto, p.Cliente, p.LT_Asignado, p.Estado, p.Tipo_Servicio, p.Creado
-            FROM dbo.Proyectos p WITH (NOLOCK)
-            WHERE p.Estado IN ({estados})
-              AND (p.Tipo_Servicio IS NULL OR p.Tipo_Servicio <> 'Reunión')
-              {filtro_lider}
-        ),
-        Numeros AS (
-            SELECT p.ID AS ID_Proyecto, k.numero
-            FROM Candidatos p
-            CROSS APPLY (
-                SELECT {_SQL_P_NUMERO_TRIM} AS numero
-                UNION
-                SELECT {_SQL_P_NUMERO_SIN_PREFIJO}
-            ) k
-            WHERE k.numero IS NOT NULL AND k.numero <> ''
-        ),
-        Movimientos AS (
-            SELECT p.ID AS ID_Proyecto, p.Creado AS fecha
-            FROM Candidatos p
-            UNION ALL
-            SELECT p.ID, bi.Creado
-            FROM Candidatos p
-            INNER JOIN dbo.Proyecto_Bitacora bi WITH (NOLOCK) ON bi.Proyecto_ID = p.ID
-            UNION ALL
-            SELECT p.ID, d.fecha
-            FROM Candidatos p
-            INNER JOIN dbo.CT_BACKLOG_OPERACIONES2 b WITH (NOLOCK) ON b.ID_Proyecto = p.ID
-            CROSS APPLY (VALUES (b.FECHA_INSERT), (b.FECHA_CAMBIO_ESTADO_OTP), (b.FECHA_REALIZACION), (b.FECHACIERRE)) d(fecha)
-            WHERE d.fecha <= GETDATE()
-            UNION ALL
-            SELECT pn.ID_Proyecto, d.fecha
-            FROM Numeros pn
-            INNER JOIN dbo.CT_BACKLOG_OPERACIONES2 b WITH (NOLOCK) ON b.Numero_Proyecto_Limpio = pn.numero
-            CROSS APPLY (VALUES (b.FECHA_INSERT), (b.FECHA_CAMBIO_ESTADO_OTP), (b.FECHA_REALIZACION), (b.FECHACIERRE)) d(fecha)
-            WHERE d.fecha <= GETDATE()
-            UNION ALL
-            SELECT p.ID, d.fecha
-            FROM Candidatos p
-            INNER JOIN dbo.registrosRF_SD_SM sd WITH (NOLOCK) ON sd.ID_Proyecto = p.ID
-            CROSS APPLY (VALUES (TRY_CAST(sd.SUBMIT_DATE AS DATETIME2)), (TRY_CAST(sd.CLOSE_DATE AS DATETIME2))) d(fecha)
-            WHERE d.fecha <= GETDATE()
-            UNION ALL
-            SELECT pn.ID_Proyecto, d.fecha
-            FROM Numeros pn
-            INNER JOIN dbo.registrosRF_SD_SM sd WITH (NOLOCK) ON sd.Numero_Proyecto_Limpio = pn.numero
-            CROSS APPLY (VALUES (TRY_CAST(sd.SUBMIT_DATE AS DATETIME2)), (TRY_CAST(sd.CLOSE_DATE AS DATETIME2))) d(fecha)
-            WHERE d.fecha <= GETDATE()
-            UNION ALL
-            SELECT p.ID, d.fecha
-            FROM Candidatos p
-            INNER JOIN dbo.registrosSM_RFC rfc WITH (NOLOCK) ON rfc.ID_Proyecto = p.ID
-            CROSS APPLY (VALUES (TRY_CAST(rfc.ORIG_DATE_ENTERED AS DATETIME2)), (TRY_CAST(rfc.CLOSE_TIME AS DATETIME2))) d(fecha)
-            WHERE d.fecha <= GETDATE()
-            UNION ALL
-            SELECT pn.ID_Proyecto, d.fecha
-            FROM Numeros pn
-            INNER JOIN dbo.registrosSM_RFC rfc WITH (NOLOCK) ON rfc.Numero_Proyecto_Limpio = pn.numero
-            CROSS APPLY (VALUES (TRY_CAST(rfc.ORIG_DATE_ENTERED AS DATETIME2)), (TRY_CAST(rfc.CLOSE_TIME AS DATETIME2))) d(fecha)
-            WHERE d.fecha <= GETDATE()
-        )
-        SELECT
-            p.ID AS p_id,
-            p.Numero_Proyecto AS p_numero,
-            p.Cliente AS p_cliente,
-            p.LT_Asignado AS p_lider,
-            p.Estado AS p_estado,
-            p.Tipo_Servicio AS p_tipo_servicio,
-            MAX(m.fecha) AS ultimo_movimiento
-        FROM Candidatos p
-        INNER JOIN Movimientos m ON m.ID_Proyecto = p.ID
-        GROUP BY p.ID, p.Numero_Proyecto, p.Cliente, p.LT_Asignado, p.Estado, p.Tipo_Servicio
+def procesar_alertas_sla(raw_tickets: list, raw_solots: list, lider: str = None, severidad: str = "todas", tipo: str = "todos", limite: int = 100) -> dict:
     """
-
-
-def procesar_alertas_sla(raw_tickets: list, raw_solots: list, lider: str = None, severidad: str = "todas", tipo: str = "todos", limite: int = 100, raw_proyectos: list = None) -> dict:
-    """
-    Aplica las reglas canónicas de clasificación de severidad para tickets HPSM, Solots SGA y proyectos
-    sin movimiento (raw_proyectos: filas de _sql_proyectos_sin_movimiento), calcula métricas de resumen,
-    genera la minuta de escalamiento y retorna el payload estructurado.
+    Aplica las reglas canónicas de clasificación de severidad para tickets HPSM y Solots SGA,
+    calcula métricas de resumen, genera la minuta de escalamiento y retorna el payload estructurado.
     """
     hoy = datetime.date.today()
     alertas_todas = []
@@ -4847,50 +4747,6 @@ def procesar_alertas_sla(raw_tickets: list, raw_solots: list, lider: str = None,
             "badge_color": badge_color
         })
 
-    # 2b. Proyectos en ejecución / revisión con más de 7 días calendario sin movimiento (severidad WARNING)
-    for pr in (raw_proyectos or []):
-        if (pr.get("p_estado") or "").strip() not in _ESTADOS_ALERTA_SIN_MOVIMIENTO:
-            continue
-        if (pr.get("p_tipo_servicio") or "").strip() == "Reunión":
-            continue
-        dt_mov = _parse_timeline_dt(pr.get("ultimo_movimiento"))
-        if not dt_mov:
-            continue
-        dias_sin_mov = (hoy - dt_mov.date()).days
-        if dias_sin_mov <= ALERTA_SIN_MOVIMIENTO_DIAS:
-            continue
-
-        pid = pr.get("p_id")
-        try:
-            pid = int(pid)
-        except (ValueError, TypeError):
-            pass
-        num_proy = str(pr.get("p_numero")).strip() if pr.get("p_numero") else None
-        lt = pr.get("p_lider") or "Sin Asignar"
-        fecha_mov = dt_mov.strftime("%Y-%m-%d")
-
-        alertas_todas.append({
-            "id": f"PROYECTO-SIN-MOVIMIENTO-{pid}",
-            "codigo": ALERTA_SIN_MOVIMIENTO_CODIGO,
-            "tipo": "proyecto",
-            "severidad": "WARNING",
-            "icono": "⏳",
-            "titulo": "Proyecto sin movimiento",
-            "subtitulo": f"Último movimiento: {fecha_mov}",
-            "proyecto_id": pid,
-            "numero_proyecto": num_proy,
-            "cliente": pr.get("p_cliente"),
-            "lt_asignado": lt,
-            "responsable": lt,
-            "responsable_tipo": "Líder TI",
-            "asignado_a": lt,
-            "dias_fuera_sla": dias_sin_mov - ALERTA_SIN_MOVIMIENTO_DIAS,
-            "dias_sin_movimiento": dias_sin_mov,
-            "fecha_referencia": fecha_mov,
-            "detalle_sla": f"Sin movimiento hace {dias_sin_mov} días (último: {fecha_mov})",
-            "badge_color": "amber"
-        })
-
     # 3. Filtrar por Líder TI si aplica
     if lider and lider.strip() and lider.strip().lower() not in ("todos", "todas", "all"):
         lider_norm = lider.strip().lower()
@@ -4912,7 +4768,6 @@ def procesar_alertas_sla(raw_tickets: list, raw_solots: list, lider: str = None,
     solots_venc = sum(1 for a in alertas_alcance if a["tipo"] == "solot" and a["severidad"] == "CRITICAL")
     solots_prox = sum(1 for a in alertas_alcance if a["tipo"] == "solot" and a["severidad"] == "WARNING" and ("Próxima" in a.get("detalle_sla", "") or "Vence" in a.get("detalle_sla", "")))
     solots_sin_comp = sum(1 for a in alertas_alcance if a["tipo"] == "solot" and a["severidad"] == "WARNING" and "Sin compromiso" in a.get("detalle_sla", ""))
-    proyectos_sin_mov = sum(1 for a in alertas_alcance if a.get("codigo") == ALERTA_SIN_MOVIMIENTO_CODIGO)
 
     # Proyectos Críticos: Proyectos con >= 2 desviaciones críticas acumuladas
     crit_by_proj = {}
@@ -4952,8 +4807,6 @@ def procesar_alertas_sla(raw_tickets: list, raw_solots: list, lider: str = None,
                 "advertencias": 0,
                 "solots": 0,
                 "tickets": 0,
-                "sin_movimiento": False,
-                "dias_sin_movimiento": 0,
                 "max_dias_fuera_sla": 0,
                 "alertas": []
             }
@@ -4969,12 +4822,7 @@ def procesar_alertas_sla(raw_tickets: list, raw_solots: list, lider: str = None,
             g["solots"] += 1
         elif a.get("tipo") == "ticket":
             g["tickets"] += 1
-        if a.get("codigo") == ALERTA_SIN_MOVIMIENTO_CODIGO:
-            # La inactividad no es un atraso de SLA: se informa aparte de max_dias_fuera_sla
-            g["sin_movimiento"] = True
-            g["dias_sin_movimiento"] = max(g["dias_sin_movimiento"], int(a.get("dias_sin_movimiento") or 0))
-        else:
-            g["max_dias_fuera_sla"] = max(g["max_dias_fuera_sla"], int(a.get("dias_fuera_sla") or 0))
+        g["max_dias_fuera_sla"] = max(g["max_dias_fuera_sla"], int(a.get("dias_fuera_sla") or 0))
         if len(g["alertas"]) < 5:
             g["alertas"].append(a)
 
@@ -4984,7 +4832,6 @@ def procesar_alertas_sla(raw_tickets: list, raw_solots: list, lider: str = None,
             sev_order.get(g["severidad"], 99),
             -g["criticas"],
             -g["max_dias_fuera_sla"],
-            -g["dias_sin_movimiento"],
             (0, pid, "") if isinstance(pid, int) else (1, 0, str(pid))
         )
 
@@ -4999,7 +4846,6 @@ def procesar_alertas_sla(raw_tickets: list, raw_solots: list, lider: str = None,
         "solots_vencidas": solots_venc,
         "solots_proximas_vencer": solots_prox,
         "solots_sin_compromiso": solots_sin_comp,
-        "proyectos_sin_movimiento": proyectos_sin_mov,
         "proyectos_criticos": proyectos_criticos,
         "proyectos_con_alertas": len(proyectos),
         "proyectos_alerta_criticos": sum(1 for g in proyectos if g["severidad"] == "CRITICAL"),
@@ -5151,18 +4997,9 @@ def get_alertas_tempranas_sla(lider: str = None, severidad: str = "todas", tipo:
             cur.execute(sql_solots, tuple(params_s))
             raw_solots = cur.fetchall()
 
-            # 3. Último movimiento de proyectos en ejecución / revisión (consulta agregada única)
-            con_lider = bool(lider and lider.strip() and lider.strip().lower() not in ("todos", "todas", "all"))
-            cur.execute(
-                _sql_proyectos_sin_movimiento(con_lider),
-                (lider.strip(),) if con_lider else ()
-            )
-            raw_proyectos = cur.fetchall()
-
             return procesar_alertas_sla(
                 raw_tickets=raw_tickets,
                 raw_solots=raw_solots,
-                raw_proyectos=raw_proyectos,
                 lider=lider,
                 severidad=severidad,
                 tipo=tipo,

@@ -8,12 +8,11 @@
 
 ## Resumen de la Versión
 
-Esta versión corrige cuatro problemas del módulo Proyectos y agrega una alerta nueva:
+Esta versión corrige cuatro problemas del módulo Proyectos:
 - los adjuntos de la bitácora ya se guardan en producción;
 - seleccionar texto en una fila ya no abre el detalle;
 - las columnas del listado vuelven a quedar alineadas;
-- las alertas se limitan a los proyectos del LTI que inició sesión;
-- nueva alerta para proyectos con más de 7 días sin movimiento.
+- las alertas se limitan a los proyectos del LTI que inició sesión.
 
 ---
 
@@ -36,18 +35,6 @@ Esta versión corrige cuatro problemas del módulo Proyectos y agrega una alerta
 - `alejandro.aguilar` y `pablo.castillo` (visibilidad total) veían las alertas de todos los proyectos.
 - Ahora, si el usuario tiene un LTI asignado, la campana muestra solo las alertas de sus proyectos. Si no tiene LTI asignado (`pablo.castillo`), sigue viendo todas.
 - El resto de los usuarios ya veía solo las suyas y no cambia.
-
----
-
-## Nueva Funcionalidad
-
-### Alerta "Proyecto sin movimiento"
-- Se genera para los proyectos **En ejecución** o **En revisión** que llevan más de 7 días calendario sin movimiento. El día 7 todavía no alerta; el día 8, sí.
-- Cuenta como movimiento cualquiera de estas fechas:
-  - la última entrada de la bitácora;
-  - un Solot, Ticket o RFC vinculado, nuevo o actualizado (Solots: inserción, cambio de estado, realización y cierre; Tickets: creación y cierre; RFCs: creación y cierre);
-  - la fecha de creación del proyecto.
-- Es una alerta de severidad advertencia, aparece en la campana con el texto "Sin movimiento hace N días" y se cuenta en el badge y en la minuta.
 
 ---
 
